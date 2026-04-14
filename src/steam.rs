@@ -18,6 +18,8 @@ pub struct AchievementItem {
     pub unlocked: Option<bool>,
     pub unlock_time: Option<u64>,
     pub global_percent: Option<f32>,
+    pub icon_url: Option<String>,
+    pub icon_gray_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -25,16 +27,6 @@ pub struct AchievementSummary {
     pub unlocked: Option<u32>,
     pub total: u32,
     pub items: Vec<AchievementItem>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct AchievementDebugInfo {
-    pub steam_id_found: bool,
-    pub api_key_present: bool,
-    pub schema_exists: bool,
-    pub schema_name_count: usize,
-    pub local_unlock_file_exists: bool,
-    pub local_unlock_count: usize,
 }
 
 pub fn find_steam_paths() -> Vec<PathBuf> {
@@ -636,36 +628,6 @@ fn extract_bitmask_unlocks(
     }
 }
 
-fn local_unlock_file_exists(app_id: u32, steam_paths: &[PathBuf]) -> bool {
-    let Some(account_id) = find_most_recent_steam_id(steam_paths)
-        .as_deref()
-        .and_then(steamid64_to_accountid) else {
-        return false;
-    };
-
-    for steam_root in steam_paths {
-        let base = steam_root.join("userdata").join(&account_id).join(app_id.to_string());
-        let candidates = [
-            base.join("stats").join("UserGameStats.bin"),
-            base.join("local").join("achievements.bin"),
-        ];
-
-        if candidates.iter().any(|p| p.exists()) {
-            return true;
-        }
-
-        let appcache_path = steam_root
-            .join("appcache")
-            .join("stats")
-            .join(format!("UserGameStats_{}_{}.bin", account_id, app_id));
-        if appcache_path.exists() {
-            return true;
-        }
-    }
-
-    false
-}
-
 fn load_local_schema_achievement_names(app_id: u32, steam_paths: &[PathBuf]) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
     let is_language_key = |s: &str| {
@@ -813,28 +775,6 @@ fn load_local_schema_achievement_names(app_id: u32, steam_paths: &[PathBuf]) -> 
     names
 }
 
-pub fn get_achievement_debug_info(app_id: u32, steam_paths: &[PathBuf]) -> AchievementDebugInfo {
-    let schema_exists = steam_paths.iter().any(|steam_root| {
-        steam_root
-            .join("appcache")
-            .join("stats")
-            .join(format!("UserGameStatsSchema_{}.bin", app_id))
-            .exists()
-    });
-
-    let schema_name_count = load_local_schema_achievement_names(app_id, steam_paths).len();
-    let local_unlocks = load_local_unlock_status(app_id, steam_paths);
-
-    AchievementDebugInfo {
-        steam_id_found: find_most_recent_steam_id(steam_paths).is_some(),
-        api_key_present: std::env::var("STEAM_WEB_API_KEY").ok().is_some(),
-        schema_exists,
-        schema_name_count,
-        local_unlock_file_exists: local_unlock_file_exists(app_id, steam_paths),
-        local_unlock_count: local_unlocks.len(),
-    }
-}
-
 #[derive(Deserialize)]
 struct GlobalPercentResponse {
     achievementpercentages: Option<GlobalPercentContainer>,
@@ -868,6 +808,31 @@ struct PlayerAchievementItem {
     unlocktime: Option<u64>,
 }
 
+#[derive(Deserialize)]
+struct SchemaForGameResponse {
+    game: Option<SchemaGameContainer>,
+}
+
+#[derive(Deserialize)]
+struct SchemaGameContainer {
+    #[serde(rename = "availableGameStats")]
+    available_game_stats: Option<SchemaAvailableStats>,
+}
+
+#[derive(Deserialize)]
+struct SchemaAvailableStats {
+    achievements: Option<Vec<SchemaAchievementItem>>,
+}
+
+#[derive(Deserialize)]
+struct SchemaAchievementItem {
+    name: String,
+    #[serde(rename = "displayName")]
+    display_name: Option<String>,
+    icon: Option<String>,
+    icongray: Option<String>,
+}
+
 pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<AchievementSummary> {
     // Phase 1 — local Binary VDF (instant, no network, no API key)
     let local_unlocks = load_local_unlock_status(app_id, steam_paths);
@@ -895,6 +860,8 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
                                 unlocked: None,
                                 unlock_time: None,
                                 global_percent: Some(item.percent),
+                                icon_url: None,
+                                icon_gray_url: None,
                             });
                         }
                     }
@@ -914,6 +881,8 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
                 unlocked: None,
                 unlock_time: None,
                 global_percent: None,
+                icon_url: None,
+                icon_gray_url: None,
             });
             e.unlocked = Some(*achieved);
             e.unlock_time = *time;
@@ -922,10 +891,52 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
         unlocked_count = Some(count);
     }
 
-    // Phase 4 — optional: GetPlayerAchievements with API key (overrides local)
+    // Phase 4 — optional: GetSchemaForGame with API key (icons + canonical names)
     let steam_id = find_most_recent_steam_id(steam_paths);
     let api_key = std::env::var("STEAM_WEB_API_KEY").ok();
-    if let (Some(steam_id), Some(api_key)) = (steam_id, api_key) {
+    if let Some(api_key) = api_key.as_deref() {
+        let schema_url = format!(
+            "https://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v2/?appid={}&key={}",
+            app_id, api_key
+        );
+        if let Ok(resp) = agent.get(&schema_url).call() {
+            if resp.status() == 200 {
+                if let Ok(body) = resp.into_string() {
+                    if let Ok(parsed) = serde_json::from_str::<SchemaForGameResponse>(&body) {
+                        if let Some(schema_items) = parsed
+                            .game
+                            .and_then(|g| g.available_game_stats)
+                            .and_then(|s| s.achievements)
+                        {
+                            for sa in schema_items {
+                                let e = items_map.entry(sa.name.clone()).or_insert_with(|| AchievementItem {
+                                    api_name: sa.name.clone(),
+                                    display_name: None,
+                                    unlocked: None,
+                                    unlock_time: None,
+                                    global_percent: None,
+                                    icon_url: None,
+                                    icon_gray_url: None,
+                                });
+                                if e.display_name.is_none() {
+                                    e.display_name = sa.display_name.clone();
+                                }
+                                if e.icon_url.is_none() {
+                                    e.icon_url = sa.icon.clone();
+                                }
+                                if e.icon_gray_url.is_none() {
+                                    e.icon_gray_url = sa.icongray.clone();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Phase 5 — optional: GetPlayerAchievements with API key (overrides local)
+    if let (Some(steam_id), Some(api_key)) = (steam_id.as_deref(), api_key.as_deref()) {
         let player_url = format!(
             "https://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v1/?steamid={}&appid={}&key={}",
             steam_id, app_id, api_key
@@ -945,6 +956,8 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
                                     unlocked: None,
                                     unlock_time: None,
                                     global_percent: None,
+                                    icon_url: None,
+                                    icon_gray_url: None,
                                 });
                                 e.unlocked = Some(achieved);
                                 e.unlock_time = pa.unlocktime;
@@ -957,7 +970,7 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
         }
     }
 
-    // Phase 5 — fallback to local schema file for offline achievement list.
+    // Phase 6 — fallback to local schema file for offline achievement list.
     if items_map.is_empty() {
         let names = load_local_schema_achievement_names(app_id, steam_paths);
         for name in names {
@@ -969,6 +982,8 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
                     unlocked: None,
                     unlock_time: None,
                     global_percent: None,
+                    icon_url: None,
+                    icon_gray_url: None,
                 },
             );
         }
@@ -978,7 +993,7 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
         return None;
     }
 
-    // Phase 6 — apply display names from schema
+    // Phase 7 — apply display names from local schema file
     let display_names = load_schema_display_names(app_id, steam_paths);
     for item in items_map.values_mut() {
         if item.display_name.is_none() {

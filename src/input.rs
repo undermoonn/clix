@@ -19,6 +19,7 @@ pub const FOCUS_COOLDOWN_MS: u128 = 500;
 pub enum ControllerAction {
     Up,
     Down,
+    Left,
     Right,
     Launch,
     Quit,
@@ -63,14 +64,14 @@ impl XInput {
         Err(())
     }
 
-    pub fn get_states(&self) -> Vec<(u16, i32)> {
+    pub fn get_states(&self) -> Vec<(u16, i32, i32)> {
         let mut resvec = Vec::new();
         for idx in 0..4 {
             let mut state: XINPUT_STATE = unsafe { std::mem::zeroed() };
             let res = unsafe { (self.get_state)(idx, &mut state as *mut XINPUT_STATE) };
             if res == 0 {
                 let gp = state.Gamepad;
-                resvec.push((gp.wButtons as u16, gp.sThumbLY as i32));
+                resvec.push((gp.wButtons as u16, gp.sThumbLY as i32, gp.sThumbLX as i32));
             }
         }
         resvec

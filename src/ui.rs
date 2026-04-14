@@ -3,6 +3,7 @@ use eframe::egui;
 pub struct HintIcons {
     pub btn_a: egui::TextureHandle,
     pub btn_b: egui::TextureHandle,
+    pub dpad_right: egui::TextureHandle,
 }
 
 fn png_bytes_to_texture(
@@ -32,9 +33,15 @@ pub fn load_hint_icons(ctx: &egui::Context) -> Option<HintIcons> {
         include_bytes!("icons/Xbox/T_X_B_White_Alt.png"),
         "icon_btn_b",
     )?;
+    let dpad_right = png_bytes_to_texture(
+        ctx,
+        include_bytes!("icons/Xbox/T_X_Dpad_Right_Alt.png"),
+        "icon_dpad_right",
+    )?;
     Some(HintIcons {
         btn_a,
         btn_b,
+        dpad_right,
     })
 }
 
@@ -93,6 +100,7 @@ pub fn draw_game_list(
     scroll_offset: f32,
     game_icons: &std::collections::HashMap<u32, egui::TextureHandle>,
     loading_index: Option<usize>,
+    achievement_panel_active: bool,
     achievement_summary_for_selected: Option<&crate::steam::AchievementSummary>,
 ) {
     let panel_rect = ui.available_rect_before_wrap();
@@ -120,6 +128,9 @@ pub fn draw_game_list(
     for (i, g) in games.iter().enumerate() {
         let offset_f = i as f32 - scroll_offset;
         let is_selected = i == selected;
+        if achievement_panel_active && !is_selected {
+            continue;
+        }
         if offset_f < -(visible_above as f32 + 1.0) || offset_f > (visible_below as f32 + 1.0) {
             continue;
         }
@@ -137,6 +148,11 @@ pub fn draw_game_list(
         }
 
         let alpha_factor = (1.0 - dist * 0.13).max(0.0);
+        let dim_factor = if achievement_panel_active && !is_selected {
+            0.35
+        } else {
+            1.0
+        };
         let font_size = if is_selected {
             let t = 1.0 - (1.0 - select_anim) * (1.0 - select_anim);
             base_size + (selected_size - base_size) * t
@@ -147,7 +163,7 @@ pub fn draw_game_list(
         let text_alpha = if is_selected {
             255
         } else {
-            (220.0 * alpha_factor) as u8
+            (220.0 * alpha_factor * dim_factor) as u8
         };
         let text_color = if is_selected {
             egui::Color32::from_rgba_unmultiplied(255, 255, 255, 255)
@@ -250,7 +266,7 @@ pub fn draw_game_list(
         let outline_alpha = if is_selected {
             200
         } else {
-            (120.0 * alpha_factor) as u8
+            (120.0 * alpha_factor * dim_factor) as u8
         };
         let outline_color = egui::Color32::from_rgba_unmultiplied(0, 0, 0, outline_alpha);
         let outline_galley = painter.layout_no_wrap(display_name, font_id, outline_color);
@@ -282,127 +298,181 @@ pub fn draw_game_list(
 pub fn draw_achievement_panel(
     ui: &mut egui::Ui,
     game_name: &str,
+    selected_game_has_icon: bool,
+    selected_game_playtime_minutes: u32,
     summary: Option<&crate::steam::AchievementSummary>,
-    loading: bool,
+    _loading: bool,
     selected_index: usize,
-    debug_text: Option<&str>,
+    achievement_select_anim: f32,
+    scroll_offset: f32,
+    game_select_anim: f32,
+    active: bool,
+    achievement_icon_cache: &std::collections::HashMap<String, egui::TextureHandle>,
 ) {
     let panel_rect = ui.available_rect_before_wrap();
-    let panel_w = (panel_rect.width() * 0.42).clamp(420.0, 760.0);
-    let rect = egui::Rect::from_min_max(
-        egui::pos2(panel_rect.max.x - panel_w - 24.0, panel_rect.min.y + 24.0),
-        egui::pos2(panel_rect.max.x - 24.0, panel_rect.max.y - 72.0),
-    );
-
-    let painter = ui.painter();
-    painter.rect_filled(
-        rect,
-        egui::Rounding::same(18.0),
-        egui::Color32::from_rgba_unmultiplied(16, 18, 24, 230),
-    );
-    painter.rect_stroke(
-        rect,
-        egui::Rounding::same(18.0),
-        egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 28)),
-    );
-
-    let mut child = ui.child_ui(rect.shrink2(egui::vec2(16.0, 14.0)), *ui.layout());
-    let title_font = egui::FontId::new(24.0, egui::FontFamily::Name("Bold".into()));
-    let sub_font = egui::FontId::proportional(15.0);
-
-    child.label(
-        egui::RichText::new(format!("{} - Achievements", game_name))
-            .font(title_font)
-            .color(egui::Color32::from_rgb(240, 242, 248)),
-    );
-
-    if let Some(debug_text) = debug_text {
-        child.add_space(4.0);
-        child.label(
-            egui::RichText::new(debug_text)
-                .font(egui::FontId::proportional(12.5))
-                .color(egui::Color32::from_rgba_unmultiplied(140, 170, 190, 220)),
-        );
-        child.add_space(6.0);
+    let padding = 50.0;
+    let padded_rect = panel_rect.shrink(padding);
+    let hero_ratio = 1240.0 / 3840.0;
+    let img_bottom = panel_rect.min.y + panel_rect.width() * hero_ratio;
+    let clip_y = img_bottom + 20.0;
+    let panel_right = padded_rect.max.x - 18.0;
+    let selected_size = 30.0;
+    let base_size = 18.0;
+    let selected_icon_size = selected_size + 26.0;
+    let base_icon_size = base_size + 4.0;
+    let left_x = padded_rect.min.x + 20.0;
+    let game_t = 1.0 - (1.0 - game_select_anim) * (1.0 - game_select_anim);
+    let game_font_size = base_size + (selected_size - base_size) * game_t;
+    let game_icon_size = base_icon_size + (selected_icon_size - base_icon_size) * game_t;
+    let game_text_x = if selected_game_has_icon {
+        left_x + game_icon_size + 8.0
+    } else {
+        left_x
+    };
+    let game_title_font = egui::FontId::new(game_font_size, egui::FontFamily::Name("Bold".into()));
+    let game_title_galley = ui
+        .painter()
+        .layout_no_wrap(game_name.to_string(), game_title_font, egui::Color32::WHITE);
+    let center_y = img_bottom + 52.0 + 30.0;
+    let playtime_str = if selected_game_playtime_minutes >= 60 {
+        let hours = selected_game_playtime_minutes as f32 / 60.0;
+        let s = format!("{:.1}", hours);
+        let s = s.trim_end_matches(".0");
+        format!("{} hrs", s)
+    } else if selected_game_playtime_minutes > 0 {
+        format!("{} min", selected_game_playtime_minutes)
+    } else {
+        String::new()
+    };
+    let mut meta_parts: Vec<String> = Vec::new();
+    if !playtime_str.is_empty() {
+        meta_parts.push(playtime_str);
     }
+    if let Some(summary) = summary {
+        if summary.total > 0 {
+            let ach_text = if let Some(u) = summary.unlocked {
+                format!("{}/{} achievements", u, summary.total)
+            } else {
+                format!("--/{} achievements", summary.total)
+            };
+            meta_parts.push(ach_text);
+        }
+    }
+    let meta_str = meta_parts.join("  •  ");
+    let pt_font_size = game_font_size * 0.5;
+    let pt_font = egui::FontId::proportional(pt_font_size);
+    let pt_galley = if !meta_str.is_empty() {
+        Some(ui.painter().layout_no_wrap(meta_str, pt_font, egui::Color32::WHITE))
+    } else {
+        None
+    };
+    let pt_row_h = pt_galley.as_ref().map_or(0.0, |g| g.size().y + 2.0);
+    let total_h = game_title_galley.size().y + pt_row_h;
+    let panel_top = (center_y + total_h * 0.5 + 18.0).max(clip_y);
+    let panel_left = (game_text_x - 52.0).max(padded_rect.min.x + 8.0);
+    let rect = egui::Rect::from_min_max(egui::pos2(panel_left, panel_top), egui::pos2(panel_right, padded_rect.max.y));
+
+    let activity_alpha = if active { 1.0 } else { 0.45 };
 
     match summary {
         Some(s) => {
-            let progress = if let Some(u) = s.unlocked {
-                format!("Unlocked {} / {}", u, s.total)
-            } else {
-                format!("Unlocked -- / {}", s.total)
-            };
-            child.label(
-                egui::RichText::new(progress)
-                    .font(sub_font.clone())
-                    .color(egui::Color32::from_rgba_unmultiplied(180, 190, 210, 200)),
+            let list_rect = egui::Rect::from_min_max(
+                egui::pos2(rect.min.x + 10.0, rect.min.y),
+                egui::pos2(rect.max.x - 10.0, rect.max.y),
             );
-            child.add_space(10.0);
+            let list_painter = ui.painter().with_clip_rect(list_rect);
+            let row_spacing = 40.0;
+            let visible_above = 0_i32;
+            let visible_below = 8_i32;
+            let center_y = list_rect.min.y + 18.0;
 
-            egui::ScrollArea::vertical()
-                .max_height(rect.height() - 96.0)
-                .show(&mut child, |ui| {
-                    for (idx, item) in s.items.iter().enumerate() {
-                        let is_selected = idx == selected_index;
-                        let bg = if is_selected {
-                            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 20)
-                        } else {
-                            egui::Color32::TRANSPARENT
-                        };
+            for (idx, item) in s.items.iter().enumerate() {
+                let offset_f = idx as f32 - scroll_offset;
+                if offset_f < -(visible_above as f32 + 1.0) || offset_f > (visible_below as f32 + 1.0) {
+                    continue;
+                }
 
-                        let row_rect = ui.available_rect_before_wrap();
-                        let row_h = 30.0;
-                        let row = egui::Rect::from_min_size(
-                            egui::pos2(row_rect.min.x, row_rect.min.y),
-                            egui::vec2(row_rect.width(), row_h),
-                        );
-                        ui.painter().rect_filled(row, egui::Rounding::same(6.0), bg);
+                let is_selected = idx == selected_index;
+                let dist = offset_f.abs();
+                let sign = if offset_f >= 0.0 { 1.0 } else { -1.0 };
+                let selected_gap = 8.0;
+                let extra = offset_f.clamp(-1.0, 1.0) * selected_gap;
+                let y_pos = center_y + sign * dist * row_spacing * (1.0 - dist * 0.03).max(0.72) + extra;
 
-                        ui.allocate_ui_at_rect(row.shrink2(egui::vec2(8.0, 4.0)), |ui| {
-                            ui.horizontal(|ui| {
-                                let state = match item.unlocked {
-                                    Some(true) => "[x]",
-                                    Some(false) => "[ ]",
-                                    None => "[?]",
-                                };
-                                let name = item.display_name.as_deref().unwrap_or(&item.api_name);
-                                let mut line = format!("{} {}", state, name);
-                                if let Some(p) = item.global_percent {
-                                    line.push_str(&format!("  ({:.1}%)", p));
-                                }
-                                ui.label(
-                                    egui::RichText::new(line)
-                                        .font(egui::FontId::proportional(15.0))
-                                        .color(egui::Color32::from_rgb(220, 224, 236)),
-                                );
-                            });
-                        });
+                if y_pos < list_rect.min.y - 36.0 || y_pos > list_rect.max.y + 36.0 {
+                    continue;
+                }
 
-                        ui.add_space(4.0);
-                    }
-                });
+                let alpha_factor = (1.0 - dist * 0.15).max(0.24);
+                let t = if is_selected {
+                    1.0 - (1.0 - achievement_select_anim) * (1.0 - achievement_select_anim)
+                } else {
+                    0.0
+                };
+                let icon_size = 20.0 + 8.0 * alpha_factor + 2.0 * t;
+                let text_size = 14.0 + 2.5 * alpha_factor + 1.2 * t;
+
+                let text_x = game_text_x;
+                let icon_pos = egui::pos2(text_x - icon_size - 10.0, y_pos - icon_size * 0.5);
+                let icon_key = match item.unlocked {
+                    Some(true) => item.icon_url.as_ref().or(item.icon_gray_url.as_ref()),
+                    _ => item.icon_gray_url.as_ref().or(item.icon_url.as_ref()),
+                };
+                if let Some(tex) = icon_key.and_then(|k| achievement_icon_cache.get(k)) {
+                    list_painter.image(
+                        tex.id(),
+                        egui::Rect::from_min_size(icon_pos, egui::vec2(icon_size, icon_size)),
+                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                        egui::Color32::from_rgba_unmultiplied(
+                            255,
+                            255,
+                            255,
+                            (255.0 * alpha_factor * activity_alpha) as u8,
+                        ),
+                    );
+                } else {
+                    let fill = match item.unlocked {
+                        Some(true) => egui::Color32::from_rgba_unmultiplied(86, 172, 132, (220.0 * alpha_factor * activity_alpha) as u8),
+                        Some(false) => egui::Color32::from_rgba_unmultiplied(110, 116, 124, (200.0 * alpha_factor * activity_alpha) as u8),
+                        None => egui::Color32::from_rgba_unmultiplied(90, 98, 112, (180.0 * alpha_factor * activity_alpha) as u8),
+                    };
+                    list_painter.rect_filled(
+                        egui::Rect::from_min_size(icon_pos, egui::vec2(icon_size, icon_size)),
+                        egui::Rounding::same(6.0),
+                        fill,
+                    );
+                }
+
+                let name = item.display_name.as_deref().unwrap_or(&item.api_name);
+                let mut line = String::from(name);
+                if let Some(p) = item.global_percent {
+                    line.push_str(&format!("  ({:.1}%)", p));
+                }
+                let color = egui::Color32::from_rgba_unmultiplied(
+                    220,
+                    224,
+                    236,
+                    (236.0 * alpha_factor * activity_alpha) as u8,
+                );
+                let font = if active && is_selected {
+                    egui::FontId::new(text_size, egui::FontFamily::Name("Bold".into()))
+                } else {
+                    egui::FontId::proportional(text_size)
+                };
+                let galley = list_painter.layout_no_wrap(line, font, color);
+                list_painter.galley(egui::pos2(text_x, y_pos - galley.size().y * 0.5), galley);
+            }
         }
-        None if loading => {
-            child.add_space(16.0);
-            child.label(
-                egui::RichText::new("Loading achievements...")
-                    .font(sub_font)
-                    .color(egui::Color32::from_rgba_unmultiplied(180, 190, 210, 200)),
-            );
-        }
-        None => {
-            child.add_space(16.0);
-            child.label(
-                egui::RichText::new("No achievement data available")
-                    .font(sub_font)
-                    .color(egui::Color32::from_rgba_unmultiplied(180, 190, 210, 200)),
-            );
-        }
+        None => {}
     }
 }
 
-pub fn draw_hint_bar(ui: &mut egui::Ui, icons: &HintIcons) {
+pub fn draw_hint_bar(
+    ui: &mut egui::Ui,
+    icons: &HintIcons,
+    achievement_panel_active: bool,
+    can_open_achievement_panel: bool,
+) {
     let panel_rect = ui.available_rect_before_wrap();
     let padding = 50.0;
     let padded_rect = panel_rect.shrink(padding);
@@ -414,13 +484,6 @@ pub fn draw_hint_bar(ui: &mut egui::Ui, icons: &HintIcons) {
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
 
     let painter = ui.painter();
-
-    // Measure total width first (right-aligned)
-    let g_launch = painter.layout_no_wrap("Start".to_string(), hint_font.clone(), hint_color);
-    let g_quit = painter.layout_no_wrap("Quit".to_string(), hint_font.clone(), hint_color);
-    let total_w = icon_h + 6.0 + g_launch.size().x + 20.0 + icon_h + 6.0 + g_quit.size().x;
-    let mut hx = padded_rect.max.x - total_w;
-
     let draw_icon = |painter: &egui::Painter, tex: &egui::TextureHandle, x: f32| {
         painter.image(
             tex.id(),
@@ -432,6 +495,49 @@ pub fn draw_hint_bar(ui: &mut egui::Ui, icons: &HintIcons) {
             egui::Color32::WHITE,
         );
     };
+
+    if achievement_panel_active {
+        let g_back = painter.layout_no_wrap("Back".to_string(), hint_font, hint_color);
+        let total_w = icon_h + 6.0 + g_back.size().x;
+        let mut hx = padded_rect.max.x - total_w;
+
+        draw_icon(painter, &icons.btn_b, hx);
+        hx += icon_h + 6.0;
+
+        let gy = hint_y + (row_h - g_back.size().y) * 0.5;
+        painter.galley(egui::pos2(hx, gy), g_back);
+        return;
+    }
+
+    // Measure total width first (right-aligned)
+    let g_launch = painter.layout_no_wrap("Start".to_string(), hint_font.clone(), hint_color);
+    let g_quit = painter.layout_no_wrap("Quit".to_string(), hint_font.clone(), hint_color);
+    let g_achievements = painter.layout_no_wrap(
+        "Achievements".to_string(),
+        hint_font.clone(),
+        hint_color,
+    );
+    let total_w = if can_open_achievement_panel {
+        icon_h + 6.0 + g_launch.size().x
+            + 20.0
+            + icon_h + 6.0 + g_achievements.size().x
+            + 20.0
+            + icon_h + 6.0 + g_quit.size().x
+    } else {
+        icon_h + 6.0 + g_launch.size().x + 20.0 + icon_h + 6.0 + g_quit.size().x
+    };
+    let mut hx = padded_rect.max.x - total_w;
+
+    // A button
+    if can_open_achievement_panel {
+        draw_icon(painter, &icons.dpad_right, hx);
+        hx += icon_h + 6.0;
+
+        let gy = hint_y + (row_h - g_achievements.size().y) * 0.5;
+        let g_width = g_achievements.size().x;
+        painter.galley(egui::pos2(hx, gy), g_achievements);
+        hx += g_width + 20.0;
+    }
 
     // A button
     draw_icon(painter, &icons.btn_a, hx);

@@ -1,13 +1,14 @@
 use eframe::egui;
 use gilrs::{EventType, Gilrs};
 use std::collections::{HashMap, HashSet};
+use std::io::Read;
 use std::path::Path;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "windows")]
-use winapi::um::xinput::{XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B, XINPUT_GAMEPAD_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_RIGHT, XINPUT_GAMEPAD_DPAD_UP};
+use winapi::um::xinput::{XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B, XINPUT_GAMEPAD_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_LEFT, XINPUT_GAMEPAD_DPAD_RIGHT, XINPUT_GAMEPAD_DPAD_UP};
 #[cfg(target_os = "windows")]
 use winapi::shared::minwindef::{BOOL, DWORD, LPARAM, TRUE};
 #[cfg(target_os = "windows")]
@@ -248,8 +249,14 @@ pub struct LauncherApp {
     achievement_pending: Arc<Mutex<Vec<(u32, Option<steam::AchievementSummary>)>>>,
     achievement_loading: HashSet<u32>,
     achievement_no_data: HashSet<u32>,
+    achievement_icon_cache: HashMap<String, egui::TextureHandle>,
+    achievement_icon_pending: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
+    achievement_icon_loading: HashSet<String>,
     show_achievement_panel: bool,
     achievement_selected: usize,
+    achievement_select_anim: f32,
+    achievement_select_anim_target: Option<usize>,
+    achievement_scroll_offset: f32,
 }
 
 impl LauncherApp {
@@ -290,8 +297,14 @@ impl LauncherApp {
             achievement_pending: Arc::new(Mutex::new(Vec::new())),
             achievement_loading: HashSet::new(),
             achievement_no_data: HashSet::new(),
+            achievement_icon_cache: HashMap::new(),
+            achievement_icon_pending: Arc::new(Mutex::new(Vec::new())),
+            achievement_icon_loading: HashSet::new(),
             show_achievement_panel: false,
             achievement_selected: 0,
+            achievement_select_anim: 0.0,
+            achievement_select_anim_target: None,
+            achievement_scroll_offset: 0.0,
         }
     }
 
@@ -335,6 +348,84 @@ impl LauncherApp {
                 None => {
                     self.achievement_no_data.insert(app_id);
                 }
+            }
+        }
+    }
+
+    fn can_open_achievement_panel_for_selected(&self) -> bool {
+        self.games
+            .get(self.selected)
+            .and_then(|g| g.app_id)
+            .and_then(|id| self.achievement_cache.get(&id))
+            .map(|summary| !summary.items.is_empty())
+            .unwrap_or(false)
+    }
+
+    fn ensure_achievement_icons_for_selected(&mut self, ctx: &egui::Context) {
+        let Some(app_id) = self.games.get(self.selected).and_then(|g| g.app_id) else {
+            return;
+        };
+        let Some(summary) = self.achievement_cache.get(&app_id) else {
+            return;
+        };
+
+        for item in &summary.items {
+            let url_opt = match item.unlocked {
+                Some(true) => item.icon_url.as_ref().or(item.icon_gray_url.as_ref()),
+                _ => item.icon_gray_url.as_ref().or(item.icon_url.as_ref()),
+            };
+            let Some(url) = url_opt else {
+                continue;
+            };
+
+            if self.achievement_icon_cache.contains_key(url)
+                || self.achievement_icon_loading.contains(url)
+            {
+                continue;
+            }
+
+            self.achievement_icon_loading.insert(url.clone());
+            let pending = Arc::clone(&self.achievement_icon_pending);
+            let ctx_clone = ctx.clone();
+            let url_clone = url.clone();
+            std::thread::spawn(move || {
+                if let Ok(resp) = ureq::get(&url_clone).call() {
+                    if resp.status() == 200 {
+                        let mut bytes = Vec::new();
+                        let mut reader = resp.into_reader().take(2 * 1024 * 1024);
+                        if reader.read_to_end(&mut bytes).is_ok() && !bytes.is_empty() {
+                            if let Ok(mut lock) = pending.lock() {
+                                lock.push((url_clone, bytes));
+                            }
+                            ctx_clone.request_repaint();
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    fn drain_achievement_icon_results(&mut self, ctx: &egui::Context) {
+        let Ok(mut lock) = self.achievement_icon_pending.lock() else {
+            return;
+        };
+
+        let mut hasher_seed = self.achievement_icon_cache.len();
+        for (url, bytes) in lock.drain(..) {
+            self.achievement_icon_loading.remove(&url);
+            if self.achievement_icon_cache.contains_key(&url) {
+                continue;
+            }
+
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            hasher_seed.hash(&mut hasher);
+            url.hash(&mut hasher);
+            hasher_seed += 1;
+            let label = format!("ach_icon_{:x}", hasher.finish());
+
+            if let Some(tex) = cover::bytes_to_texture(ctx, &bytes, label) {
+                self.achievement_icon_cache.insert(url, tex);
             }
         }
     }
@@ -542,7 +633,7 @@ impl eframe::App for LauncherApp {
                     let states = xi.get_states();
 
                     if let Some(target) = &self.remap_target {
-                        for (buttons, ly) in states.iter() {
+                        for (buttons, ly, _) in states.iter() {
                             if *buttons != 0 {
                                 self.mapping
                                     .map
@@ -569,12 +660,15 @@ impl eframe::App for LauncherApp {
                             }
                         }
                     } else {
-                        for (buttons, ly) in states.iter() {
+                        for (buttons, ly, lx) in states.iter() {
                             if (buttons & XINPUT_GAMEPAD_DPAD_UP) != 0 {
                                 raw_held.insert("up");
                             }
                             if (buttons & XINPUT_GAMEPAD_DPAD_DOWN) != 0 {
                                 raw_held.insert("down");
+                            }
+                            if (buttons & XINPUT_GAMEPAD_DPAD_LEFT) != 0 {
+                                raw_held.insert("left");
                             }
                             if (buttons & XINPUT_GAMEPAD_DPAD_RIGHT) != 0 {
                                 raw_held.insert("right");
@@ -590,12 +684,17 @@ impl eframe::App for LauncherApp {
                             } else if *ly < -16000 {
                                 raw_held.insert("down");
                             }
+                            if *lx > 16000 {
+                                raw_held.insert("right");
+                            } else if *lx < -16000 {
+                                raw_held.insert("left");
+                            }
                         }
 
                         for (k, v) in self.mapping.map.iter() {
                             match v {
                                 InputToken::XButton(mask) => {
-                                    for (buttons, _) in states.iter() {
+                                    for (buttons, _, _) in states.iter() {
                                         if (buttons & mask) != 0 {
                                             match k.as_str() {
                                                 "up" => {
@@ -603,6 +702,9 @@ impl eframe::App for LauncherApp {
                                                 }
                                                 "down" => {
                                                     raw_held.insert("down");
+                                                }
+                                                "left" => {
+                                                    raw_held.insert("left");
                                                 }
                                                 "launch" => {
                                                     raw_held.insert("launch");
@@ -619,7 +721,7 @@ impl eframe::App for LauncherApp {
                                     }
                                 }
                                 InputToken::XAxis(dir) => {
-                                    for (_, ly) in states.iter() {
+                                    for (_, ly, _) in states.iter() {
                                         if *dir > 0 && *ly > 16000 {
                                             if k == "up" {
                                                 raw_held.insert("up");
@@ -686,6 +788,9 @@ impl eframe::App for LauncherApp {
                                                 "down" => {
                                                     raw_held.insert("down");
                                                 }
+                                                "left" => {
+                                                    raw_held.insert("left");
+                                                }
                                                 "launch" => {
                                                     raw_held.insert("launch");
                                                 }
@@ -738,6 +843,9 @@ impl eframe::App for LauncherApp {
             if ctx.input(|i| i.key_down(egui::Key::ArrowDown)) {
                 raw_held.insert("down");
             }
+            if ctx.input(|i| i.key_down(egui::Key::ArrowLeft)) {
+                raw_held.insert("left");
+            }
             if ctx.input(|i| i.key_down(egui::Key::ArrowRight)) {
                 raw_held.insert("right");
             }
@@ -762,7 +870,7 @@ impl eframe::App for LauncherApp {
         let now = Instant::now();
         self.nav_held.retain(|k, _| raw_held.contains(k));
 
-        for action_name in &["up", "down", "right", "launch", "quit"] {
+        for action_name in &["up", "down", "left", "right", "launch", "quit"] {
             if raw_held.contains(action_name) {
                 let should_fire = if let Some(state) = self.nav_held.get_mut(action_name) {
                     if !state.past_initial {
@@ -809,6 +917,7 @@ impl eframe::App for LauncherApp {
                     match *action_name {
                         "up" => actions.push(ControllerAction::Up),
                         "down" => actions.push(ControllerAction::Down),
+                        "left" => actions.push(ControllerAction::Left),
                         "right" => actions.push(ControllerAction::Right),
                         "launch" => actions.push(ControllerAction::Launch),
                         "quit" => actions.push(ControllerAction::Quit),
@@ -839,9 +948,12 @@ impl eframe::App for LauncherApp {
                             self.achievement_selected += 1;
                         }
                     }
-                    ControllerAction::Quit => {
+                    ControllerAction::Left | ControllerAction::Quit => {
                         self.show_achievement_panel = false;
                         self.achievement_selected = 0;
+                        self.achievement_select_anim = 0.0;
+                        self.achievement_select_anim_target = None;
+                        self.achievement_scroll_offset = 0.0;
                     }
                     _ => {}
                 }
@@ -853,22 +965,30 @@ impl eframe::App for LauncherApp {
                     if self.selected > 0 {
                         self.selected -= 1;
                         self.cover_nav_dir = -1.0;
+                        self.achievement_selected = 0;
+                        self.achievement_select_anim = 0.0;
+                        self.achievement_select_anim_target = None;
+                        self.achievement_scroll_offset = 0.0;
                     }
                 }
                 ControllerAction::Down => {
                     if self.selected + 1 < self.games.len() {
                         self.selected += 1;
                         self.cover_nav_dir = 1.0;
+                        self.achievement_selected = 0;
+                        self.achievement_select_anim = 0.0;
+                        self.achievement_select_anim_target = None;
+                        self.achievement_scroll_offset = 0.0;
                     }
                 }
+                ControllerAction::Left => {}
                 ControllerAction::Right => {
-                    self.show_achievement_panel = true;
-                    self.achievement_selected = 0;
-                    // If previously failed, clear and retry
-                    if let Some(app_id) = self.games.get(self.selected).and_then(|g| g.app_id) {
-                        if self.achievement_no_data.remove(&app_id) {
-                            // Will be re-queued by ensure_achievement_load_for_selected
-                        }
+                    if self.can_open_achievement_panel_for_selected() {
+                        self.show_achievement_panel = true;
+                        self.achievement_selected = 0;
+                        self.achievement_select_anim = 0.0;
+                        self.achievement_select_anim_target = None;
+                        self.achievement_scroll_offset = 0.0;
                     }
                 }
                 ControllerAction::Launch => {
@@ -882,6 +1002,7 @@ impl eframe::App for LauncherApp {
 
         self.tick_launch_progress(ctx);
         self.drain_achievement_results();
+        self.drain_achievement_icon_results(ctx);
 
         // Cover loading (async with 300ms debounce)
         if self.cover_loaded_for != Some(self.selected) {
@@ -967,6 +1088,27 @@ impl eframe::App for LauncherApp {
             self.scroll_offset = scroll_target;
         }
 
+        // Achievement selection animation
+        if self.achievement_select_anim_target != Some(self.achievement_selected) {
+            self.achievement_select_anim_target = Some(self.achievement_selected);
+            self.achievement_select_anim = 0.0;
+        }
+        self.achievement_select_anim =
+            1.0 - (1.0 - self.achievement_select_anim) * (-10.0 * dt).exp();
+        if self.achievement_select_anim < 0.999 {
+            ctx.request_repaint();
+        }
+
+        // Achievement smooth scroll
+        let ach_target = self.achievement_selected as f32;
+        let ach_diff = ach_target - self.achievement_scroll_offset;
+        if ach_diff.abs() > 0.001 {
+            self.achievement_scroll_offset += ach_diff * (1.0 - (-14.0 * dt).exp());
+            ctx.request_repaint();
+        } else {
+            self.achievement_scroll_offset = ach_target;
+        }
+
         // Load hint icons lazily
         if self.hint_icons.is_none() {
             self.hint_icons = ui::load_hint_icons(ctx);
@@ -991,34 +1133,20 @@ impl eframe::App for LauncherApp {
         }
 
         self.ensure_achievement_load_for_selected(ctx);
+        self.ensure_achievement_icons_for_selected(ctx);
 
         let selected_app_id = self.games.get(self.selected).and_then(|g| g.app_id);
         let selected_achievement_summary =
             selected_app_id.and_then(|id| self.achievement_cache.get(&id));
+        let can_open_achievement_panel = selected_achievement_summary
+            .map(|summary| !summary.items.is_empty())
+            .unwrap_or(false);
         let selected_achievements_loading = selected_app_id
             .map(|id| {
                 self.achievement_loading.contains(&id)
                     && !self.achievement_no_data.contains(&id)
             })
             .unwrap_or(false);
-        let achievement_debug_text = selected_app_id.map(|id| {
-            let debug = steam::get_achievement_debug_info(id, &self.steam_paths);
-            let cached_items = selected_achievement_summary.map(|s| s.items.len()).unwrap_or(0);
-            format!(
-                "debug: appid={} loading={} no_data={} cached_items={} steam_id={} api_key={} schema_exists={} schema_names={} local_unlock_file={} local_unlocks={}",
-                id,
-                selected_achievements_loading,
-                self.achievement_no_data.contains(&id),
-                cached_items,
-                debug.steam_id_found,
-                debug.api_key_present,
-                debug.schema_exists,
-                debug.schema_name_count,
-                debug.local_unlock_file_exists,
-                debug.local_unlock_count,
-            )
-        });
-
         // Draw UI
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(egui::Color32::TRANSPARENT))
@@ -1039,24 +1167,35 @@ impl eframe::App for LauncherApp {
                     self.scroll_offset,
                     &self.game_icons,
                     self.launch_state.as_ref().map(|s| s.game_index),
+                    self.show_achievement_panel,
                     selected_achievement_summary,
                 );
 
                 if self.show_achievement_panel {
                     if let Some(game) = self.games.get(self.selected) {
+                    let selected_game_has_icon = game
+                        .app_id
+                        .map(|id| self.game_icons.contains_key(&id))
+                        .unwrap_or(false);
                         ui::draw_achievement_panel(
                             ui,
                             &game.name,
+                            selected_game_has_icon,
+                            game.playtime_minutes,
                             selected_achievement_summary,
                             selected_achievements_loading,
                             self.achievement_selected,
-                            achievement_debug_text.as_deref(),
+                            self.achievement_select_anim,
+                            self.achievement_scroll_offset,
+                            self.select_anim,
+                            self.show_achievement_panel,
+                            &self.achievement_icon_cache,
                         );
                     }
                 }
 
                 if let Some(icons) = &self.hint_icons {
-                    ui::draw_hint_bar(ui, icons);
+                    ui::draw_hint_bar(ui, icons, self.show_achievement_panel, can_open_achievement_panel);
                 }
             });
     }
