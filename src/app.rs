@@ -3,7 +3,7 @@ use gilrs::{EventType, Gilrs};
 use std::collections::{HashMap, HashSet};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[cfg(target_os = "windows")]
 use winapi::um::xinput::{XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B, XINPUT_GAMEPAD_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_UP};
@@ -23,6 +23,7 @@ pub struct LauncherApp {
     remap_target: Option<String>,
     nav_held: HashMap<&'static str, NavState>,
     had_focus: bool,
+    lost_focus_at: Option<Instant>,
     focus_cooldown_until: Option<Instant>,
     steam_paths: Vec<std::path::PathBuf>,
     cover: Option<(u32, egui::TextureHandle)>,
@@ -57,6 +58,7 @@ impl LauncherApp {
             remap_target: None,
             nav_held: HashMap::new(),
             had_focus: true,
+            lost_focus_at: None,
             focus_cooldown_until: None,
             steam_paths,
             cover: None,
@@ -89,6 +91,43 @@ impl LauncherApp {
             }
         }
     }
+
+    fn refresh_games_after_resume(&mut self) {
+        let selected_key = self
+            .games
+            .get(self.selected)
+            .map(|g| (g.app_id, g.name.clone()));
+
+        self.games = steam::scan_games_with_paths(&self.steam_paths);
+
+        if self.games.is_empty() {
+            self.selected = 0;
+        } else if let Some((app_id, name)) = selected_key {
+            let mut new_selected = None;
+
+            if let Some(id) = app_id {
+                new_selected = self.games.iter().position(|g| g.app_id == Some(id));
+            }
+
+            if new_selected.is_none() {
+                new_selected = self.games.iter().position(|g| g.name == name);
+            }
+
+            self.selected = new_selected.unwrap_or_else(|| self.selected.min(self.games.len() - 1));
+        } else {
+            self.selected = self.selected.min(self.games.len() - 1);
+        }
+
+        self.scroll_offset = self.selected as f32;
+        self.select_anim_target = Some(self.selected);
+        self.select_anim = 1.0;
+
+        // Force assets to refresh for the selected game after resume.
+        self.cover_loaded_for = None;
+        self.cover_debounce_for = None;
+        self.cover_debounce_until = None;
+        self.icons_loaded = false;
+    }
 }
 
 impl eframe::App for LauncherApp {
@@ -100,10 +139,22 @@ impl eframe::App for LauncherApp {
         if has_focus {
             ctx.request_repaint();
             if !self.had_focus {
+                let should_refresh = self
+                    .lost_focus_at
+                    .take()
+                    .map(|lost_at| Instant::now().duration_since(lost_at) >= Duration::from_secs(5))
+                    .unwrap_or(false);
+
+                if should_refresh {
+                    self.refresh_games_after_resume();
+                }
                 self.focus_cooldown_until = Some(Instant::now());
                 self.nav_held.clear();
             }
         } else {
+            if self.had_focus {
+                self.lost_focus_at = Some(Instant::now());
+            }
             self.nav_held.clear();
         }
         self.had_focus = has_focus;
