@@ -19,6 +19,7 @@ pub const FOCUS_COOLDOWN_MS: u128 = 500;
 pub enum ControllerAction {
     Up,
     Down,
+    Right,
     Launch,
     Quit,
 }

@@ -1,12 +1,29 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use serde::Deserialize;
+
 pub struct Game {
     pub name: String,
     pub path: PathBuf,
     pub app_id: Option<u32>,
     pub last_played: u64,
     pub playtime_minutes: u32,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct AchievementItem {
+    pub api_name: String,
+    pub unlocked: Option<bool>,
+    pub unlock_time: Option<u64>,
+    pub global_percent: Option<f32>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct AchievementSummary {
+    pub unlocked: Option<u32>,
+    pub total: u32,
+    pub items: Vec<AchievementItem>,
 }
 
 pub fn find_steam_paths() -> Vec<PathBuf> {
@@ -278,4 +295,200 @@ fn parse_userdata(steam_paths: &[PathBuf]) -> (HashMap<u32, u64>, HashMap<u32, u
         }
     }
     (last_played, playtime)
+}
+
+#[derive(Deserialize)]
+struct GlobalPercentResponse {
+    achievementpercentages: Option<GlobalPercentContainer>,
+}
+
+#[derive(Deserialize)]
+struct GlobalPercentContainer {
+    achievements: Option<Vec<GlobalPercentItem>>,
+}
+
+#[derive(Deserialize)]
+struct GlobalPercentItem {
+    name: String,
+    percent: f32,
+}
+
+#[derive(Deserialize)]
+struct PlayerAchievementsResponse {
+    playerstats: Option<PlayerStatsContainer>,
+}
+
+#[derive(Deserialize)]
+struct PlayerStatsContainer {
+    achievements: Option<Vec<PlayerAchievementItem>>,
+}
+
+#[derive(Deserialize)]
+struct PlayerAchievementItem {
+    apiname: String,
+    achieved: u8,
+    unlocktime: Option<u64>,
+}
+
+pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<AchievementSummary> {
+    let mut items_map: HashMap<String, AchievementItem> = HashMap::new();
+
+    let global_url = format!(
+        "https://api.steampowered.com/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/?gameid={}",
+        app_id
+    );
+
+    if let Ok(resp) = ureq::get(&global_url).call() {
+        if resp.status() == 200 {
+            if let Ok(body) = resp.into_string() {
+                if let Ok(parsed) = serde_json::from_str::<GlobalPercentResponse>(&body) {
+                    if let Some(list) = parsed
+                        .achievementpercentages
+                        .and_then(|x| x.achievements)
+                    {
+                        for item in list {
+                            items_map.insert(
+                                item.name.clone(),
+                                AchievementItem {
+                                    api_name: item.name,
+                                    unlocked: None,
+                                    unlock_time: None,
+                                    global_percent: Some(item.percent),
+                                },
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut unlocked_count: Option<u32> = None;
+    let steam_id = find_most_recent_steam_id(steam_paths);
+    let api_key = std::env::var("STEAM_WEB_API_KEY").ok();
+
+    if let (Some(steam_id), Some(api_key)) = (steam_id, api_key) {
+        let player_url = format!(
+            "https://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v1/?steamid={}&appid={}&key={}",
+            steam_id, app_id, api_key
+        );
+
+        if let Ok(resp) = ureq::get(&player_url).call() {
+            if resp.status() == 200 {
+                if let Ok(body) = resp.into_string() {
+                    if let Ok(parsed) = serde_json::from_str::<PlayerAchievementsResponse>(&body)
+                    {
+                        if let Some(player_items) = parsed.playerstats.and_then(|x| x.achievements)
+                        {
+                            let mut unlocked_local = 0_u32;
+                            for pa in player_items {
+                                let achieved = pa.achieved != 0;
+                                if achieved {
+                                    unlocked_local += 1;
+                                }
+                                let e = items_map
+                                    .entry(pa.apiname.clone())
+                                    .or_insert_with(|| AchievementItem {
+                                        api_name: pa.apiname.clone(),
+                                        unlocked: None,
+                                        unlock_time: None,
+                                        global_percent: None,
+                                    });
+                                e.unlocked = Some(achieved);
+                                e.unlock_time = pa.unlocktime;
+                            }
+                            unlocked_count = Some(unlocked_local);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if items_map.is_empty() {
+        return None;
+    }
+
+    let mut items: Vec<AchievementItem> = items_map.into_values().collect();
+    items.sort_by(|a, b| match (a.unlocked, b.unlocked) {
+        (Some(false), Some(true)) => std::cmp::Ordering::Less,
+        (Some(true), Some(false)) => std::cmp::Ordering::Greater,
+        _ => {
+            let ap = a.global_percent.unwrap_or(101.0);
+            let bp = b.global_percent.unwrap_or(101.0);
+            ap.partial_cmp(&bp)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.api_name.cmp(&b.api_name))
+        }
+    });
+
+    Some(AchievementSummary {
+        unlocked: unlocked_count,
+        total: items.len() as u32,
+        items,
+    })
+}
+
+fn find_most_recent_steam_id(steam_paths: &[PathBuf]) -> Option<String> {
+    let kv_re = regex::Regex::new(r#""([^"]+)"\s+"([^"]*)""#).ok()?;
+
+    for steam_root in steam_paths {
+        let loginusers = steam_root.join("config").join("loginusers.vdf");
+        let Ok(content) = std::fs::read_to_string(&loginusers) else {
+            continue;
+        };
+
+        let mut depth: i32 = 0;
+        let mut current_id: Option<String> = None;
+        let mut expect_user_block = false;
+        let mut first_id: Option<String> = None;
+
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed == "{" {
+                if expect_user_block {
+                    depth = 1;
+                    expect_user_block = false;
+                } else if depth >= 1 {
+                    depth += 1;
+                }
+                continue;
+            }
+            if trimmed == "}" {
+                if depth > 1 {
+                    depth -= 1;
+                } else if depth == 1 {
+                    depth = 0;
+                    current_id = None;
+                }
+                continue;
+            }
+
+            if depth == 0 {
+                let t = trimmed.trim_matches('"');
+                if t.len() == 17 && t.chars().all(|c| c.is_ascii_digit()) {
+                    if first_id.is_none() {
+                        first_id = Some(t.to_string());
+                    }
+                    current_id = Some(t.to_string());
+                    expect_user_block = true;
+                }
+            } else if depth == 1 {
+                if let Some(cap) = kv_re.captures(trimmed) {
+                    let key = cap.get(1).map(|m| m.as_str()).unwrap_or("");
+                    let val = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+                    if key.eq_ignore_ascii_case("MostRecent") && val == "1" {
+                        if let Some(id) = current_id.clone() {
+                            return Some(id);
+                        }
+                    }
+                }
+            }
+        }
+
+        if first_id.is_some() {
+            return first_id;
+        }
+    }
+    None
 }

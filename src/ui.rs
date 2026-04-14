@@ -93,6 +93,7 @@ pub fn draw_game_list(
     scroll_offset: f32,
     game_icons: &std::collections::HashMap<u32, egui::TextureHandle>,
     loading_index: Option<usize>,
+    achievement_summary_for_selected: Option<&crate::steam::AchievementSummary>,
 ) {
     let panel_rect = ui.available_rect_before_wrap();
     let padding = 50.0;
@@ -181,7 +182,7 @@ pub fn draw_game_list(
         }
         let galley = painter.layout_no_wrap(display_name.clone(), font_id.clone(), text_color);
 
-        // Playtime string
+        // Playtime and achievement progress
         let playtime_str = if g.playtime_minutes >= 60 {
             let hours = g.playtime_minutes as f32 / 60.0;
             let s = format!("{:.1}", hours);
@@ -193,12 +194,30 @@ pub fn draw_game_list(
             String::new()
         };
 
+        let mut meta_parts: Vec<String> = Vec::new();
+        if !playtime_str.is_empty() {
+            meta_parts.push(playtime_str);
+        }
+        if is_selected {
+            if let Some(summary) = achievement_summary_for_selected {
+                if summary.total > 0 {
+                    let ach_text = if let Some(u) = summary.unlocked {
+                        format!("{}/{} achievements", u, summary.total)
+                    } else {
+                        format!("--/{} achievements", summary.total)
+                    };
+                    meta_parts.push(ach_text);
+                }
+            }
+        }
+        let meta_str = meta_parts.join("  •  ");
+
         // Measure playtime galley (only shown when selected)
         let pt_font_size = font_size * 0.5;
         let pt_font = egui::FontId::proportional(pt_font_size);
         let pt_color = egui::Color32::from_rgba_unmultiplied(180, 180, 190, 140);
-        let pt_galley = if is_selected && !playtime_str.is_empty() {
-            Some(painter.layout_no_wrap(playtime_str, pt_font, pt_color))
+        let pt_galley = if is_selected && !meta_str.is_empty() {
+            Some(painter.layout_no_wrap(meta_str, pt_font, pt_color))
         } else {
             None
         };
@@ -256,6 +275,122 @@ pub fn draw_game_list(
         if let Some(pt_g) = pt_galley {
             let pt_y = text_y + galley.size().y + 2.0;
             painter.galley(egui::pos2(text_x, pt_y), pt_g);
+        }
+    }
+}
+
+pub fn draw_achievement_panel(
+    ui: &mut egui::Ui,
+    game_name: &str,
+    summary: Option<&crate::steam::AchievementSummary>,
+    loading: bool,
+    selected_index: usize,
+) {
+    let panel_rect = ui.available_rect_before_wrap();
+    let panel_w = (panel_rect.width() * 0.42).clamp(420.0, 760.0);
+    let rect = egui::Rect::from_min_max(
+        egui::pos2(panel_rect.max.x - panel_w - 24.0, panel_rect.min.y + 24.0),
+        egui::pos2(panel_rect.max.x - 24.0, panel_rect.max.y - 72.0),
+    );
+
+    let painter = ui.painter();
+    painter.rect_filled(
+        rect,
+        egui::Rounding::same(18.0),
+        egui::Color32::from_rgba_unmultiplied(16, 18, 24, 230),
+    );
+    painter.rect_stroke(
+        rect,
+        egui::Rounding::same(18.0),
+        egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 28)),
+    );
+
+    let mut child = ui.child_ui(rect.shrink2(egui::vec2(16.0, 14.0)), *ui.layout());
+    let title_font = egui::FontId::new(24.0, egui::FontFamily::Name("Bold".into()));
+    let sub_font = egui::FontId::proportional(15.0);
+
+    child.label(
+        egui::RichText::new(format!("{} - Achievements", game_name))
+            .font(title_font)
+            .color(egui::Color32::from_rgb(240, 242, 248)),
+    );
+
+    match summary {
+        Some(s) => {
+            let progress = if let Some(u) = s.unlocked {
+                format!("Unlocked {} / {}", u, s.total)
+            } else {
+                format!("Unlocked -- / {}", s.total)
+            };
+            child.label(
+                egui::RichText::new(progress)
+                    .font(sub_font.clone())
+                    .color(egui::Color32::from_rgba_unmultiplied(180, 190, 210, 200)),
+            );
+            child.add_space(10.0);
+
+            egui::ScrollArea::vertical()
+                .max_height(rect.height() - 96.0)
+                .show(&mut child, |ui| {
+                    for (idx, item) in s.items.iter().enumerate() {
+                        let is_selected = idx == selected_index;
+                        let bg = if is_selected {
+                            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 20)
+                        } else {
+                            egui::Color32::TRANSPARENT
+                        };
+
+                        let row_rect = ui.available_rect_before_wrap();
+                        let row_h = 30.0;
+                        let row = egui::Rect::from_min_size(
+                            egui::pos2(row_rect.min.x, row_rect.min.y),
+                            egui::vec2(row_rect.width(), row_h),
+                        );
+                        ui.painter().rect_filled(row, egui::Rounding::same(6.0), bg);
+
+                        ui.allocate_ui_at_rect(row.shrink2(egui::vec2(8.0, 4.0)), |ui| {
+                            ui.horizontal(|ui| {
+                                let state = match item.unlocked {
+                                    Some(true) => "[x]",
+                                    Some(false) => "[ ]",
+                                    None => "[?]",
+                                };
+                                let mut line = format!("{} {}", state, item.api_name);
+                                if let Some(p) = item.global_percent {
+                                    line.push_str(&format!("  ({:.1}%)", p));
+                                }
+                                ui.label(
+                                    egui::RichText::new(line)
+                                        .font(egui::FontId::proportional(15.0))
+                                        .color(egui::Color32::from_rgb(220, 224, 236)),
+                                );
+                            });
+                        });
+
+                        ui.add_space(4.0);
+                    }
+                });
+        }
+        None if loading => {
+            child.add_space(16.0);
+            child.label(
+                egui::RichText::new("Loading achievements...")
+                    .font(sub_font)
+                    .color(egui::Color32::from_rgba_unmultiplied(180, 190, 210, 200)),
+            );
+        }
+        None => {
+            child.add_space(16.0);
+            child.label(
+                egui::RichText::new("No achievement data available")
+                    .font(sub_font)
+                    .color(egui::Color32::from_rgba_unmultiplied(180, 190, 210, 200)),
+            );
+            child.label(
+                egui::RichText::new("Tip: set STEAM_WEB_API_KEY for unlocked status")
+                    .font(egui::FontId::proportional(13.0))
+                    .color(egui::Color32::from_rgba_unmultiplied(150, 160, 180, 180)),
+            );
         }
     }
 }

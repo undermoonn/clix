@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "windows")]
-use winapi::um::xinput::{XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B, XINPUT_GAMEPAD_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_UP};
+use winapi::um::xinput::{XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B, XINPUT_GAMEPAD_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_RIGHT, XINPUT_GAMEPAD_DPAD_UP};
 #[cfg(target_os = "windows")]
 use winapi::shared::minwindef::{BOOL, DWORD, LPARAM, TRUE};
 #[cfg(target_os = "windows")]
@@ -244,6 +244,11 @@ pub struct LauncherApp {
     game_icons: HashMap<u32, egui::TextureHandle>,
     icons_loaded: bool,
     launch_state: Option<LaunchState>,
+    achievement_cache: HashMap<u32, steam::AchievementSummary>,
+    achievement_pending: Arc<Mutex<Vec<(u32, Option<steam::AchievementSummary>)>>>,
+    achievement_loading: HashSet<u32>,
+    show_achievement_panel: bool,
+    achievement_selected: usize,
 }
 
 impl LauncherApp {
@@ -280,6 +285,49 @@ impl LauncherApp {
             game_icons: HashMap::new(),
             icons_loaded: false,
             launch_state: None,
+            achievement_cache: HashMap::new(),
+            achievement_pending: Arc::new(Mutex::new(Vec::new())),
+            achievement_loading: HashSet::new(),
+            show_achievement_panel: false,
+            achievement_selected: 0,
+        }
+    }
+
+    fn ensure_achievement_load_for_selected(&mut self, ctx: &egui::Context) {
+        let Some(app_id) = self.games.get(self.selected).and_then(|g| g.app_id) else {
+            return;
+        };
+
+        if self.achievement_cache.contains_key(&app_id)
+            || self.achievement_loading.contains(&app_id)
+        {
+            return;
+        }
+
+        self.achievement_loading.insert(app_id);
+        let pending = Arc::clone(&self.achievement_pending);
+        let paths = self.steam_paths.clone();
+        let ctx_clone = ctx.clone();
+
+        std::thread::spawn(move || {
+            let data = steam::load_achievement_summary(app_id, &paths);
+            if let Ok(mut lock) = pending.lock() {
+                lock.push((app_id, data));
+            }
+            ctx_clone.request_repaint();
+        });
+    }
+
+    fn drain_achievement_results(&mut self) {
+        let Ok(mut lock) = self.achievement_pending.lock() else {
+            return;
+        };
+
+        for (app_id, summary) in lock.drain(..) {
+            self.achievement_loading.remove(&app_id);
+            if let Some(summary) = summary {
+                self.achievement_cache.insert(app_id, summary);
+            }
         }
     }
 
@@ -520,6 +568,9 @@ impl eframe::App for LauncherApp {
                             if (buttons & XINPUT_GAMEPAD_DPAD_DOWN) != 0 {
                                 raw_held.insert("down");
                             }
+                            if (buttons & XINPUT_GAMEPAD_DPAD_RIGHT) != 0 {
+                                raw_held.insert("right");
+                            }
                             if (buttons & XINPUT_GAMEPAD_A) != 0 {
                                 raw_held.insert("launch");
                             }
@@ -547,6 +598,9 @@ impl eframe::App for LauncherApp {
                                                 }
                                                 "launch" => {
                                                     raw_held.insert("launch");
+                                                }
+                                                "right" => {
+                                                    raw_held.insert("right");
                                                 }
                                                 "quit" => {
                                                     raw_held.insert("quit");
@@ -627,6 +681,9 @@ impl eframe::App for LauncherApp {
                                                 "launch" => {
                                                     raw_held.insert("launch");
                                                 }
+                                                "right" => {
+                                                    raw_held.insert("right");
+                                                }
                                                 "quit" => {
                                                     raw_held.insert("quit");
                                                 }
@@ -666,6 +723,22 @@ impl eframe::App for LauncherApp {
                     }
                 }
             }
+
+            if ctx.input(|i| i.key_down(egui::Key::ArrowUp)) {
+                raw_held.insert("up");
+            }
+            if ctx.input(|i| i.key_down(egui::Key::ArrowDown)) {
+                raw_held.insert("down");
+            }
+            if ctx.input(|i| i.key_down(egui::Key::ArrowRight)) {
+                raw_held.insert("right");
+            }
+            if ctx.input(|i| i.key_down(egui::Key::Enter)) {
+                raw_held.insert("launch");
+            }
+            if ctx.input(|i| i.key_down(egui::Key::Escape)) {
+                raw_held.insert("quit");
+            }
         } // end if process_input
 
         // Track nav direction for hint bar icon
@@ -681,7 +754,7 @@ impl eframe::App for LauncherApp {
         let now = Instant::now();
         self.nav_held.retain(|k, _| raw_held.contains(k));
 
-        for action_name in &["up", "down", "launch", "quit"] {
+        for action_name in &["up", "down", "right", "launch", "quit"] {
             if raw_held.contains(action_name) {
                 let should_fire = if let Some(state) = self.nav_held.get_mut(action_name) {
                     if !state.past_initial {
@@ -728,6 +801,7 @@ impl eframe::App for LauncherApp {
                     match *action_name {
                         "up" => actions.push(ControllerAction::Up),
                         "down" => actions.push(ControllerAction::Down),
+                        "right" => actions.push(ControllerAction::Right),
                         "launch" => actions.push(ControllerAction::Launch),
                         "quit" => actions.push(ControllerAction::Quit),
                         _ => {}
@@ -738,6 +812,34 @@ impl eframe::App for LauncherApp {
 
         // Apply actions
         for act in &actions {
+            if self.show_achievement_panel {
+                match act {
+                    ControllerAction::Up => {
+                        if self.achievement_selected > 0 {
+                            self.achievement_selected -= 1;
+                        }
+                    }
+                    ControllerAction::Down => {
+                        let max_len = self
+                            .games
+                            .get(self.selected)
+                            .and_then(|g| g.app_id)
+                            .and_then(|id| self.achievement_cache.get(&id))
+                            .map(|s| s.items.len())
+                            .unwrap_or(0);
+                        if self.achievement_selected + 1 < max_len {
+                            self.achievement_selected += 1;
+                        }
+                    }
+                    ControllerAction::Quit => {
+                        self.show_achievement_panel = false;
+                        self.achievement_selected = 0;
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+
             match act {
                 ControllerAction::Up => {
                     if self.selected > 0 {
@@ -751,6 +853,10 @@ impl eframe::App for LauncherApp {
                         self.cover_nav_dir = 1.0;
                     }
                 }
+                ControllerAction::Right => {
+                    self.show_achievement_panel = true;
+                    self.achievement_selected = 0;
+                }
                 ControllerAction::Launch => {
                     self.launch_selected();
                 }
@@ -761,6 +867,7 @@ impl eframe::App for LauncherApp {
         }
 
         self.tick_launch_progress(ctx);
+        self.drain_achievement_results();
 
         // Cover loading (async with 300ms debounce)
         if self.cover_loaded_for != Some(self.selected) {
@@ -869,6 +976,15 @@ impl eframe::App for LauncherApp {
             }
         }
 
+        self.ensure_achievement_load_for_selected(ctx);
+
+        let selected_app_id = self.games.get(self.selected).and_then(|g| g.app_id);
+        let selected_achievement_summary =
+            selected_app_id.and_then(|id| self.achievement_cache.get(&id));
+        let selected_achievements_loading = selected_app_id
+            .map(|id| self.achievement_loading.contains(&id))
+            .unwrap_or(false);
+
         // Draw UI
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(egui::Color32::TRANSPARENT))
@@ -889,7 +1005,20 @@ impl eframe::App for LauncherApp {
                     self.scroll_offset,
                     &self.game_icons,
                     self.launch_state.as_ref().map(|s| s.game_index),
+                    selected_achievement_summary,
                 );
+
+                if self.show_achievement_panel {
+                    if let Some(game) = self.games.get(self.selected) {
+                        ui::draw_achievement_panel(
+                            ui,
+                            &game.name,
+                            selected_achievement_summary,
+                            selected_achievements_loading,
+                            self.achievement_selected,
+                        );
+                    }
+                }
 
                 if let Some(icons) = &self.hint_icons {
                     ui::draw_hint_bar(ui, icons);
