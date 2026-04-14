@@ -158,7 +158,11 @@ pub fn draw_game_list(
             text_x = left_x + icon_size + icon_gap;
         }
 
-        let font_id = egui::FontId::proportional(font_size);
+        let font_id = if offset == 0 {
+            egui::FontId::new(font_size, egui::FontFamily::Name("Bold".into()))
+        } else {
+            egui::FontId::proportional(font_size)
+        };
         let galley = painter.layout_no_wrap(g.name.clone(), font_id.clone(), text_color);
         let text_y = y_pos - galley.size().y * 0.5;
 
@@ -170,7 +174,7 @@ pub fn draw_game_list(
                 egui::pos2(left_x - bar_pad_x, y_pos - bar_h * 0.5),
                 egui::vec2((text_x - left_x) + galley.size().x + bar_pad_x * 2.0, bar_h),
             );
-            let glow_alpha = (40.0 * select_anim) as u8;
+            let glow_alpha = (20.0 * select_anim) as u8;
             let glow_color = egui::Color32::from_rgba_unmultiplied(255, 255, 255, glow_alpha);
             painter.rect_filled(bar_rect, egui::Rounding::same(4.0), glow_color);
         }
@@ -187,21 +191,26 @@ pub fn draw_game_list(
             }
         }
 
-        // Text shadow
-        let shadow_alpha = if offset == 0 {
+        // Text outline (2-pass for smooth stroke)
+        let outline_alpha = if offset == 0 {
             200
         } else {
             (120.0 * alpha_factor) as u8
         };
-        let shadow_color = egui::Color32::from_rgba_unmultiplied(0, 0, 0, shadow_alpha);
-        let shadow_galley = painter.layout_no_wrap(g.name.clone(), font_id, shadow_color);
+        let outline_color = egui::Color32::from_rgba_unmultiplied(0, 0, 0, outline_alpha);
+        let outline_galley = painter.layout_no_wrap(g.name.clone(), font_id, outline_color);
+        let d = 0.8_f32;
         for off in [
-            egui::vec2(1.0, 1.0),
-            egui::vec2(-1.0, 1.0),
-            egui::vec2(1.0, -1.0),
-            egui::vec2(-1.0, -1.0),
+            egui::vec2(d, 0.0),
+            egui::vec2(-d, 0.0),
+            egui::vec2(0.0, d),
+            egui::vec2(0.0, -d),
+            egui::vec2(d, d),
+            egui::vec2(-d, d),
+            egui::vec2(d, -d),
+            egui::vec2(-d, -d),
         ] {
-            painter.galley(egui::pos2(text_x, text_y) + off, shadow_galley.clone());
+            painter.galley(egui::pos2(text_x, text_y) + off, outline_galley.clone());
         }
 
         // Foreground text

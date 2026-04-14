@@ -16,25 +16,29 @@ fn main() {
         options,
         Box::new(|cc| {
             let mut fonts = egui::FontDefinitions::default();
-            let font_path = std::path::Path::new("C:\\Windows\\Fonts\\msyh.ttc");
-            if font_path.exists() {
-                if let Ok(font_data) = std::fs::read(font_path) {
-                    fonts.font_data.insert(
-                        "msyh".to_owned(),
-                        egui::FontData::from_owned(font_data),
-                    );
-                    fonts
-                        .families
-                        .entry(egui::FontFamily::Proportional)
-                        .or_default()
-                        .insert(0, "msyh".to_owned());
-                    fonts
-                        .families
-                        .entry(egui::FontFamily::Monospace)
-                        .or_default()
-                        .push("msyh".to_owned());
-                }
-            }
+            fonts.font_data.insert(
+                "noto_sans_sc".to_owned(),
+                egui::FontData::from_static(include_bytes!("fonts/NotoSansSC-Regular.otf")),
+            );
+            fonts.font_data.insert(
+                "noto_sans_sc_bold".to_owned(),
+                egui::FontData::from_static(include_bytes!("fonts/NotoSansSC-Bold.otf")),
+            );
+            fonts
+                .families
+                .entry(egui::FontFamily::Proportional)
+                .or_default()
+                .insert(0, "noto_sans_sc".to_owned());
+            fonts
+                .families
+                .entry(egui::FontFamily::Monospace)
+                .or_default()
+                .push("noto_sans_sc".to_owned());
+            fonts
+                .families
+                .entry(egui::FontFamily::Name("Bold".into()))
+                .or_default()
+                .push("noto_sans_sc_bold".to_owned());
             cc.egui_ctx.set_fonts(fonts);
             Box::new(app::LauncherApp::new())
         }),
