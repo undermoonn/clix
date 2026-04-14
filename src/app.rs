@@ -1,17 +1,219 @@
 use eframe::egui;
 use gilrs::{EventType, Gilrs};
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "windows")]
 use winapi::um::xinput::{XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B, XINPUT_GAMEPAD_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_UP};
+#[cfg(target_os = "windows")]
+use winapi::shared::minwindef::{BOOL, DWORD, LPARAM, TRUE};
+#[cfg(target_os = "windows")]
+use winapi::shared::windef::HWND;
+#[cfg(target_os = "windows")]
+use winapi::um::handleapi::CloseHandle;
+#[cfg(target_os = "windows")]
+use winapi::um::processthreadsapi::{GetCurrentProcessId, OpenProcess};
+#[cfg(target_os = "windows")]
+use winapi::um::psapi::{EnumProcesses, GetModuleFileNameExW};
+#[cfg(target_os = "windows")]
+use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+#[cfg(target_os = "windows")]
+use winapi::um::winuser::{
+    EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
+    SetForegroundWindow, ShowWindow, SW_RESTORE,
+};
 
 use crate::cover;
 use crate::input::*;
 use crate::steam::{self, Game};
 use crate::ui;
+
+struct LaunchState {
+    game_index: usize,
+    game_name: String,
+    started_at: Instant,
+    #[cfg(target_os = "windows")]
+    baseline_pids: HashSet<u32>,
+    #[cfg(target_os = "windows")]
+    baseline_hwnds: HashSet<isize>,
+    #[cfg(target_os = "windows")]
+    target_path: Option<std::path::PathBuf>,
+    #[cfg(target_os = "windows")]
+    last_keep_foreground_at: Instant,
+}
+
+#[cfg(target_os = "windows")]
+fn normalize_windows_path(path: &Path) -> String {
+    path.to_string_lossy().replace('/', "\\").to_ascii_lowercase()
+}
+
+#[cfg(target_os = "windows")]
+fn process_image_path(pid: u32) -> Option<std::path::PathBuf> {
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid as DWORD);
+        if handle.is_null() {
+            return None;
+        }
+        let mut buf = vec![0_u16; 1024];
+        let len = GetModuleFileNameExW(
+            handle,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr(),
+            buf.len() as DWORD,
+        );
+        CloseHandle(handle);
+
+        if len == 0 {
+            return None;
+        }
+
+        let s = String::from_utf16_lossy(&buf[..len as usize]);
+        Some(std::path::PathBuf::from(s))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn collect_process_ids() -> HashSet<u32> {
+    unsafe {
+        let mut pids = vec![0_u32; 8192];
+        let mut needed_bytes: DWORD = 0;
+
+        if EnumProcesses(
+            pids.as_mut_ptr(),
+            (pids.len() * std::mem::size_of::<u32>()) as DWORD,
+            &mut needed_bytes,
+        ) == 0
+        {
+            return HashSet::new();
+        }
+
+        let count = (needed_bytes as usize) / std::mem::size_of::<u32>();
+        pids.into_iter()
+            .take(count)
+            .filter(|pid| *pid != 0)
+            .collect::<HashSet<u32>>()
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn collect_visible_windows() -> Vec<(HWND, u32)> {
+    struct WindowCollector {
+        windows: Vec<(HWND, u32)>,
+    }
+
+    unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        if IsWindowVisible(hwnd) == 0 {
+            return TRUE;
+        }
+        if GetWindowTextLengthW(hwnd) <= 0 {
+            return TRUE;
+        }
+
+        let mut pid: DWORD = 0;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        if pid == 0 {
+            return TRUE;
+        }
+
+        let collector = &mut *(lparam as *mut WindowCollector);
+        collector.windows.push((hwnd, pid as u32));
+        TRUE
+    }
+
+    let mut collector = WindowCollector { windows: Vec::new() };
+    unsafe {
+        EnumWindows(
+            Some(enum_windows_proc),
+            &mut collector as *mut WindowCollector as LPARAM,
+        );
+    }
+    collector.windows
+}
+
+#[cfg(target_os = "windows")]
+fn window_title(hwnd: HWND) -> String {
+    unsafe {
+        let len = GetWindowTextLengthW(hwnd);
+        if len <= 0 {
+            return String::new();
+        }
+        let mut buf = vec![0_u16; (len as usize) + 1];
+        let copied = GetWindowTextW(hwnd, buf.as_mut_ptr(), len + 1);
+        if copied <= 0 {
+            return String::new();
+        }
+        String::from_utf16_lossy(&buf[..copied as usize])
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn bring_window_to_foreground(hwnd: HWND) {
+    unsafe {
+        ShowWindow(hwnd, SW_RESTORE);
+        SetForegroundWindow(hwnd);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn bring_current_app_to_foreground() {
+    let current_pid = unsafe { GetCurrentProcessId() } as u32;
+    for (hwnd, pid) in collect_visible_windows().into_iter() {
+        if pid == current_pid {
+            bring_window_to_foreground(hwnd);
+            break;
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn detect_launched_window(
+    baseline_pids: &HashSet<u32>,
+    baseline_hwnds: &HashSet<isize>,
+    target_path: Option<&Path>,
+    game_name: &str,
+) -> Option<HWND> {
+    let target_norm = target_path.map(normalize_windows_path);
+    let game_name_lower = game_name.to_ascii_lowercase();
+
+    for (hwnd, pid) in collect_visible_windows().into_iter() {
+        let hwnd_key = hwnd as isize;
+        let is_new_pid = !baseline_pids.contains(&pid);
+        let is_new_window = !baseline_hwnds.contains(&hwnd_key);
+
+        if !is_new_pid && !is_new_window {
+            continue;
+        }
+
+        let title = window_title(hwnd).to_ascii_lowercase();
+        let title_matches = !game_name_lower.is_empty() && title.contains(&game_name_lower);
+
+        if let Some(target_norm) = &target_norm {
+            if let Some(exe_path) = process_image_path(pid) {
+                let exe_norm = normalize_windows_path(&exe_path);
+                if exe_norm.starts_with(target_norm) {
+                    return Some(hwnd);
+                }
+            }
+            if title_matches {
+                return Some(hwnd);
+            }
+            if is_new_pid && !title.is_empty() {
+                return Some(hwnd);
+            }
+        } else {
+            return Some(hwnd);
+        }
+
+        if is_new_window && title_matches {
+            return Some(hwnd);
+        }
+    }
+
+    None
+}
 
 pub struct LauncherApp {
     games: Vec<Game>,
@@ -41,6 +243,7 @@ pub struct LauncherApp {
     nav_input_dir: i8,
     game_icons: HashMap<u32, egui::TextureHandle>,
     icons_loaded: bool,
+    launch_state: Option<LaunchState>,
 }
 
 impl LauncherApp {
@@ -76,19 +279,119 @@ impl LauncherApp {
             nav_input_dir: 0,
             game_icons: HashMap::new(),
             icons_loaded: false,
+            launch_state: None,
         }
     }
 
-    fn launch_selected(&self) {
+    fn launch_selected(&mut self) {
         if let Some(g) = self.games.get(self.selected) {
-            if let Some(app_id) = g.app_id {
-                let url = format!("steam://rungameid/{}", app_id);
-                let _ = Command::new("cmd")
-                    .args(["/C", "start", "", &url])
-                    .spawn();
+            let target_path = g.path.clone();
+            let game_name = g.name.clone();
+            #[cfg(target_os = "windows")]
+            let baseline_pids = collect_process_ids();
+            #[cfg(target_os = "windows")]
+            let baseline_hwnds: HashSet<isize> = collect_visible_windows()
+                .into_iter()
+                .map(|(hwnd, _)| hwnd as isize)
+                .collect();
+
+            let launched = if let Some(app_id) = g.app_id {
+                #[cfg(target_os = "windows")]
+                {
+                    let steam_exe = self
+                        .steam_paths
+                        .iter()
+                        .map(|p| p.join("steam.exe"))
+                        .find(|p| p.exists());
+
+                    if let Some(steam_exe) = steam_exe {
+                        Command::new(steam_exe)
+                            .args(["-applaunch", &app_id.to_string()])
+                            .spawn()
+                            .is_ok()
+                    } else {
+                        let url = format!("steam://rungameid/{}", app_id);
+                        Command::new("cmd")
+                            .args(["/C", "start", "", &url])
+                            .spawn()
+                            .is_ok()
+                    }
+                }
+
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let url = format!("steam://rungameid/{}", app_id);
+                    Command::new("sh")
+                        .args(["-c", &format!("xdg-open '{}'", url)])
+                        .spawn()
+                        .is_ok()
+                }
             } else {
-                let _ = Command::new(&g.path).spawn();
+                Command::new(&g.path).spawn().is_ok()
+            };
+
+            if !launched {
+                return;
             }
+
+            self.launch_state = Some(LaunchState {
+                game_index: self.selected,
+                game_name,
+                started_at: Instant::now(),
+                #[cfg(target_os = "windows")]
+                baseline_pids,
+                #[cfg(target_os = "windows")]
+                baseline_hwnds,
+                #[cfg(target_os = "windows")]
+                target_path: if target_path.exists() { Some(target_path) } else { None },
+                #[cfg(target_os = "windows")]
+                last_keep_foreground_at: Instant::now() - Duration::from_millis(400),
+            });
+        }
+    }
+
+    fn tick_launch_progress(&mut self, ctx: &egui::Context) {
+        let mut should_clear = false;
+
+        if let Some(state) = self.launch_state.as_mut() {
+            ctx.request_repaint();
+
+            #[cfg(target_os = "windows")]
+            {
+                let now = Instant::now();
+
+                if now.duration_since(state.last_keep_foreground_at) >= Duration::from_millis(250)
+                {
+                    bring_current_app_to_foreground();
+                    state.last_keep_foreground_at = now;
+                }
+
+                if let Some(hwnd) = detect_launched_window(
+                    &state.baseline_pids,
+                    &state.baseline_hwnds,
+                    state.target_path.as_deref(),
+                    &state.game_name,
+                )
+                {
+                    bring_window_to_foreground(hwnd);
+                    should_clear = true;
+                }
+
+                if now.duration_since(state.started_at) >= Duration::from_secs(25) {
+                    should_clear = true;
+                }
+            }
+
+            #[cfg(not(target_os = "windows"))]
+            {
+                if Instant::now().duration_since(state.started_at) >= Duration::from_secs(5) {
+                    should_clear = true;
+                }
+            }
+        }
+
+        if should_clear {
+            self.launch_state = None;
         }
     }
 
@@ -170,7 +473,7 @@ impl eframe::App for LauncherApp {
             }
             None => false,
         };
-        let process_input = has_focus && !in_cooldown;
+        let process_input = has_focus && !in_cooldown && self.launch_state.is_none();
 
         let mut raw_held: HashSet<&'static str> = HashSet::new();
         let mut actions: Vec<ControllerAction> = Vec::new();
@@ -457,6 +760,8 @@ impl eframe::App for LauncherApp {
             }
         }
 
+        self.tick_launch_progress(ctx);
+
         // Cover loading (async with 300ms debounce)
         if self.cover_loaded_for != Some(self.selected) {
             // Only reset timer if selection actually changed since last debounce start
@@ -576,7 +881,15 @@ impl eframe::App for LauncherApp {
                     self.cover_nav_dir,
                 );
 
-                ui::draw_game_list(ui, &self.games, self.selected, self.select_anim, self.scroll_offset, &self.game_icons);
+                ui::draw_game_list(
+                    ui,
+                    &self.games,
+                    self.selected,
+                    self.select_anim,
+                    self.scroll_offset,
+                    &self.game_icons,
+                    self.launch_state.as_ref().map(|s| s.game_index),
+                );
 
                 if let Some(icons) = &self.hint_icons {
                     ui::draw_hint_bar(ui, icons);

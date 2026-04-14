@@ -92,6 +92,7 @@ pub fn draw_game_list(
     select_anim: f32,
     scroll_offset: f32,
     game_icons: &std::collections::HashMap<u32, egui::TextureHandle>,
+    loading_index: Option<usize>,
 ) {
     let panel_rect = ui.available_rect_before_wrap();
     let padding = 50.0;
@@ -174,7 +175,11 @@ pub fn draw_game_list(
         } else {
             egui::FontId::proportional(font_size)
         };
-        let galley = painter.layout_no_wrap(g.name.clone(), font_id.clone(), text_color);
+        let mut display_name = g.name.clone();
+        if loading_index == Some(i) {
+            display_name.push_str(" ...");
+        }
+        let galley = painter.layout_no_wrap(display_name.clone(), font_id.clone(), text_color);
 
         // Playtime string
         let playtime_str = if g.playtime_minutes >= 60 {
@@ -229,7 +234,7 @@ pub fn draw_game_list(
             (120.0 * alpha_factor) as u8
         };
         let outline_color = egui::Color32::from_rgba_unmultiplied(0, 0, 0, outline_alpha);
-        let outline_galley = painter.layout_no_wrap(g.name.clone(), font_id, outline_color);
+        let outline_galley = painter.layout_no_wrap(display_name, font_id, outline_color);
         let d = 0.8_f32;
         for off in [
             egui::vec2(d, 0.0),

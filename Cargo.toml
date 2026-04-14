@@ -16,5 +16,5 @@ image = { version = "0.24", default-features = false, features = ["jpeg", "png"]
 ureq = "2"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["winuser", "xinput"] }
+winapi = { version = "0.3", features = ["winuser", "xinput", "psapi", "processthreadsapi", "handleapi"] }
 libloading = "0.7"
