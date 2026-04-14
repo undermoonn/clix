@@ -295,6 +295,20 @@ pub fn draw_game_list(
     }
 }
 
+fn draw_achievement_icon(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    icon_rect: egui::Rect,
+    tint: egui::Color32,
+    reveal: f32,
+) {
+    let uv_rect = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+    let reveal = reveal.clamp(0.0, 1.0);
+    let alpha = ((tint.a() as f32) * reveal).round() as u8;
+    let fade_tint = egui::Color32::from_rgba_unmultiplied(tint.r(), tint.g(), tint.b(), alpha);
+    painter.image(texture.id(), icon_rect, uv_rect, fade_tint);
+}
+
 pub fn draw_achievement_panel(
     ui: &mut egui::Ui,
     game_name: &str,
@@ -308,6 +322,7 @@ pub fn draw_achievement_panel(
     game_select_anim: f32,
     active: bool,
     achievement_icon_cache: &std::collections::HashMap<String, egui::TextureHandle>,
+    achievement_icon_reveal: &std::collections::HashMap<String, f32>,
 ) {
     let panel_rect = ui.available_rect_before_wrap();
     let padding = 50.0;
@@ -415,21 +430,26 @@ pub fn draw_achievement_panel(
 
                 let text_x = game_text_x;
                 let icon_pos = egui::pos2(text_x - icon_size - 10.0, y_pos - icon_size * 0.5);
+                let icon_rect = egui::Rect::from_min_size(icon_pos, egui::vec2(icon_size, icon_size));
                 let icon_key = match item.unlocked {
                     Some(true) => item.icon_url.as_ref().or(item.icon_gray_url.as_ref()),
                     _ => item.icon_gray_url.as_ref().or(item.icon_url.as_ref()),
                 };
                 if let Some(tex) = icon_key.and_then(|k| achievement_icon_cache.get(k)) {
-                    list_painter.image(
-                        tex.id(),
-                        egui::Rect::from_min_size(icon_pos, egui::vec2(icon_size, icon_size)),
-                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    let reveal = icon_key
+                        .and_then(|k| achievement_icon_reveal.get(k).copied())
+                        .unwrap_or(1.0);
+                    draw_achievement_icon(
+                        &list_painter,
+                        tex,
+                        icon_rect,
                         egui::Color32::from_rgba_unmultiplied(
                             255,
                             255,
                             255,
                             (255.0 * alpha_factor * activity_alpha) as u8,
                         ),
+                        reveal,
                     );
                 } else {
                     let fill = match item.unlocked {
@@ -438,8 +458,8 @@ pub fn draw_achievement_panel(
                         None => egui::Color32::from_rgba_unmultiplied(90, 98, 112, (180.0 * alpha_factor * activity_alpha) as u8),
                     };
                     list_painter.rect_filled(
-                        egui::Rect::from_min_size(icon_pos, egui::vec2(icon_size, icon_size)),
-                        egui::Rounding::same(6.0),
+                        icon_rect,
+                        egui::Rounding::ZERO,
                         fill,
                     );
                 }

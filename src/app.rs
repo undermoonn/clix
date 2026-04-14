@@ -252,6 +252,7 @@ pub struct LauncherApp {
     achievement_icon_cache: HashMap<String, egui::TextureHandle>,
     achievement_icon_pending: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
     achievement_icon_loading: HashSet<String>,
+    achievement_icon_reveal: HashMap<String, f32>,
     show_achievement_panel: bool,
     achievement_selected: usize,
     achievement_select_anim: f32,
@@ -300,6 +301,7 @@ impl LauncherApp {
             achievement_icon_cache: HashMap::new(),
             achievement_icon_pending: Arc::new(Mutex::new(Vec::new())),
             achievement_icon_loading: HashSet::new(),
+            achievement_icon_reveal: HashMap::new(),
             show_achievement_panel: false,
             achievement_selected: 0,
             achievement_select_anim: 0.0,
@@ -425,6 +427,7 @@ impl LauncherApp {
             let label = format!("ach_icon_{:x}", hasher.finish());
 
             if let Some(tex) = cover::bytes_to_texture(ctx, &bytes, label) {
+                self.achievement_icon_reveal.insert(url.clone(), 0.0);
                 self.achievement_icon_cache.insert(url, tex);
             }
         }
@@ -1078,6 +1081,21 @@ impl eframe::App for LauncherApp {
             ctx.request_repaint();
         }
 
+        self.achievement_icon_reveal.retain(|_, progress| {
+            if *progress >= 0.999 {
+                return false;
+            }
+
+            const ACHIEVEMENT_ICON_FADE_IN_SECONDS: f32 = 0.3;
+            *progress = (*progress + dt / ACHIEVEMENT_ICON_FADE_IN_SECONDS).min(1.0);
+            if *progress < 0.999 {
+                ctx.request_repaint();
+                true
+            } else {
+                false
+            }
+        });
+
         // Smooth scroll animation (exponential decay towards target)
         let scroll_target = self.selected as f32;
         let scroll_diff = scroll_target - self.scroll_offset;
@@ -1190,6 +1208,7 @@ impl eframe::App for LauncherApp {
                             self.select_anim,
                             self.show_achievement_panel,
                             &self.achievement_icon_cache,
+                            &self.achievement_icon_reveal,
                         );
                     }
                 }
