@@ -12,6 +12,8 @@ use winapi::um::xinput::{XINPUT_STATE, XINPUT_VIBRATION};
 
 pub const NAV_INITIAL_DELAY_MS: u128 = 350;
 pub const NAV_REPEAT_INTERVAL_MS: u128 = 120;
+pub const NAV_REPEAT_ACCEL_AFTER_MS: u128 = 700;
+pub const NAV_REPEAT_INTERVAL_FAST_MS: u128 = 60;
 pub const FOCUS_COOLDOWN_MS: u128 = 500;
 
 pub enum ControllerAction {

@@ -338,13 +338,25 @@ impl eframe::App for LauncherApp {
                         } else {
                             false
                         }
-                    } else if now.duration_since(state.last_fire).as_millis()
-                        >= NAV_REPEAT_INTERVAL_MS
-                    {
-                        state.last_fire = now;
-                        true
                     } else {
-                        false
+                        let held_ms = now.duration_since(state.since).as_millis();
+                        let repeat_interval_ms = if *action_name == "up" || *action_name == "down"
+                        {
+                            if held_ms >= NAV_REPEAT_ACCEL_AFTER_MS {
+                                NAV_REPEAT_INTERVAL_FAST_MS
+                            } else {
+                                NAV_REPEAT_INTERVAL_MS
+                            }
+                        } else {
+                            NAV_REPEAT_INTERVAL_MS
+                        };
+
+                        if now.duration_since(state.last_fire).as_millis() >= repeat_interval_ms {
+                            state.last_fire = now;
+                            true
+                        } else {
+                            false
+                        }
                     }
                 } else {
                     self.nav_held.insert(
