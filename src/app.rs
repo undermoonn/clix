@@ -247,6 +247,7 @@ pub struct LauncherApp {
     achievement_cache: HashMap<u32, steam::AchievementSummary>,
     achievement_pending: Arc<Mutex<Vec<(u32, Option<steam::AchievementSummary>)>>>,
     achievement_loading: HashSet<u32>,
+    achievement_no_data: HashSet<u32>,
     show_achievement_panel: bool,
     achievement_selected: usize,
 }
@@ -288,6 +289,7 @@ impl LauncherApp {
             achievement_cache: HashMap::new(),
             achievement_pending: Arc::new(Mutex::new(Vec::new())),
             achievement_loading: HashSet::new(),
+            achievement_no_data: HashSet::new(),
             show_achievement_panel: false,
             achievement_selected: 0,
         }
@@ -300,6 +302,7 @@ impl LauncherApp {
 
         if self.achievement_cache.contains_key(&app_id)
             || self.achievement_loading.contains(&app_id)
+            || self.achievement_no_data.contains(&app_id)
         {
             return;
         }
@@ -325,8 +328,13 @@ impl LauncherApp {
 
         for (app_id, summary) in lock.drain(..) {
             self.achievement_loading.remove(&app_id);
-            if let Some(summary) = summary {
-                self.achievement_cache.insert(app_id, summary);
+            match summary {
+                Some(s) => {
+                    self.achievement_cache.insert(app_id, s);
+                }
+                None => {
+                    self.achievement_no_data.insert(app_id);
+                }
             }
         }
     }
@@ -856,6 +864,12 @@ impl eframe::App for LauncherApp {
                 ControllerAction::Right => {
                     self.show_achievement_panel = true;
                     self.achievement_selected = 0;
+                    // If previously failed, clear and retry
+                    if let Some(app_id) = self.games.get(self.selected).and_then(|g| g.app_id) {
+                        if self.achievement_no_data.remove(&app_id) {
+                            // Will be re-queued by ensure_achievement_load_for_selected
+                        }
+                    }
                 }
                 ControllerAction::Launch => {
                     self.launch_selected();
@@ -982,8 +996,28 @@ impl eframe::App for LauncherApp {
         let selected_achievement_summary =
             selected_app_id.and_then(|id| self.achievement_cache.get(&id));
         let selected_achievements_loading = selected_app_id
-            .map(|id| self.achievement_loading.contains(&id))
+            .map(|id| {
+                self.achievement_loading.contains(&id)
+                    && !self.achievement_no_data.contains(&id)
+            })
             .unwrap_or(false);
+        let achievement_debug_text = selected_app_id.map(|id| {
+            let debug = steam::get_achievement_debug_info(id, &self.steam_paths);
+            let cached_items = selected_achievement_summary.map(|s| s.items.len()).unwrap_or(0);
+            format!(
+                "debug: appid={} loading={} no_data={} cached_items={} steam_id={} api_key={} schema_exists={} schema_names={} local_unlock_file={} local_unlocks={}",
+                id,
+                selected_achievements_loading,
+                self.achievement_no_data.contains(&id),
+                cached_items,
+                debug.steam_id_found,
+                debug.api_key_present,
+                debug.schema_exists,
+                debug.schema_name_count,
+                debug.local_unlock_file_exists,
+                debug.local_unlock_count,
+            )
+        });
 
         // Draw UI
         egui::CentralPanel::default()
@@ -1016,6 +1050,7 @@ impl eframe::App for LauncherApp {
                             selected_achievement_summary,
                             selected_achievements_loading,
                             self.achievement_selected,
+                            achievement_debug_text.as_deref(),
                         );
                     }
                 }

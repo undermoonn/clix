@@ -285,6 +285,7 @@ pub fn draw_achievement_panel(
     summary: Option<&crate::steam::AchievementSummary>,
     loading: bool,
     selected_index: usize,
+    debug_text: Option<&str>,
 ) {
     let panel_rect = ui.available_rect_before_wrap();
     let panel_w = (panel_rect.width() * 0.42).clamp(420.0, 760.0);
@@ -314,6 +315,16 @@ pub fn draw_achievement_panel(
             .font(title_font)
             .color(egui::Color32::from_rgb(240, 242, 248)),
     );
+
+    if let Some(debug_text) = debug_text {
+        child.add_space(4.0);
+        child.label(
+            egui::RichText::new(debug_text)
+                .font(egui::FontId::proportional(12.5))
+                .color(egui::Color32::from_rgba_unmultiplied(140, 170, 190, 220)),
+        );
+        child.add_space(6.0);
+    }
 
     match summary {
         Some(s) => {
@@ -385,11 +396,6 @@ pub fn draw_achievement_panel(
                 egui::RichText::new("No achievement data available")
                     .font(sub_font)
                     .color(egui::Color32::from_rgba_unmultiplied(180, 190, 210, 200)),
-            );
-            child.label(
-                egui::RichText::new("Tip: set STEAM_WEB_API_KEY for unlocked status")
-                    .font(egui::FontId::proportional(13.0))
-                    .color(egui::Color32::from_rgba_unmultiplied(150, 160, 180, 180)),
             );
         }
     }
