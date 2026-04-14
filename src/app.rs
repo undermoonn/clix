@@ -81,6 +81,8 @@ impl LauncherApp {
 
 impl eframe::App for LauncherApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        ctx.output_mut(|o| o.cursor_icon = egui::CursorIcon::None);
+
         let has_focus = ctx.input(|i| i.focused);
 
         if has_focus {
