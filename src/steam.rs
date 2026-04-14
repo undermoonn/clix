@@ -6,6 +6,7 @@ pub struct Game {
     pub path: PathBuf,
     pub app_id: Option<u32>,
     pub last_played: u64,
+    pub playtime_minutes: u32,
 }
 
 pub fn find_steam_paths() -> Vec<PathBuf> {
@@ -72,8 +73,8 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
     library_folders.sort();
     library_folders.dedup();
 
-    // Step 2: Parse LastPlayed from userdata
-    let last_played_map = parse_last_played_from_userdata(steam_paths);
+    // Step 2: Parse LastPlayed and Playtime from userdata
+    let (last_played_map, playtime_map) = parse_userdata(steam_paths);
 
     // Step 3: Parse appmanifest_*.acf files
     for lib in &library_folders {
@@ -107,6 +108,7 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                             path: game_path,
                             app_id: Some(id),
                             last_played: last_played_map.get(&id).copied().unwrap_or(0),
+                            playtime_minutes: playtime_map.get(&id).copied().unwrap_or(0),
                         });
                     }
                 }
@@ -150,6 +152,7 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                                 path: PathBuf::from(install_location),
                                 app_id: Some(app_id),
                                 last_played: last_played_map.get(&app_id).copied().unwrap_or(0),
+                                playtime_minutes: playtime_map.get(&app_id).copied().unwrap_or(0),
                             });
                         }
                     }
@@ -179,9 +182,11 @@ fn parse_acf_values(content: &str) -> HashMap<String, String> {
     map
 }
 
-fn parse_last_played_from_userdata(steam_paths: &[PathBuf]) -> HashMap<u32, u64> {
+fn parse_userdata(steam_paths: &[PathBuf]) -> (HashMap<u32, u64>, HashMap<u32, u32>) {
     use regex::Regex;
-    let mut map: HashMap<u32, u64> = HashMap::new();
+    let mut last_played: HashMap<u32, u64> = HashMap::new();
+    let mut playtime: HashMap<u32, u32> = HashMap::new();
+    let kv_re = Regex::new(r#""([^"]+)"\s+"([^"]*)""#).unwrap();
 
     for steam_root in steam_paths {
         let userdata_dir = steam_root.join("userdata");
@@ -200,31 +205,77 @@ fn parse_last_played_from_userdata(steam_paths: &[PathBuf]) -> HashMap<u32, u64>
                 continue;
             };
 
-            let app_block_re = Regex::new(
-                r#"(?m)^\s*"(\d+)"\s*\n\s*\{[^}]*?"LastPlayed"\s+"(\d+)"#,
-            )
-            .unwrap();
+            let Some(apps_pos) = content.find("\"apps\"") else {
+                continue;
+            };
+            let after_apps = &content[apps_pos..];
+            let Some(brace_pos) = after_apps.find('{') else {
+                continue;
+            };
+            let apps_content = &after_apps[brace_pos + 1..];
 
-            if let Some(apps_pos) = content.find("\"apps\"") {
-                let after_apps = &content[apps_pos..];
-                if let Some(brace_pos) = after_apps.find('{') {
-                    let apps_content = &after_apps[brace_pos..];
-                    for cap in app_block_re.captures_iter(apps_content) {
-                        if let (Some(id_m), Some(ts_m)) = (cap.get(1), cap.get(2)) {
-                            if let (Ok(app_id), Ok(ts)) = (
-                                id_m.as_str().parse::<u32>(),
-                                ts_m.as_str().parse::<u64>(),
-                            ) {
-                                let entry = map.entry(app_id).or_insert(0);
-                                if ts > *entry {
-                                    *entry = ts;
+            // Depth-aware parsing: depth 0 = inside "apps", depth 1 = inside an app block
+            let mut depth: i32 = 0;
+            let mut current_app_id: Option<u32> = None;
+            let mut expect_block = false;
+
+            for line in apps_content.lines() {
+                let trimmed = line.trim();
+                if trimmed == "{" {
+                    if expect_block {
+                        depth = 1;
+                        expect_block = false;
+                    } else if depth >= 1 {
+                        depth += 1; // nested block inside app
+                    }
+                    continue;
+                }
+                if trimmed == "}" {
+                    if depth > 1 {
+                        depth -= 1;
+                    } else if depth == 1 {
+                        depth = 0;
+                        current_app_id = None;
+                    } else {
+                        break; // closed "apps" block
+                    }
+                    continue;
+                }
+                if depth == 0 {
+                    // At apps level, look for app ID
+                    let t = trimmed.trim_matches('"');
+                    if let Ok(id) = t.parse::<u32>() {
+                        current_app_id = Some(id);
+                        expect_block = true;
+                    }
+                } else if depth == 1 {
+                    // Inside app block at top level, extract key-value pairs
+                    if let (Some(app_id), Some(cap)) = (current_app_id, kv_re.captures(trimmed)) {
+                        let key = cap.get(1).map(|m| m.as_str()).unwrap_or("");
+                        let val = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+                        match key {
+                            "LastPlayed" => {
+                                if let Ok(ts) = val.parse::<u64>() {
+                                    let e = last_played.entry(app_id).or_insert(0);
+                                    if ts > *e {
+                                        *e = ts;
+                                    }
                                 }
                             }
+                            "Playtime" | "playtime_forever" => {
+                                if let Ok(mins) = val.parse::<u32>() {
+                                    let e = playtime.entry(app_id).or_insert(0);
+                                    if mins > *e {
+                                        *e = mins;
+                                    }
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }
             }
         }
     }
-    map
+    (last_played, playtime)
 }

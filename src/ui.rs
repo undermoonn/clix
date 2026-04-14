@@ -122,7 +122,10 @@ pub fn draw_game_list(
 
         let dist = (offset as f32).abs();
         let sign = if offset >= 0 { 1.0 } else { -1.0 };
-        let y_pos = center_y + sign * dist * row_spacing * (1.0 - dist * 0.03).max(0.7);
+        // Extra gap around selected item
+        let selected_gap = 16.0;
+        let extra = if offset > 0 { selected_gap } else if offset < 0 { -selected_gap } else { 0.0 };
+        let y_pos = center_y + sign * dist * row_spacing * (1.0 - dist * 0.03).max(0.7) + extra;
 
         // Skip items that would overlap the cover image area
         if y_pos < clip_y {
@@ -149,7 +152,14 @@ pub fn draw_game_list(
         };
 
         // Compute icon offset
-        let icon_size = font_size + 4.0;
+        let selected_icon_size = selected_size + 26.0;
+        let base_icon_size = base_size + 4.0;
+        let icon_size = if offset == 0 {
+            let t = 1.0 - (1.0 - select_anim) * (1.0 - select_anim);
+            base_icon_size + (selected_icon_size - base_icon_size) * t
+        } else {
+            base_icon_size
+        };
         let icon_gap = 8.0;
         let mut text_x = left_x;
         let has_icon = g.app_id.and_then(|id| game_icons.get(&id)).is_some();
@@ -163,15 +173,42 @@ pub fn draw_game_list(
             egui::FontId::proportional(font_size)
         };
         let galley = painter.layout_no_wrap(g.name.clone(), font_id.clone(), text_color);
-        let text_y = y_pos - galley.size().y * 0.5;
+
+        // Playtime string
+        let playtime_str = if g.playtime_minutes >= 60 {
+            let hours = g.playtime_minutes as f32 / 60.0;
+            let s = format!("{:.1}", hours);
+            let s = s.trim_end_matches(".0");
+            format!("{} hrs", s)
+        } else if g.playtime_minutes > 0 {
+            format!("{} min", g.playtime_minutes)
+        } else {
+            String::new()
+        };
+
+        // Measure playtime galley (only shown when selected)
+        let pt_font_size = font_size * 0.5;
+        let pt_font = egui::FontId::proportional(pt_font_size);
+        let pt_color = egui::Color32::from_rgba_unmultiplied(180, 180, 190, 140);
+        let pt_galley = if offset == 0 && !playtime_str.is_empty() {
+            Some(painter.layout_no_wrap(playtime_str, pt_font, pt_color))
+        } else {
+            None
+        };
+        let pt_row_h = pt_galley.as_ref().map_or(0.0, |g| g.size().y + 2.0);
+
+        // Layout: name + playtime stacked, centered on y_pos
+        let total_h = galley.size().y + pt_row_h;
+        let text_y = y_pos - total_h * 0.5;
 
         // Selected highlight bar
         if offset == 0 {
-            let bar_h = galley.size().y + 16.0;
-            let bar_pad_x = 12.0;
+            let bar_pad_x = 20.0;
+            let bar_pad_y = 12.0;
+            let content_w = galley.size().x.max(pt_galley.as_ref().map_or(0.0, |g| g.size().x));
             let bar_rect = egui::Rect::from_min_size(
-                egui::pos2(left_x - bar_pad_x, y_pos - bar_h * 0.5),
-                egui::vec2((text_x - left_x) + galley.size().x + bar_pad_x * 2.0, bar_h),
+                egui::pos2(left_x - bar_pad_x, y_pos - total_h * 0.5 - bar_pad_y),
+                egui::vec2((text_x - left_x) + content_w + bar_pad_x * 2.0, total_h + bar_pad_y * 2.0),
             );
             let glow_alpha = (20.0 * select_anim) as u8;
             let glow_color = egui::Color32::from_rgba_unmultiplied(255, 255, 255, glow_alpha);
@@ -220,7 +257,13 @@ pub fn draw_game_list(
         }
 
         // Foreground text
-        painter.galley(egui::pos2(text_x, text_y), galley);
+        painter.galley(egui::pos2(text_x, text_y), galley.clone());
+
+        // Playtime text (below game name)
+        if let Some(pt_g) = pt_galley {
+            let pt_y = text_y + galley.size().y + 2.0;
+            painter.galley(egui::pos2(text_x, pt_y), pt_g);
+        }
     }
 }
 
