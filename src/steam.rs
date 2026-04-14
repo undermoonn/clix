@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub struct Game {
     pub name: String,
@@ -11,7 +11,7 @@ pub struct Game {
     pub playtime_minutes: u32,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AchievementItem {
     pub api_name: String,
     pub display_name: Option<String>,
@@ -22,11 +22,54 @@ pub struct AchievementItem {
     pub icon_gray_url: Option<String>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AchievementSummary {
     pub unlocked: Option<u32>,
     pub total: u32,
     pub items: Vec<AchievementItem>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CachedAchievementSummary {
+    summary: AchievementSummary,
+}
+
+fn achievement_cache_dir() -> PathBuf {
+    let mut dir = std::env::current_exe()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .to_path_buf();
+    dir.push("achievement_cache");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+fn achievement_cache_path(app_id: u32) -> PathBuf {
+    achievement_cache_dir().join(format!("{}.json", app_id))
+}
+
+pub fn load_cached_achievement_summary(app_id: u32) -> Option<AchievementSummary> {
+    let bytes = std::fs::read(achievement_cache_path(app_id)).ok()?;
+    let cached = serde_json::from_slice::<CachedAchievementSummary>(&bytes).ok()?;
+    if cached.summary.items.is_empty() {
+        return None;
+    }
+    Some(cached.summary)
+}
+
+pub fn store_cached_achievement_summary(app_id: u32, summary: &AchievementSummary) {
+    if summary.items.is_empty() {
+        return;
+    }
+
+    let cache_path = achievement_cache_path(app_id);
+    let payload = CachedAchievementSummary {
+        summary: summary.clone(),
+    };
+    if let Ok(bytes) = serde_json::to_vec(&payload) {
+        let _ = std::fs::write(cache_path, bytes);
+    }
 }
 
 pub fn find_steam_paths() -> Vec<PathBuf> {

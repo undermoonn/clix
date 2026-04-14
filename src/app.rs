@@ -1,7 +1,6 @@
 use eframe::egui;
 use gilrs::{EventType, Gilrs};
 use std::collections::{HashMap, HashSet};
-use std::io::Read;
 use std::path::Path;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -253,6 +252,7 @@ pub struct LauncherApp {
     achievement_icon_pending: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
     achievement_icon_loading: HashSet<String>,
     achievement_icon_reveal: HashMap<String, f32>,
+    achievement_checked_for: Option<u32>,
     show_achievement_panel: bool,
     achievement_selected: usize,
     achievement_select_anim: f32,
@@ -302,6 +302,7 @@ impl LauncherApp {
             achievement_icon_pending: Arc::new(Mutex::new(Vec::new())),
             achievement_icon_loading: HashSet::new(),
             achievement_icon_reveal: HashMap::new(),
+            achievement_checked_for: None,
             show_achievement_panel: false,
             achievement_selected: 0,
             achievement_select_anim: 0.0,
@@ -310,15 +311,26 @@ impl LauncherApp {
         }
     }
 
-    fn ensure_achievement_load_for_selected(&mut self, ctx: &egui::Context) {
+    fn refresh_achievement_for_selected(&mut self, ctx: &egui::Context) {
         let Some(app_id) = self.games.get(self.selected).and_then(|g| g.app_id) else {
+            self.achievement_checked_for = None;
             return;
         };
 
-        if self.achievement_cache.contains_key(&app_id)
-            || self.achievement_loading.contains(&app_id)
-            || self.achievement_no_data.contains(&app_id)
-        {
+        if self.achievement_checked_for == Some(app_id) {
+            return;
+        }
+
+        self.achievement_checked_for = Some(app_id);
+
+        if let Some(summary) = steam::load_cached_achievement_summary(app_id) {
+            self.achievement_no_data.remove(&app_id);
+            self.achievement_cache.insert(app_id, summary);
+        }
+
+        self.achievement_no_data.remove(&app_id);
+
+        if self.achievement_loading.contains(&app_id) {
             return;
         }
 
@@ -345,10 +357,14 @@ impl LauncherApp {
             self.achievement_loading.remove(&app_id);
             match summary {
                 Some(s) => {
+                    steam::store_cached_achievement_summary(app_id, &s);
+                    self.achievement_no_data.remove(&app_id);
                     self.achievement_cache.insert(app_id, s);
                 }
                 None => {
-                    self.achievement_no_data.insert(app_id);
+                    if !self.achievement_cache.contains_key(&app_id) {
+                        self.achievement_no_data.insert(app_id);
+                    }
                 }
             }
         }
@@ -386,22 +402,24 @@ impl LauncherApp {
                 continue;
             }
 
+            if let Some(bytes) = cover::load_cached_achievement_icon_bytes(url) {
+                if let Ok(mut lock) = self.achievement_icon_pending.lock() {
+                    lock.push((url.clone(), bytes));
+                }
+                ctx.request_repaint();
+                continue;
+            }
+
             self.achievement_icon_loading.insert(url.clone());
             let pending = Arc::clone(&self.achievement_icon_pending);
             let ctx_clone = ctx.clone();
             let url_clone = url.clone();
             std::thread::spawn(move || {
-                if let Ok(resp) = ureq::get(&url_clone).call() {
-                    if resp.status() == 200 {
-                        let mut bytes = Vec::new();
-                        let mut reader = resp.into_reader().take(2 * 1024 * 1024);
-                        if reader.read_to_end(&mut bytes).is_ok() && !bytes.is_empty() {
-                            if let Ok(mut lock) = pending.lock() {
-                                lock.push((url_clone, bytes));
-                            }
-                            ctx_clone.request_repaint();
-                        }
+                if let Some(bytes) = cover::load_achievement_icon_bytes(&url_clone) {
+                    if let Ok(mut lock) = pending.lock() {
+                        lock.push((url_clone, bytes));
                     }
+                    ctx_clone.request_repaint();
                 }
             });
         }
@@ -573,6 +591,7 @@ impl LauncherApp {
 
         self.scroll_offset = self.selected as f32;
         self.select_anim_target = Some(self.selected);
+        self.achievement_checked_for = None;
         self.select_anim = 1.0;
 
         // Force assets to refresh for the selected game after resume.
@@ -1150,7 +1169,7 @@ impl eframe::App for LauncherApp {
             }
         }
 
-        self.ensure_achievement_load_for_selected(ctx);
+        self.refresh_achievement_for_selected(ctx);
         self.ensure_achievement_icons_for_selected(ctx);
 
         let selected_app_id = self.games.get(self.selected).and_then(|g| g.app_id);

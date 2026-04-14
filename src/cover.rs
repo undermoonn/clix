@@ -26,6 +26,53 @@ pub fn hd_cache_dir() -> PathBuf {
     dir
 }
 
+fn achievement_icon_cache_dir() -> PathBuf {
+    let mut dir = std::env::current_exe()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .to_path_buf();
+    dir.push("achievement_icon_cache");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+fn achievement_icon_cache_path(url: &str) -> PathBuf {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    url.hash(&mut hasher);
+    achievement_icon_cache_dir().join(format!("{:x}.img", hasher.finish()))
+}
+
+pub fn load_cached_achievement_icon_bytes(url: &str) -> Option<Vec<u8>> {
+    let bytes = std::fs::read(achievement_icon_cache_path(url)).ok()?;
+    if bytes.is_empty() {
+        return None;
+    }
+    Some(bytes)
+}
+
+pub fn load_achievement_icon_bytes(url: &str) -> Option<Vec<u8>> {
+    if let Some(bytes) = load_cached_achievement_icon_bytes(url) {
+        return Some(bytes);
+    }
+
+    let resp = ureq::get(url).call().ok()?;
+    if resp.status() != 200 {
+        return None;
+    }
+
+    let mut bytes = Vec::new();
+    let mut reader = resp.into_reader().take(2 * 1024 * 1024);
+    if reader.read_to_end(&mut bytes).is_err() || bytes.is_empty() {
+        return None;
+    }
+
+    let _ = std::fs::write(achievement_icon_cache_path(url), &bytes);
+    Some(bytes)
+}
+
 fn download_hd_cover(app_id: u32) -> Option<Vec<u8>> {
     // Download 3840x1240 library_hero from Steam CDN
     let urls = [
