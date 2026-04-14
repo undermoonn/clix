@@ -55,6 +55,8 @@ struct LauncherApp {
     select_anim: f32,
     /// The index that the animation is tracking.
     select_anim_target: Option<usize>,
+    /// Rendered SVG icon textures for hint bar.
+    hint_icons: Option<HintIcons>,
 }
 
 struct NavState {
@@ -96,6 +98,7 @@ impl LauncherApp {
             cover_pending: Arc::new(Mutex::new(None)),
             select_anim: 0.0,
             select_anim_target: None,
+            hint_icons: None,
         }
     }
 
@@ -141,35 +144,6 @@ impl XInput {
             }
         }
         Err(())
-    }
-
-    fn poll_actions(&self) -> Vec<ControllerAction> {
-        let mut actions = Vec::new();
-        for idx in 0..4 {
-            let mut state: XINPUT_STATE = unsafe { std::mem::zeroed() };
-            let res = unsafe { (self.get_state)(idx, &mut state as *mut XINPUT_STATE) };
-            if res == 0 {
-                let gp = state.Gamepad;
-                let buttons = gp.wButtons;
-                if (buttons & XINPUT_GAMEPAD_DPAD_UP) != 0 {
-                    actions.push(ControllerAction::Up);
-                }
-                if (buttons & XINPUT_GAMEPAD_DPAD_DOWN) != 0 {
-                    actions.push(ControllerAction::Down);
-                }
-                if (buttons & XINPUT_GAMEPAD_A) != 0 {
-                    actions.push(ControllerAction::Launch);
-                }
-                // left thumb Y axis (positive = up, negative = down)
-                let ly = gp.sThumbLY as i32;
-                if ly > 16000 {
-                    actions.push(ControllerAction::Up);
-                } else if ly < -16000 {
-                    actions.push(ControllerAction::Down);
-                }
-            }
-        }
-        actions
     }
 
     fn get_states(&self) -> Vec<(u16, i32)> {
@@ -482,23 +456,6 @@ impl eframe::App for LauncherApp {
             }
         }
 
-        egui::TopBottomPanel::bottom("bottom_bar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                if ui.button("Launch").clicked() {
-                    self.launch_selected();
-                }
-                if ui.button("Refresh").clicked() {
-                    self.games = scan_games_with_paths(&self.steam_paths);
-                    self.cover = None;
-                    self.cover_prev = None;
-                    self.cover_loaded_for = None;
-                    if self.selected >= self.games.len() && !self.games.is_empty() {
-                        self.selected = self.games.len() - 1;
-                    }
-                }
-            });
-        });
-
         // ── Load cover when selection changes (async) ──
         if self.cover_loaded_for != Some(self.selected) {
             self.cover_loaded_for = Some(self.selected);
@@ -545,12 +502,35 @@ impl eframe::App for LauncherApp {
             ctx.request_repaint();
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default()
+            .frame(egui::Frame::none().fill(egui::Color32::TRANSPARENT))
+            .show(ctx, |ui| {
             // ── Paint cover as full-screen background with crossfade ──
             let screen = ctx.screen_rect();
             let bg_painter = ctx.layer_painter(egui::LayerId::background());
             let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
             let base_alpha: f32 = 60.0;
+
+            // Paint dark gradient background
+            {
+                let top_col = egui::Color32::from_rgb(10, 15, 30);
+                let bot_col = egui::Color32::from_rgb(20, 25, 50);
+                let mesh = {
+                    let mut m = egui::Mesh::default();
+                    let tl = screen.left_top();
+                    let tr = screen.right_top();
+                    let bl = screen.left_bottom();
+                    let br = screen.right_bottom();
+                    m.colored_vertex(tl, top_col);
+                    m.colored_vertex(tr, top_col);
+                    m.colored_vertex(br, bot_col);
+                    m.colored_vertex(bl, bot_col);
+                    m.add_triangle(0, 1, 2);
+                    m.add_triangle(0, 2, 3);
+                    m
+                };
+                bg_painter.add(egui::Shape::mesh(mesh));
+            }
 
             // Helper: compute contain-mode rect for a texture with vertical offset
             let contain_rect_offset = |tex: &egui::TextureHandle, dy: f32| -> egui::Rect {
@@ -566,8 +546,8 @@ impl eframe::App for LauncherApp {
                 )
             };
 
-            let slide_distance = 12.0; // pixels of slide
-            let ease_t = 1.0 - (1.0 - self.cover_fade) * (1.0 - self.cover_fade); // ease-out
+            let slide_distance = 12.0;
+            let ease_t = 1.0 - (1.0 - self.cover_fade) * (1.0 - self.cover_fade);
 
             // Draw previous cover (fading out, no movement)
             if self.cover_fade < 1.0 {
@@ -586,94 +566,193 @@ impl eframe::App for LauncherApp {
                 bg_painter.image(tex.id(), contain_rect_offset(tex, dy), uv, tint);
             }
 
-            ui.heading("Clix — 手柄优先游戏启动器 原型");
-            ui.label(format!("已发现游戏: {}", self.games.len()));
-            ui.separator();
+            // ── PS3 XMB-style vertical list (centered, fish-eye) ──
+            // Animate selection transition
+            if self.select_anim_target != Some(self.selected) {
+                self.select_anim_target = Some(self.selected);
+                self.select_anim = 0.0;
+            }
+            let dt = ctx.input(|i| i.predicted_dt);
+            self.select_anim = (self.select_anim + dt * 5.0).min(1.0);
+            if self.select_anim < 1.0 {
+                ctx.request_repaint();
+            }
 
-            egui::ScrollArea::vertical().scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
-                // Animate selection scale
-                if self.select_anim_target != Some(self.selected) {
-                    self.select_anim_target = Some(self.selected);
-                    self.select_anim = 0.0;
+            let panel_rect = ui.available_rect_before_wrap();
+            let padding = 50.0;
+            let padded_rect = panel_rect.shrink(padding);
+            let center_y = padded_rect.center().y;
+            let left_x = padded_rect.min.x + 20.0;
+
+            let selected_size = 30.0;
+            let base_size = 18.0;
+            let row_spacing = 52.0;
+            let visible_above = 6;
+            let visible_below = 6;
+
+            let painter = ui.painter();
+
+            for (i, g) in self.games.iter().enumerate() {
+                let offset = i as isize - self.selected as isize;
+
+                // Only render items within visible range
+                if offset < -(visible_above as isize) || offset > visible_below as isize {
+                    continue;
                 }
-                let dt = ctx.input(|i| i.predicted_dt);
-                self.select_anim = (self.select_anim + dt * 5.0).min(1.0); // ~0.2s ease-in
 
-                let base_size = 16.0;
-                let selected_size = 28.0;
-                // Fixed row height based on the largest possible size to prevent layout jitter
-                let fixed_row_h = selected_size * 1.3;
+                let dist = (offset as f32).abs();
+                let sign = if offset >= 0 { 1.0 } else { -1.0 };
 
-                for (i, g) in self.games.iter().enumerate() {
-                    let is_selected = i == self.selected;
-                    let is_steam = g.app_id.is_some();
+                // Fish-eye spacing: items further from center are spaced more tightly
+                let y_pos = center_y + sign * dist * row_spacing * (1.0 - dist * 0.03).max(0.7);
 
-                    let font_size = if is_selected {
-                        let t = self.select_anim;
-                        // Smooth ease-out interpolation
-                        let t = 1.0 - (1.0 - t) * (1.0 - t);
-                        base_size + (selected_size - base_size) * t
-                    } else {
-                        base_size
-                    };
+                // Alpha based on distance from center
+                let alpha_factor = (1.0 - dist * 0.13).max(0.0);
+                let font_size = if offset == 0 {
+                    let t = 1.0 - (1.0 - self.select_anim) * (1.0 - self.select_anim);
+                    base_size + (selected_size - base_size) * t
+                } else {
+                    base_size
+                };
 
-                    let text_color = if is_selected {
-                        egui::Color32::from_rgb(100, 200, 255)
-                    } else {
-                        egui::Color32::from_rgb(220, 220, 220)
-                    };
-                    let shadow_color = egui::Color32::from_rgba_unmultiplied(0, 0, 0, 200);
+                // Colors
+                let text_alpha = if offset == 0 {
+                    255
+                } else {
+                    (220.0 * alpha_factor) as u8
+                };
+                let text_color = if offset == 0 {
+                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 255)
+                } else {
+                    egui::Color32::from_rgba_unmultiplied(200, 200, 210, text_alpha)
+                };
 
-                    let font_id = egui::FontId::proportional(font_size);
-                    let galley = ui.painter().layout_no_wrap(
-                        g.name.clone(),
-                        font_id.clone(),
-                        text_color,
+                let font_id = egui::FontId::proportional(font_size);
+                let galley = painter.layout_no_wrap(g.name.clone(), font_id.clone(), text_color);
+
+                let text_y = y_pos - galley.size().y * 0.5;
+
+                // Selected item: white semi-transparent highlight bar (text width)
+                if offset == 0 {
+                    let bar_h = galley.size().y + 16.0;
+                    let bar_pad_x = 12.0;
+                    let bar_rect = egui::Rect::from_min_size(
+                        egui::pos2(left_x - bar_pad_x, y_pos - bar_h * 0.5),
+                        egui::vec2(galley.size().x + bar_pad_x * 2.0, bar_h),
                     );
-
-                    let avail_w = ui.available_width();
-                    let (rect, _resp) = ui.allocate_exact_size(
-                        egui::vec2(avail_w, fixed_row_h),
-                        egui::Sense::hover(),
-                    );
-
-                    // Auto-scroll to keep the selected item visible
-                    if is_selected {
-                        ui.scroll_to_rect(rect, Some(egui::Align::Center));
-                    }
-
-                    let text_y = rect.min.y + (fixed_row_h - galley.size().y) * 0.5;
-                    let text_x = rect.min.x;
-
-                    // Draw text shadow
-                    let shadow_galley = ui.painter().layout_no_wrap(
-                        g.name.clone(),
-                        font_id,
-                        shadow_color,
-                    );
-                    for offset in [
-                        egui::vec2(1.0, 1.0),
-                        egui::vec2(-1.0, 1.0),
-                        egui::vec2(1.0, -1.0),
-                        egui::vec2(-1.0, -1.0),
-                        egui::vec2(0.0, 2.0),
-                        egui::vec2(2.0, 0.0),
-                    ] {
-                        ui.painter().galley(
-                            egui::pos2(text_x, text_y) + offset,
-                            shadow_galley.clone(),
-                        );
-                    }
-
-                    // Draw foreground text
-                    ui.painter().galley(
-                        egui::pos2(text_x, text_y),
-                        galley,
+                    let glow_alpha = (40.0 * self.select_anim) as u8;
+                    let glow_color = egui::Color32::from_rgba_unmultiplied(255, 255, 255, glow_alpha);
+                    painter.rect_filled(
+                        bar_rect,
+                        egui::Rounding::same(4.0),
+                        glow_color,
                     );
                 }
-            });
+
+                // Text shadow
+                let shadow_alpha = if offset == 0 { 200 } else { (120.0 * alpha_factor) as u8 };
+                let shadow_color = egui::Color32::from_rgba_unmultiplied(0, 0, 0, shadow_alpha);
+                let shadow_galley = painter.layout_no_wrap(g.name.clone(), font_id, shadow_color);
+                for off in [
+                    egui::vec2(1.0, 1.0),
+                    egui::vec2(-1.0, 1.0),
+                    egui::vec2(1.0, -1.0),
+                    egui::vec2(-1.0, -1.0),
+                ] {
+                    painter.galley(egui::pos2(left_x, text_y) + off, shadow_galley.clone());
+                }
+
+                // Foreground text
+                painter.galley(egui::pos2(left_x, text_y), galley);
+            }
+
+            // Bottom hint bar with SVG icons
+            if self.hint_icons.is_none() {
+                self.hint_icons = load_hint_icons(ctx);
+            }
+            let hint_y = padded_rect.max.y + 10.0;
+            let hint_font = egui::FontId::proportional(14.0);
+            let hint_color = egui::Color32::from_rgba_unmultiplied(200, 200, 210, 160);
+            let icon_h = 24.0_f32;
+
+            let mut hx = padded_rect.min.x;
+            if let Some(icons) = &self.hint_icons {
+                // DPad Up icon
+                let up_size = icons.dpad_up.size_vec2();
+                let up_scale = icon_h / up_size.y;
+                let up_w = up_size.x * up_scale;
+                let icon_rect = egui::Rect::from_min_size(
+                    egui::pos2(hx, hint_y + (20.0 - icon_h) * 0.5),
+                    egui::vec2(up_w, icon_h),
+                );
+                painter.image(icons.dpad_up.id(), icon_rect,
+                    egui::Rect::from_min_max(egui::pos2(0.0,0.0), egui::pos2(1.0,1.0)),
+                    egui::Color32::WHITE);
+                hx += up_w + 2.0;
+
+                // DPad Down icon
+                let dn_size = icons.dpad_down.size_vec2();
+                let dn_scale = icon_h / dn_size.y;
+                let dn_w = dn_size.x * dn_scale;
+                let icon_rect = egui::Rect::from_min_size(
+                    egui::pos2(hx, hint_y + (20.0 - icon_h) * 0.5),
+                    egui::vec2(dn_w, icon_h),
+                );
+                painter.image(icons.dpad_down.id(), icon_rect,
+                    egui::Rect::from_min_max(egui::pos2(0.0,0.0), egui::pos2(1.0,1.0)),
+                    egui::Color32::WHITE);
+                hx += dn_w + 6.0;
+
+                // "选择" label
+                let g = painter.layout_no_wrap("选择".to_string(), hint_font.clone(), hint_color);
+                let gy = hint_y + (20.0 - g.size().y) * 0.5;
+                painter.galley(egui::pos2(hx, gy), g.clone());
+                hx += g.size().x + 20.0;
+
+                // A button icon
+                let a_size = icons.btn_a.size_vec2();
+                let a_scale = icon_h / a_size.y;
+                let a_w = a_size.x * a_scale;
+                let icon_rect = egui::Rect::from_min_size(
+                    egui::pos2(hx, hint_y + (20.0 - icon_h) * 0.5),
+                    egui::vec2(a_w, icon_h),
+                );
+                painter.image(icons.btn_a.id(), icon_rect,
+                    egui::Rect::from_min_max(egui::pos2(0.0,0.0), egui::pos2(1.0,1.0)),
+                    egui::Color32::WHITE);
+                hx += a_w + 6.0;
+
+                // "启动" label
+                let g = painter.layout_no_wrap("启动".to_string(), hint_font, hint_color);
+                let gy = hint_y + (20.0 - g.size().y) * 0.5;
+                painter.galley(egui::pos2(hx, gy), g);
+            }
         });
     }
+}
+
+struct HintIcons {
+    dpad_up: egui::TextureHandle,
+    dpad_down: egui::TextureHandle,
+    btn_a: egui::TextureHandle,
+}
+
+fn png_bytes_to_texture(ctx: &egui::Context, bytes: &[u8], label: &str) -> Option<egui::TextureHandle> {
+    let dyn_img = image::load_from_memory(bytes).ok()?;
+    let rgba = dyn_img.to_rgba8();
+    let size = [rgba.width() as usize, rgba.height() as usize];
+    let pixels: Vec<egui::Color32> = rgba.pixels().map(|p| {
+        egui::Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3])
+    }).collect();
+    let image = egui::ColorImage { size, pixels };
+    Some(ctx.load_texture(label, image, egui::TextureOptions::LINEAR))
+}
+
+fn load_hint_icons(ctx: &egui::Context) -> Option<HintIcons> {
+    let dpad_up = png_bytes_to_texture(ctx, include_bytes!("icons/Xbox/T_X_Dpad_Up_Alt.png"), "icon_dpad_up")?;
+    let dpad_down = png_bytes_to_texture(ctx, include_bytes!("icons/Xbox/T_X_Dpad_Down_Alt.png"), "icon_dpad_down")?;
+    let btn_a = png_bytes_to_texture(ctx, include_bytes!("icons/Xbox/T_X_A_White_Alt.png"), "icon_btn_a")?;
+    Some(HintIcons { dpad_up, dpad_down, btn_a })
 }
 
 /// Parse a Valve ACF (KeyValues) file and extract key-value pairs at the top object level.
