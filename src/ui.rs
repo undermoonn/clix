@@ -52,8 +52,8 @@ pub fn draw_background(
 
     // Dark gradient background
     {
-        let top_col = egui::Color32::from_rgb(10, 15, 30);
-        let bot_col = egui::Color32::from_rgb(20, 25, 50);
+        let top_col = egui::Color32::from_rgb(15, 15, 15);
+        let bot_col = egui::Color32::from_rgb(25, 25, 25);
         let mut m = egui::Mesh::default();
         m.colored_vertex(screen.left_top(), top_col);
         m.colored_vertex(screen.right_top(), top_col);
@@ -187,7 +187,14 @@ pub fn draw_game_list(
                     egui::pos2(left_x, y_pos - icon_size * 0.5),
                     egui::vec2(icon_size, icon_size),
                 );
-                painter.image(icon_tex.id(), icon_rect, uv, icon_tint);
+                painter.add(egui::Shape::Rect(egui::epaint::RectShape {
+                    rect: icon_rect,
+                    rounding: egui::Rounding::same(4.0),
+                    fill: icon_tint,
+                    stroke: egui::Stroke::NONE,
+                    fill_texture_id: icon_tex.id(),
+                    uv,
+                }));
             }
         }
 
@@ -229,7 +236,7 @@ pub fn draw_hint_bar(ui: &mut egui::Ui, icons: &HintIcons) {
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
 
     let painter = ui.painter();
-    let mut hx = padded_rect.min.x;
+    let mut hx = padded_rect.min.x + 20.0;
 
     let draw_icon = |painter: &egui::Painter, tex: &egui::TextureHandle, x: f32| {
         painter.image(
