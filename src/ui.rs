@@ -1,8 +1,6 @@
 use eframe::egui;
 
 pub struct HintIcons {
-    pub dpad_up: egui::TextureHandle,
-    pub dpad_down: egui::TextureHandle,
     pub btn_a: egui::TextureHandle,
     pub btn_b: egui::TextureHandle,
 }
@@ -24,16 +22,6 @@ fn png_bytes_to_texture(
 }
 
 pub fn load_hint_icons(ctx: &egui::Context) -> Option<HintIcons> {
-    let dpad_up = png_bytes_to_texture(
-        ctx,
-        include_bytes!("icons/Xbox/T_X_Dpad_Up_Alt.png"),
-        "icon_dpad_up",
-    )?;
-    let dpad_down = png_bytes_to_texture(
-        ctx,
-        include_bytes!("icons/Xbox/T_X_Dpad_Down_Alt.png"),
-        "icon_dpad_down",
-    )?;
     let btn_a = png_bytes_to_texture(
         ctx,
         include_bytes!("icons/Xbox/T_X_A_White_Alt.png"),
@@ -45,8 +33,6 @@ pub fn load_hint_icons(ctx: &egui::Context) -> Option<HintIcons> {
         "icon_btn_b",
     )?;
     Some(HintIcons {
-        dpad_up,
-        dpad_down,
         btn_a,
         btn_b,
     })
@@ -213,56 +199,21 @@ pub fn draw_hint_bar(ui: &mut egui::Ui, icons: &HintIcons) {
     let painter = ui.painter();
     let mut hx = padded_rect.min.x;
 
-    // DPad Up
-    let up_size = icons.dpad_up.size_vec2();
-    let up_scale = icon_h / up_size.y;
-    let up_w = up_size.x * up_scale;
-    painter.image(
-        icons.dpad_up.id(),
-        egui::Rect::from_min_size(
-            egui::pos2(hx, hint_y + (20.0 - icon_h) * 0.5),
-            egui::vec2(up_w, icon_h),
-        ),
-        uv,
-        egui::Color32::WHITE,
-    );
-    hx += up_w + 2.0;
-
-    // DPad Down
-    let dn_size = icons.dpad_down.size_vec2();
-    let dn_scale = icon_h / dn_size.y;
-    let dn_w = dn_size.x * dn_scale;
-    painter.image(
-        icons.dpad_down.id(),
-        egui::Rect::from_min_size(
-            egui::pos2(hx, hint_y + (20.0 - icon_h) * 0.5),
-            egui::vec2(dn_w, icon_h),
-        ),
-        uv,
-        egui::Color32::WHITE,
-    );
-    hx += dn_w + 6.0;
-
-    // "选择"
-    let g = painter.layout_no_wrap("选择".to_string(), hint_font.clone(), hint_color);
-    let gy = hint_y + (20.0 - g.size().y) * 0.5;
-    painter.galley(egui::pos2(hx, gy), g.clone());
-    hx += g.size().x + 20.0;
+    let draw_icon = |painter: &egui::Painter, tex: &egui::TextureHandle, x: f32| {
+        painter.image(
+            tex.id(),
+            egui::Rect::from_min_size(
+                egui::pos2(x, hint_y + (20.0 - icon_h) * 0.5),
+                egui::vec2(icon_h, icon_h),
+            ),
+            uv,
+            egui::Color32::WHITE,
+        );
+    };
 
     // A button
-    let a_size = icons.btn_a.size_vec2();
-    let a_scale = icon_h / a_size.y;
-    let a_w = a_size.x * a_scale;
-    painter.image(
-        icons.btn_a.id(),
-        egui::Rect::from_min_size(
-            egui::pos2(hx, hint_y + (20.0 - icon_h) * 0.5),
-            egui::vec2(a_w, icon_h),
-        ),
-        uv,
-        egui::Color32::WHITE,
-    );
-    hx += a_w + 6.0;
+    draw_icon(painter, &icons.btn_a, hx);
+    hx += icon_h + 6.0;
 
     // "启动"
     let g = painter.layout_no_wrap("启动".to_string(), hint_font.clone(), hint_color);
@@ -272,19 +223,8 @@ pub fn draw_hint_bar(ui: &mut egui::Ui, icons: &HintIcons) {
     hx += g_width + 20.0;
 
     // B button
-    let b_size = icons.btn_b.size_vec2();
-    let b_scale = icon_h / b_size.y;
-    let b_w = b_size.x * b_scale;
-    painter.image(
-        icons.btn_b.id(),
-        egui::Rect::from_min_size(
-            egui::pos2(hx, hint_y + (20.0 - icon_h) * 0.5),
-            egui::vec2(b_w, icon_h),
-        ),
-        uv,
-        egui::Color32::WHITE,
-    );
-    hx += b_w + 6.0;
+    draw_icon(painter, &icons.btn_b, hx);
+    hx += icon_h + 6.0;
 
     // "退出"
     let g = painter.layout_no_wrap("退出".to_string(), hint_font, hint_color);

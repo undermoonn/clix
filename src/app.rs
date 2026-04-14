@@ -34,6 +34,7 @@ pub struct LauncherApp {
     select_anim: f32,
     select_anim_target: Option<usize>,
     hint_icons: Option<ui::HintIcons>,
+    nav_input_dir: i8,
 }
 
 impl LauncherApp {
@@ -62,6 +63,7 @@ impl LauncherApp {
             select_anim: 0.0,
             select_anim_target: None,
             hint_icons: None,
+            nav_input_dir: 0,
         }
     }
 
@@ -301,6 +303,15 @@ impl eframe::App for LauncherApp {
                 }
             }
         } // end if process_input
+
+        // Track nav direction for hint bar icon
+        self.nav_input_dir = if raw_held.contains("up") {
+            -1
+        } else if raw_held.contains("down") {
+            1
+        } else {
+            0
+        };
 
         // Debounce / repeat-delay
         let now = Instant::now();
