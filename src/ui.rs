@@ -90,6 +90,7 @@ pub fn draw_game_list(
     games: &[crate::steam::Game],
     selected: usize,
     select_anim: f32,
+    scroll_offset: f32,
     game_icons: &std::collections::HashMap<u32, egui::TextureHandle>,
 ) {
     let panel_rect = ui.available_rect_before_wrap();
@@ -115,16 +116,17 @@ pub fn draw_game_list(
     let painter = ui.painter();
 
     for (i, g) in games.iter().enumerate() {
-        let offset = i as isize - selected as isize;
-        if offset < -(visible_above as isize) || offset > visible_below as isize {
+        let offset_f = i as f32 - scroll_offset;
+        let is_selected = i == selected;
+        if offset_f < -(visible_above as f32 + 1.0) || offset_f > (visible_below as f32 + 1.0) {
             continue;
         }
 
-        let dist = (offset as f32).abs();
-        let sign = if offset >= 0 { 1.0 } else { -1.0 };
-        // Extra gap around selected item
+        let dist = offset_f.abs();
+        let sign = if offset_f >= 0.0 { 1.0 } else { -1.0 };
+        // Extra gap around selected item (smooth transition)
         let selected_gap = 16.0;
-        let extra = if offset > 0 { selected_gap } else if offset < 0 { -selected_gap } else { 0.0 };
+        let extra = offset_f.clamp(-1.0, 1.0) * selected_gap;
         let y_pos = center_y + sign * dist * row_spacing * (1.0 - dist * 0.03).max(0.7) + extra;
 
         // Skip items that would overlap the cover image area
@@ -133,19 +135,19 @@ pub fn draw_game_list(
         }
 
         let alpha_factor = (1.0 - dist * 0.13).max(0.0);
-        let font_size = if offset == 0 {
+        let font_size = if is_selected {
             let t = 1.0 - (1.0 - select_anim) * (1.0 - select_anim);
             base_size + (selected_size - base_size) * t
         } else {
             base_size
         };
 
-        let text_alpha = if offset == 0 {
+        let text_alpha = if is_selected {
             255
         } else {
             (220.0 * alpha_factor) as u8
         };
-        let text_color = if offset == 0 {
+        let text_color = if is_selected {
             egui::Color32::from_rgba_unmultiplied(255, 255, 255, 255)
         } else {
             egui::Color32::from_rgba_unmultiplied(200, 200, 210, text_alpha)
@@ -154,7 +156,7 @@ pub fn draw_game_list(
         // Compute icon offset
         let selected_icon_size = selected_size + 26.0;
         let base_icon_size = base_size + 4.0;
-        let icon_size = if offset == 0 {
+        let icon_size = if is_selected {
             let t = 1.0 - (1.0 - select_anim) * (1.0 - select_anim);
             base_icon_size + (selected_icon_size - base_icon_size) * t
         } else {
@@ -167,7 +169,7 @@ pub fn draw_game_list(
             text_x = left_x + icon_size + icon_gap;
         }
 
-        let font_id = if offset == 0 {
+        let font_id = if is_selected {
             egui::FontId::new(font_size, egui::FontFamily::Name("Bold".into()))
         } else {
             egui::FontId::proportional(font_size)
@@ -190,7 +192,7 @@ pub fn draw_game_list(
         let pt_font_size = font_size * 0.5;
         let pt_font = egui::FontId::proportional(pt_font_size);
         let pt_color = egui::Color32::from_rgba_unmultiplied(180, 180, 190, 140);
-        let pt_galley = if offset == 0 && !playtime_str.is_empty() {
+        let pt_galley = if is_selected && !playtime_str.is_empty() {
             Some(painter.layout_no_wrap(playtime_str, pt_font, pt_color))
         } else {
             None
@@ -201,21 +203,7 @@ pub fn draw_game_list(
         let total_h = galley.size().y + pt_row_h;
         let text_y = y_pos - total_h * 0.5;
 
-        // Selected highlight bar
-        if offset == 0 {
-            let bar_pad_x = 20.0;
-            let bar_pad_y = 12.0;
-            let content_w = galley.size().x.max(pt_galley.as_ref().map_or(0.0, |g| g.size().x));
-            let bar_rect = egui::Rect::from_min_size(
-                egui::pos2(left_x - bar_pad_x, y_pos - total_h * 0.5 - bar_pad_y),
-                egui::vec2((text_x - left_x) + content_w + bar_pad_x * 2.0, total_h + bar_pad_y * 2.0),
-            );
-            let glow_alpha = (20.0 * select_anim) as u8;
-            let glow_color = egui::Color32::from_rgba_unmultiplied(255, 255, 255, glow_alpha);
-            painter.rect_filled(bar_rect, egui::Rounding::same(4.0), glow_color);
-        }
-
-        // Draw game icon (after highlight bar so it appears on top)
+        // Draw game icon
         if let Some(app_id) = g.app_id {
             if let Some(icon_tex) = game_icons.get(&app_id) {
                 let icon_tint = egui::Color32::from_rgba_unmultiplied(255, 255, 255, text_alpha);
@@ -235,7 +223,7 @@ pub fn draw_game_list(
         }
 
         // Text outline (2-pass for smooth stroke)
-        let outline_alpha = if offset == 0 {
+        let outline_alpha = if is_selected {
             200
         } else {
             (120.0 * alpha_factor) as u8

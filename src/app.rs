@@ -35,6 +35,7 @@ pub struct LauncherApp {
     cover_debounce_for: Option<usize>,
     select_anim: f32,
     select_anim_target: Option<usize>,
+    scroll_offset: f32,
     hint_icons: Option<ui::HintIcons>,
     nav_input_dir: i8,
     game_icons: HashMap<u32, egui::TextureHandle>,
@@ -68,6 +69,7 @@ impl LauncherApp {
             cover_debounce_for: None,
             select_anim: 0.0,
             select_anim_target: None,
+            scroll_offset: 0.0,
             hint_icons: None,
             nav_input_dir: 0,
             game_icons: HashMap::new(),
@@ -461,9 +463,19 @@ impl eframe::App for LauncherApp {
             self.select_anim = 0.0;
         }
         let dt = ctx.input(|i| i.predicted_dt);
-        self.select_anim = (self.select_anim + dt * 5.0).min(1.0);
-        if self.select_anim < 1.0 {
+        self.select_anim = 1.0 - (1.0 - self.select_anim) * (-10.0 * dt).exp();
+        if self.select_anim < 0.999 {
             ctx.request_repaint();
+        }
+
+        // Smooth scroll animation (exponential decay towards target)
+        let scroll_target = self.selected as f32;
+        let scroll_diff = scroll_target - self.scroll_offset;
+        if scroll_diff.abs() > 0.001 {
+            self.scroll_offset += scroll_diff * (1.0 - (-14.0 * dt).exp());
+            ctx.request_repaint();
+        } else {
+            self.scroll_offset = scroll_target;
         }
 
         // Load hint icons lazily
@@ -501,7 +513,7 @@ impl eframe::App for LauncherApp {
                     self.cover_nav_dir,
                 );
 
-                ui::draw_game_list(ui, &self.games, self.selected, self.select_anim, &self.game_icons);
+                ui::draw_game_list(ui, &self.games, self.selected, self.select_anim, self.scroll_offset, &self.game_icons);
 
                 if let Some(icons) = &self.hint_icons {
                     ui::draw_hint_bar(ui, icons);
