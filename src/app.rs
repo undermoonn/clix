@@ -31,6 +31,8 @@ pub struct LauncherApp {
     cover_nav_dir: f32,
     cover_loaded_for: Option<usize>,
     cover_pending: Arc<Mutex<Option<(u32, Vec<u8>)>>>,
+    cover_debounce_until: Option<Instant>,
+    cover_debounce_for: Option<usize>,
     select_anim: f32,
     select_anim_target: Option<usize>,
     hint_icons: Option<ui::HintIcons>,
@@ -62,6 +64,8 @@ impl LauncherApp {
             cover_nav_dir: 0.0,
             cover_loaded_for: None,
             cover_pending: Arc::new(Mutex::new(None)),
+            cover_debounce_until: None,
+            cover_debounce_for: None,
             select_anim: 0.0,
             select_anim_target: None,
             hint_icons: None,
@@ -388,29 +392,43 @@ impl eframe::App for LauncherApp {
             }
         }
 
-        // Cover loading (async)
+        // Cover loading (async with 300ms debounce)
         if self.cover_loaded_for != Some(self.selected) {
-            self.cover_loaded_for = Some(self.selected);
-            self.cover_prev = self.cover.take();
-            self.cover_fade = 0.0;
-            if let Some(game) = self.games.get(self.selected) {
-                if let Some(app_id) = game.app_id {
-                    let pending = Arc::clone(&self.cover_pending);
-                    let paths = self.steam_paths.clone();
-                    let ctx_clone = ctx.clone();
-                    if let Ok(mut lock) = pending.lock() {
-                        *lock = None;
-                    }
-                    std::thread::spawn(move || {
-                        let bytes = cover::load_cover_bytes(&paths, app_id);
-                        if let Some(bytes) = bytes {
+            // Only reset timer if selection actually changed since last debounce start
+            if self.cover_debounce_for != Some(self.selected) {
+                self.cover_debounce_for = Some(self.selected);
+                self.cover_debounce_until = Some(Instant::now() + std::time::Duration::from_millis(300));
+            }
+        }
+        if let Some(deadline) = self.cover_debounce_until {
+            if Instant::now() >= deadline {
+                self.cover_debounce_until = None;
+                if self.cover_loaded_for != Some(self.selected) {
+                    self.cover_loaded_for = Some(self.selected);
+                    self.cover_prev = self.cover.take();
+                    self.cover_fade = 0.0;
+                    if let Some(game) = self.games.get(self.selected) {
+                        if let Some(app_id) = game.app_id {
+                            let pending = Arc::clone(&self.cover_pending);
+                            let paths = self.steam_paths.clone();
+                            let ctx_clone = ctx.clone();
                             if let Ok(mut lock) = pending.lock() {
-                                *lock = Some((app_id, bytes));
+                                *lock = None;
                             }
-                            ctx_clone.request_repaint();
+                            std::thread::spawn(move || {
+                                let bytes = cover::load_cover_bytes(&paths, app_id);
+                                if let Some(bytes) = bytes {
+                                    if let Ok(mut lock) = pending.lock() {
+                                        *lock = Some((app_id, bytes));
+                                    }
+                                    ctx_clone.request_repaint();
+                                }
+                            });
                         }
-                    });
+                    }
                 }
+            } else {
+                ctx.request_repaint();
             }
         }
 

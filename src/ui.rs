@@ -50,34 +50,21 @@ pub fn draw_background(
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
     let base_alpha: f32 = 60.0;
 
-    // Dark gradient background
-    {
-        let top_col = egui::Color32::from_rgb(15, 15, 15);
-        let bot_col = egui::Color32::from_rgb(25, 25, 25);
-        let mut m = egui::Mesh::default();
-        m.colored_vertex(screen.left_top(), top_col);
-        m.colored_vertex(screen.right_top(), top_col);
-        m.colored_vertex(screen.right_bottom(), bot_col);
-        m.colored_vertex(screen.left_bottom(), bot_col);
-        m.add_triangle(0, 1, 2);
-        m.add_triangle(0, 2, 3);
-        bg_painter.add(egui::Shape::mesh(m));
-    }
+    // Solid dark background
+    bg_painter.rect_filled(screen, egui::Rounding::ZERO, egui::Color32::from_rgb(18, 18, 18));
 
-    let contain_rect_offset = |tex: &egui::TextureHandle, dy: f32| -> egui::Rect {
+    // Image rect: fill screen width, pin to top, keep aspect ratio
+    let top_rect = |tex: &egui::TextureHandle, dy: f32| -> egui::Rect {
         let tex_size = tex.size_vec2();
-        let scale = (screen.width() / tex_size.x).min(screen.height() / tex_size.y);
-        let img_w = tex_size.x * scale;
+        let scale = screen.width() / tex_size.x;
         let img_h = tex_size.y * scale;
-        let offset_x = (screen.width() - img_w) * 0.5;
-        let offset_y = (screen.height() - img_h) * 0.5 + dy;
         egui::Rect::from_min_size(
-            egui::pos2(screen.min.x + offset_x, screen.min.y + offset_y),
-            egui::vec2(img_w, img_h),
+            egui::pos2(screen.min.x, screen.min.y + dy),
+            egui::vec2(screen.width(), img_h),
         )
     };
 
-    let slide_distance = 12.0;
+    let slide_distance = 4.0;
     let ease_t = 1.0 - (1.0 - cover_fade) * (1.0 - cover_fade);
 
     // Previous cover (fading out)
@@ -85,7 +72,7 @@ pub fn draw_background(
         if let Some((_id, tex)) = cover_prev {
             let alpha = (base_alpha * (1.0 - cover_fade)) as u8;
             let tint = egui::Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
-            bg_painter.image(tex.id(), contain_rect_offset(tex, 0.0), uv, tint);
+            bg_painter.image(tex.id(), top_rect(tex, 0.0), uv, tint);
         }
     }
 
@@ -94,7 +81,7 @@ pub fn draw_background(
         let alpha = (base_alpha * cover_fade) as u8;
         let tint = egui::Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
         let dy = cover_nav_dir * slide_distance * (1.0 - ease_t);
-        bg_painter.image(tex.id(), contain_rect_offset(tex, dy), uv, tint);
+        bg_painter.image(tex.id(), top_rect(tex, dy), uv, tint);
     }
 }
 
@@ -108,14 +95,21 @@ pub fn draw_game_list(
     let panel_rect = ui.available_rect_before_wrap();
     let padding = 50.0;
     let padded_rect = panel_rect.shrink(padding);
-    let center_y = padded_rect.center().y;
-    let left_x = padded_rect.min.x + 20.0;
 
     let selected_size = 30.0;
     let base_size = 18.0;
     let row_spacing = 52.0;
-    let visible_above = 6;
-    let visible_below = 6;
+
+    // Position list starting below the hero image
+    let hero_ratio = 1240.0 / 3840.0;
+    let img_bottom = panel_rect.min.y + panel_rect.width() * hero_ratio;
+    let clip_y = img_bottom + 20.0; // items above this line are hidden
+    let center_y = img_bottom + row_spacing + 30.0; // selected item: leave room for 1 item above
+    let left_x = padded_rect.min.x + 20.0;
+
+    let visible_above = 1;
+    let remaining_below = panel_rect.max.y - center_y;
+    let visible_below = (remaining_below / row_spacing).ceil() as usize + 1;
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
 
     let painter = ui.painter();
@@ -129,6 +123,11 @@ pub fn draw_game_list(
         let dist = (offset as f32).abs();
         let sign = if offset >= 0 { 1.0 } else { -1.0 };
         let y_pos = center_y + sign * dist * row_spacing * (1.0 - dist * 0.03).max(0.7);
+
+        // Skip items that would overlap the cover image area
+        if y_pos < clip_y {
+            continue;
+        }
 
         let alpha_factor = (1.0 - dist * 0.13).max(0.0);
         let font_size = if offset == 0 {
@@ -229,20 +228,26 @@ pub fn draw_hint_bar(ui: &mut egui::Ui, icons: &HintIcons) {
     let panel_rect = ui.available_rect_before_wrap();
     let padding = 50.0;
     let padded_rect = panel_rect.shrink(padding);
-    let hint_y = padded_rect.max.y + 10.0;
-    let hint_font = egui::FontId::proportional(14.0);
+    let hint_font = egui::FontId::proportional(20.0);
     let hint_color = egui::Color32::from_rgba_unmultiplied(200, 200, 210, 160);
-    let icon_h = 24.0_f32;
+    let icon_h = 32.0_f32;
+    let row_h = icon_h;
+    let hint_y = padded_rect.max.y - 10.0;
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
 
     let painter = ui.painter();
-    let mut hx = padded_rect.min.x + 20.0;
+
+    // Measure total width first (right-aligned)
+    let g_launch = painter.layout_no_wrap("Start".to_string(), hint_font.clone(), hint_color);
+    let g_quit = painter.layout_no_wrap("Quit".to_string(), hint_font.clone(), hint_color);
+    let total_w = icon_h + 6.0 + g_launch.size().x + 20.0 + icon_h + 6.0 + g_quit.size().x;
+    let mut hx = padded_rect.max.x - total_w;
 
     let draw_icon = |painter: &egui::Painter, tex: &egui::TextureHandle, x: f32| {
         painter.image(
             tex.id(),
             egui::Rect::from_min_size(
-                egui::pos2(x, hint_y + (20.0 - icon_h) * 0.5),
+                egui::pos2(x, hint_y + (row_h - icon_h) * 0.5),
                 egui::vec2(icon_h, icon_h),
             ),
             uv,
@@ -254,19 +259,17 @@ pub fn draw_hint_bar(ui: &mut egui::Ui, icons: &HintIcons) {
     draw_icon(painter, &icons.btn_a, hx);
     hx += icon_h + 6.0;
 
-    // "启动"
-    let g = painter.layout_no_wrap("启动".to_string(), hint_font.clone(), hint_color);
-    let gy = hint_y + (20.0 - g.size().y) * 0.5;
-    let g_width = g.size().x;
-    painter.galley(egui::pos2(hx, gy), g);
+    // "Launch"
+    let gy = hint_y + (row_h - g_launch.size().y) * 0.5;
+    let g_width = g_launch.size().x;
+    painter.galley(egui::pos2(hx, gy), g_launch);
     hx += g_width + 20.0;
 
     // B button
     draw_icon(painter, &icons.btn_b, hx);
     hx += icon_h + 6.0;
 
-    // "退出"
-    let g = painter.layout_no_wrap("退出".to_string(), hint_font, hint_color);
-    let gy = hint_y + (20.0 - g.size().y) * 0.5;
-    painter.galley(egui::pos2(hx, gy), g);
+    // "Quit"
+    let gy = hint_y + (row_h - g_quit.size().y) * 0.5;
+    painter.galley(egui::pos2(hx, gy), g_quit);
 }

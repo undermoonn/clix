@@ -27,66 +27,65 @@ pub fn hd_cache_dir() -> PathBuf {
 }
 
 fn download_hd_cover(app_id: u32) -> Option<Vec<u8>> {
-    let url = format!(
-        "https://steamcdn-a.akamaihd.net/steam/apps/{}/library_hero.jpg",
-        app_id
-    );
-    let resp = ureq::get(&url).call().ok()?;
-    if resp.status() != 200 {
-        return None;
+    // Download 3840x1240 library_hero from Steam CDN
+    let urls = [
+        format!(
+            "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{}/library_hero.jpg",
+            app_id
+        ),
+        format!(
+            "https://steamcdn-a.akamaihd.net/steam/apps/{}/library_hero.jpg",
+            app_id
+        ),
+    ];
+    for url in &urls {
+        if let Ok(resp) = ureq::get(url).call() {
+            if resp.status() == 200 {
+                let mut bytes: Vec<u8> = Vec::new();
+                if resp
+                    .into_reader()
+                    .take(10 * 1024 * 1024)
+                    .read_to_end(&mut bytes)
+                    .is_ok()
+                    && bytes.len() > 1024
+                {
+                    let cache_path = hd_cache_dir().join(format!("{}_hero.jpg", app_id));
+                    let _ = std::fs::write(&cache_path, &bytes);
+                    return Some(bytes);
+                }
+            }
+        }
     }
-    let mut bytes: Vec<u8> = Vec::new();
-    resp.into_reader()
-        .take(10 * 1024 * 1024)
-        .read_to_end(&mut bytes)
-        .ok()?;
-    if bytes.len() < 1024 {
-        return None;
-    }
-    let cache_path = hd_cache_dir().join(format!("{}_hero_hd.jpg", app_id));
-    let _ = std::fs::write(&cache_path, &bytes);
-    Some(bytes)
+    None
 }
 
 pub fn load_cover_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>> {
-    // 1. Check our own HD cache first
-    let hd_path = hd_cache_dir().join(format!("{}_hero_hd.jpg", app_id));
-    if hd_path.exists() {
-        if let Ok(bytes) = std::fs::read(&hd_path) {
+    // 1. Check local cache
+    let cache_path = hd_cache_dir().join(format!("{}_hero.jpg", app_id));
+    if cache_path.exists() {
+        if let Ok(bytes) = std::fs::read(&cache_path) {
             if bytes.len() > 1024 {
                 return Some(bytes);
             }
         }
     }
 
-    // 2. Try downloading HD version from Steam CDN
+    // 2. Try downloading library_hero from Steam CDN
     if let Some(bytes) = download_hd_cover(app_id) {
         return Some(bytes);
     }
 
     // 3. Fallback: local Steam library cache
-    let candidates = [
-        "library_hero.jpg",
-        "library_hero.png",
-        "header.jpg",
-        "library_600x900.jpg",
-    ];
-
     for steam_root in steam_paths {
-        let app_cache_dir = steam_root
+        let img_path = steam_root
             .join("appcache")
             .join("librarycache")
-            .join(app_id.to_string());
-        if !app_cache_dir.exists() {
-            continue;
-        }
-        for name in &candidates {
-            let img_path = app_cache_dir.join(name);
-            if img_path.exists() {
-                if let Ok(bytes) = std::fs::read(&img_path) {
-                    if bytes.len() > 1024 {
-                        return Some(bytes);
-                    }
+            .join(app_id.to_string())
+            .join("library_hero.jpg");
+        if img_path.exists() {
+            if let Ok(bytes) = std::fs::read(&img_path) {
+                if bytes.len() > 1024 {
+                    return Some(bytes);
                 }
             }
         }
