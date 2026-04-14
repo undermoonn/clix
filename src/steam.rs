@@ -311,7 +311,7 @@ fn parse_userdata(steam_paths: &[PathBuf]) -> (HashMap<u32, u64>, HashMap<u32, u
 
 enum BvdfVal {
     Nested(HashMap<String, BvdfVal>),
-    Str,
+    Str(String),
     Int32(i32),
     Uint64(u64),
 }
@@ -340,8 +340,8 @@ fn bvdf_node(data: &[u8], pos: &mut usize) -> HashMap<String, BvdfVal> {
         match ty {
             0x00 => { map.insert(key, BvdfVal::Nested(bvdf_node(data, pos))); }
             0x01 => {
-                let _ = bvdf_cstr(data, pos);
-                map.insert(key, BvdfVal::Str);
+                let val = bvdf_cstr(data, pos).unwrap_or_default();
+                map.insert(key, BvdfVal::Str(val));
             }
             0x02 => {
                 if *pos + 4 > data.len() { break; }
@@ -416,11 +416,15 @@ fn ach_map_unlocks(root: &HashMap<String, BvdfVal>) -> Option<HashMap<String, (b
 }
 
 fn load_local_unlock_status(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<String, (bool, Option<u64>)> {
-    let Some(steam_id) = find_most_recent_steam_id(steam_paths) else {
+    let Some(account_id) = find_most_recent_steam_id(steam_paths)
+        .as_deref()
+        .and_then(steamid64_to_accountid) else {
         return HashMap::new();
     };
+
+    // Try userdata files first (per-achievement achieved/time format)
     for steam_root in steam_paths {
-        let base = steam_root.join("userdata").join(&steam_id).join(app_id.to_string());
+        let base = steam_root.join("userdata").join(&account_id).join(app_id.to_string());
         let candidates = [
             base.join("stats").join("UserGameStats.bin"),
             base.join("local").join("achievements.bin"),
@@ -437,22 +441,171 @@ fn load_local_unlock_status(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<Str
             }
         }
     }
+
+    // Fallback: try appcache/stats/UserGameStats_<accountid>_<appid>.bin (bitmask format)
+    load_appcache_unlock_status(app_id, &account_id, steam_paths)
+}
+
+/// Parse the schema file to extract achievement bit-index-to-api-name mappings.
+/// Returns a map of section_id -> Vec<(bit_index, api_name)>.
+fn load_schema_achievement_bits(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<String, Vec<(u32, String)>> {
+    for steam_root in steam_paths {
+        let schema_path = steam_root
+            .join("appcache")
+            .join("stats")
+            .join(format!("UserGameStatsSchema_{}.bin", app_id));
+        let Ok(data) = std::fs::read(&schema_path) else { continue };
+
+        for &start in &[0usize, 2, 4, 8] {
+            if start >= data.len() { break; }
+            let mut pos = start;
+            let root = bvdf_node(&data, &mut pos);
+            let mut result: HashMap<String, Vec<(u32, String)>> = HashMap::new();
+            collect_achievement_bits(&root, &mut result, 0);
+            if !result.is_empty() {
+                return result;
+            }
+        }
+    }
     HashMap::new()
 }
 
+fn collect_achievement_bits(
+    node: &HashMap<String, BvdfVal>,
+    result: &mut HashMap<String, Vec<(u32, String)>>,
+    depth: u32,
+) {
+    if depth > 6 { return; }
+    for (key, val) in node {
+        if let BvdfVal::Nested(inner) = val {
+            // Check if this node has a "bits" child with achievement entries
+            if let Some(BvdfVal::Nested(bits)) = inner.iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("bits"))
+                .map(|(_, v)| v)
+            {
+                let mut entries: Vec<(u32, String)> = Vec::new();
+                for (bit_key, bit_val) in bits {
+                    if let (Ok(bit_idx), BvdfVal::Nested(fields)) = (bit_key.parse::<u32>(), bit_val) {
+                        if let Some(BvdfVal::Str(api_name)) = fields.iter()
+                            .find(|(k, _)| k.eq_ignore_ascii_case("name"))
+                            .map(|(_, v)| v)
+                        {
+                            if !api_name.is_empty() {
+                                entries.push((bit_idx, api_name.clone()));
+                            }
+                        }
+                    }
+                }
+                if !entries.is_empty() {
+                    entries.sort_by_key(|(idx, _)| *idx);
+                    result.insert(key.clone(), entries);
+                }
+            }
+            collect_achievement_bits(inner, result, depth + 1);
+        }
+    }
+}
+
+/// Load achievement unlock status from appcache/stats/UserGameStats_<accountid>_<appid>.bin.
+/// This file uses a bitmask format where each stat section's "data" field is a u32
+/// bitmask, and "AchievementTimes" contains per-bit timestamps.
+fn load_appcache_unlock_status(
+    app_id: u32,
+    account_id: &str,
+    steam_paths: &[PathBuf],
+) -> HashMap<String, (bool, Option<u64>)> {
+    let bit_mapping = load_schema_achievement_bits(app_id, steam_paths);
+    if bit_mapping.is_empty() {
+        return HashMap::new();
+    }
+
+    for steam_root in steam_paths {
+        let stats_path = steam_root
+            .join("appcache")
+            .join("stats")
+            .join(format!("UserGameStats_{}_{}.bin", account_id, app_id));
+        let Ok(data) = std::fs::read(&stats_path) else { continue };
+
+        for &start in &[0usize, 2, 4, 8] {
+            if start >= data.len() { break; }
+            let mut pos = start;
+            let root = bvdf_node(&data, &mut pos);
+            let mut result = HashMap::new();
+            extract_bitmask_unlocks(&root, &bit_mapping, &mut result, 0);
+            if !result.is_empty() {
+                return result;
+            }
+        }
+    }
+    HashMap::new()
+}
+
+fn extract_bitmask_unlocks(
+    node: &HashMap<String, BvdfVal>,
+    bit_mapping: &HashMap<String, Vec<(u32, String)>>,
+    result: &mut HashMap<String, (bool, Option<u64>)>,
+    depth: u32,
+) {
+    if depth > 6 { return; }
+    for (key, val) in node {
+        if let BvdfVal::Nested(inner) = val {
+            if let Some(entries) = bit_mapping.get(key) {
+                if let Some(BvdfVal::Int32(data)) = inner.iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("data"))
+                    .map(|(_, v)| v)
+                {
+                    let bitmask = *data as u32;
+                    let timestamps: HashMap<u32, u64> = inner.iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case("AchievementTimes"))
+                        .and_then(|(_, v)| if let BvdfVal::Nested(times) = v { Some(times) } else { None })
+                        .map(|times| {
+                            times.iter().filter_map(|(k, v)| {
+                                let idx = k.parse::<u32>().ok()?;
+                                let ts = match v {
+                                    BvdfVal::Int32(t) => Some(*t as u64),
+                                    BvdfVal::Uint64(t) => Some(*t),
+                                    _ => None,
+                                }?;
+                                Some((idx, ts))
+                            }).collect()
+                        })
+                        .unwrap_or_default();
+
+                    for (bit_idx, api_name) in entries {
+                        let achieved = (bitmask >> bit_idx) & 1 != 0;
+                        let time = if achieved { timestamps.get(bit_idx).copied() } else { None };
+                        result.insert(api_name.clone(), (achieved, time));
+                    }
+                }
+            }
+            extract_bitmask_unlocks(inner, bit_mapping, result, depth + 1);
+        }
+    }
+}
+
 fn local_unlock_file_exists(app_id: u32, steam_paths: &[PathBuf]) -> bool {
-    let Some(steam_id) = find_most_recent_steam_id(steam_paths) else {
+    let Some(account_id) = find_most_recent_steam_id(steam_paths)
+        .as_deref()
+        .and_then(steamid64_to_accountid) else {
         return false;
     };
 
     for steam_root in steam_paths {
-        let base = steam_root.join("userdata").join(&steam_id).join(app_id.to_string());
+        let base = steam_root.join("userdata").join(&account_id).join(app_id.to_string());
         let candidates = [
             base.join("stats").join("UserGameStats.bin"),
             base.join("local").join("achievements.bin"),
         ];
 
         if candidates.iter().any(|p| p.exists()) {
+            return true;
+        }
+
+        let appcache_path = steam_root
+            .join("appcache")
+            .join("stats")
+            .join(format!("UserGameStats_{}_{}.bin", account_id, app_id));
+        if appcache_path.exists() {
             return true;
         }
     }
@@ -786,6 +939,13 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
         total: items.len() as u32,
         items,
     })
+}
+
+fn steamid64_to_accountid(steamid64: &str) -> Option<String> {
+    let id: u64 = steamid64.parse().ok()?;
+    let account_id = id & 0xFFFF_FFFF;
+    if account_id == 0 { return None; }
+    Some(account_id.to_string())
 }
 
 fn find_most_recent_steam_id(steam_paths: &[PathBuf]) -> Option<String> {
