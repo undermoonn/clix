@@ -35,6 +35,8 @@ pub struct LauncherApp {
     select_anim_target: Option<usize>,
     hint_icons: Option<ui::HintIcons>,
     nav_input_dir: i8,
+    game_icons: HashMap<u32, egui::TextureHandle>,
+    icons_loaded: bool,
 }
 
 impl LauncherApp {
@@ -64,6 +66,8 @@ impl LauncherApp {
             select_anim_target: None,
             hint_icons: None,
             nav_input_dir: 0,
+            game_icons: HashMap::new(),
+            icons_loaded: false,
         }
     }
 
@@ -449,6 +453,24 @@ impl eframe::App for LauncherApp {
             self.hint_icons = ui::load_hint_icons(ctx);
         }
 
+        // Load game icons lazily
+        if !self.icons_loaded {
+            self.icons_loaded = true;
+            for game in &self.games {
+                if let Some(app_id) = game.app_id {
+                    if let Some(bytes) = cover::load_icon_bytes(&self.steam_paths, app_id) {
+                        if let Some(tex) = cover::bytes_to_texture(
+                            ctx,
+                            &bytes,
+                            format!("icon_{}", app_id),
+                        ) {
+                            self.game_icons.insert(app_id, tex);
+                        }
+                    }
+                }
+            }
+        }
+
         // Draw UI
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(egui::Color32::TRANSPARENT))
@@ -461,7 +483,7 @@ impl eframe::App for LauncherApp {
                     self.cover_nav_dir,
                 );
 
-                ui::draw_game_list(ui, &self.games, self.selected, self.select_anim);
+                ui::draw_game_list(ui, &self.games, self.selected, self.select_anim, &self.game_icons);
 
                 if let Some(icons) = &self.hint_icons {
                     ui::draw_hint_bar(ui, icons);

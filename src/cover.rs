@@ -93,3 +93,42 @@ pub fn load_cover_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>>
     }
     None
 }
+
+/// Load game icon bytes from Steam's local library cache.
+/// The icon is the small hashed .jpg file (32x32) in librarycache/{appid}/.
+pub fn load_icon_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>> {
+    let known_names = [
+        "header.jpg",
+        "library_600x900.jpg",
+        "library_hero.jpg",
+        "library_hero_blur.jpg",
+    ];
+    for steam_root in steam_paths {
+        let dir = steam_root
+            .join("appcache")
+            .join("librarycache")
+            .join(app_id.to_string());
+        if !dir.exists() {
+            continue;
+        }
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if !name_str.ends_with(".jpg") {
+                    continue;
+                }
+                if known_names.contains(&name_str.as_ref()) {
+                    continue;
+                }
+                // This should be the hashed icon file
+                if let Ok(bytes) = std::fs::read(entry.path()) {
+                    if !bytes.is_empty() {
+                        return Some(bytes);
+                    }
+                }
+            }
+        }
+    }
+    None
+}

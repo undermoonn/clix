@@ -103,6 +103,7 @@ pub fn draw_game_list(
     games: &[crate::steam::Game],
     selected: usize,
     select_anim: f32,
+    game_icons: &std::collections::HashMap<u32, egui::TextureHandle>,
 ) {
     let panel_rect = ui.available_rect_before_wrap();
     let padding = 50.0;
@@ -115,6 +116,7 @@ pub fn draw_game_list(
     let row_spacing = 52.0;
     let visible_above = 6;
     let visible_below = 6;
+    let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
 
     let painter = ui.painter();
 
@@ -147,6 +149,15 @@ pub fn draw_game_list(
             egui::Color32::from_rgba_unmultiplied(200, 200, 210, text_alpha)
         };
 
+        // Compute icon offset
+        let icon_size = font_size + 4.0;
+        let icon_gap = 8.0;
+        let mut text_x = left_x;
+        let has_icon = g.app_id.and_then(|id| game_icons.get(&id)).is_some();
+        if has_icon {
+            text_x = left_x + icon_size + icon_gap;
+        }
+
         let font_id = egui::FontId::proportional(font_size);
         let galley = painter.layout_no_wrap(g.name.clone(), font_id.clone(), text_color);
         let text_y = y_pos - galley.size().y * 0.5;
@@ -157,11 +168,23 @@ pub fn draw_game_list(
             let bar_pad_x = 12.0;
             let bar_rect = egui::Rect::from_min_size(
                 egui::pos2(left_x - bar_pad_x, y_pos - bar_h * 0.5),
-                egui::vec2(galley.size().x + bar_pad_x * 2.0, bar_h),
+                egui::vec2((text_x - left_x) + galley.size().x + bar_pad_x * 2.0, bar_h),
             );
             let glow_alpha = (40.0 * select_anim) as u8;
             let glow_color = egui::Color32::from_rgba_unmultiplied(255, 255, 255, glow_alpha);
             painter.rect_filled(bar_rect, egui::Rounding::same(4.0), glow_color);
+        }
+
+        // Draw game icon (after highlight bar so it appears on top)
+        if let Some(app_id) = g.app_id {
+            if let Some(icon_tex) = game_icons.get(&app_id) {
+                let icon_tint = egui::Color32::from_rgba_unmultiplied(255, 255, 255, text_alpha);
+                let icon_rect = egui::Rect::from_min_size(
+                    egui::pos2(left_x, y_pos - icon_size * 0.5),
+                    egui::vec2(icon_size, icon_size),
+                );
+                painter.image(icon_tex.id(), icon_rect, uv, icon_tint);
+            }
         }
 
         // Text shadow
@@ -178,11 +201,11 @@ pub fn draw_game_list(
             egui::vec2(1.0, -1.0),
             egui::vec2(-1.0, -1.0),
         ] {
-            painter.galley(egui::pos2(left_x, text_y) + off, shadow_galley.clone());
+            painter.galley(egui::pos2(text_x, text_y) + off, shadow_galley.clone());
         }
 
         // Foreground text
-        painter.galley(egui::pos2(left_x, text_y), galley);
+        painter.galley(egui::pos2(text_x, text_y), galley);
     }
 }
 
