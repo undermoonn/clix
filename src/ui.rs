@@ -213,7 +213,7 @@ pub fn draw_game_list(
                 );
                 painter.add(egui::Shape::Rect(egui::epaint::RectShape {
                     rect: icon_rect,
-                    rounding: egui::Rounding::same(4.0),
+                    rounding: egui::Rounding::same(8.0),
                     fill: icon_tint,
                     stroke: egui::Stroke::NONE,
                     fill_texture_id: icon_tex.id(),
