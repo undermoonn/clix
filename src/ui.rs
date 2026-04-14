@@ -1,5 +1,15 @@
 use eframe::egui;
 
+fn format_achievement_status(unlocked: Option<bool>, unlock_time: Option<u64>) -> Option<String> {
+    match unlocked {
+        Some(true) => unlock_time
+            .and_then(|value| i64::try_from(value).ok())
+            .and_then(|timestamp| chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp, 0))
+            .map(|datetime| datetime.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string()),
+        _ => None,
+    }
+}
+
 pub struct HintIcons {
     pub btn_a: egui::TextureHandle,
     pub btn_b: egui::TextureHandle,
@@ -465,9 +475,9 @@ pub fn draw_achievement_panel(
                 }
 
                 let name = item.display_name.as_deref().unwrap_or(&item.api_name);
-                let mut line = String::from(name);
+                let mut title = String::from(name);
                 if let Some(p) = item.global_percent {
-                    line.push_str(&format!("  ({:.1}%)", p));
+                    title.push_str(&format!("  ({:.1}%)", p));
                 }
                 let color = egui::Color32::from_rgba_unmultiplied(
                     220,
@@ -475,13 +485,47 @@ pub fn draw_achievement_panel(
                     236,
                     (236.0 * alpha_factor * activity_alpha) as u8,
                 );
-                let font = if active && is_selected {
+                let title_font = if active && is_selected {
                     egui::FontId::new(text_size, egui::FontFamily::Name("Bold".into()))
                 } else {
                     egui::FontId::proportional(text_size)
                 };
-                let galley = list_painter.layout_no_wrap(line, font, color);
-                list_painter.galley(egui::pos2(text_x, y_pos - galley.size().y * 0.5), galley);
+                let status_font = egui::FontId::proportional((text_size * 0.76).max(11.0));
+                let status_color = egui::Color32::from_rgba_unmultiplied(
+                    178,
+                    184,
+                    196,
+                    (196.0 * alpha_factor * activity_alpha) as u8,
+                );
+                let title_galley = list_painter.layout_no_wrap(title, title_font, color);
+                let status_galley = format_achievement_status(item.unlocked, item.unlock_time)
+                    .map(|status| {
+                        list_painter.layout_no_wrap(
+                            format!("  •  {}", status),
+                            status_font,
+                            status_color,
+                        )
+                    });
+                let total_width = title_galley.size().x
+                    + status_galley.as_ref().map(|galley| galley.size().x).unwrap_or(0.0);
+                let total_height = status_galley
+                    .as_ref()
+                    .map(|galley| title_galley.size().y.max(galley.size().y))
+                    .unwrap_or(title_galley.size().y);
+                let base_pos = egui::pos2(text_x, y_pos - total_height * 0.5);
+                list_painter.galley(
+                    egui::pos2(base_pos.x, base_pos.y + (total_height - title_galley.size().y) * 0.5),
+                    title_galley,
+                );
+                if let Some(status_galley) = status_galley {
+                    list_painter.galley(
+                        egui::pos2(
+                            base_pos.x + total_width - status_galley.size().x,
+                            base_pos.y + (total_height - status_galley.size().y) * 0.5,
+                        ),
+                        status_galley,
+                    );
+                }
             }
         }
         None => {}
