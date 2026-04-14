@@ -4,6 +4,7 @@ pub struct HintIcons {
     pub dpad_up: egui::TextureHandle,
     pub dpad_down: egui::TextureHandle,
     pub btn_a: egui::TextureHandle,
+    pub btn_b: egui::TextureHandle,
 }
 
 fn png_bytes_to_texture(
@@ -38,10 +39,16 @@ pub fn load_hint_icons(ctx: &egui::Context) -> Option<HintIcons> {
         include_bytes!("icons/Xbox/T_X_A_White_Alt.png"),
         "icon_btn_a",
     )?;
+    let btn_b = png_bytes_to_texture(
+        ctx,
+        include_bytes!("icons/Xbox/T_X_B_White_Alt.png"),
+        "icon_btn_b",
+    )?;
     Some(HintIcons {
         dpad_up,
         dpad_down,
         btn_a,
+        btn_b,
     })
 }
 
@@ -258,7 +265,29 @@ pub fn draw_hint_bar(ui: &mut egui::Ui, icons: &HintIcons) {
     hx += a_w + 6.0;
 
     // "启动"
-    let g = painter.layout_no_wrap("启动".to_string(), hint_font, hint_color);
+    let g = painter.layout_no_wrap("启动".to_string(), hint_font.clone(), hint_color);
+    let gy = hint_y + (20.0 - g.size().y) * 0.5;
+    let g_width = g.size().x;
+    painter.galley(egui::pos2(hx, gy), g);
+    hx += g_width + 20.0;
+
+    // B button
+    let b_size = icons.btn_b.size_vec2();
+    let b_scale = icon_h / b_size.y;
+    let b_w = b_size.x * b_scale;
+    painter.image(
+        icons.btn_b.id(),
+        egui::Rect::from_min_size(
+            egui::pos2(hx, hint_y + (20.0 - icon_h) * 0.5),
+            egui::vec2(b_w, icon_h),
+        ),
+        uv,
+        egui::Color32::WHITE,
+    );
+    hx += b_w + 6.0;
+
+    // "退出"
+    let g = painter.layout_no_wrap("退出".to_string(), hint_font, hint_color);
     let gy = hint_y + (20.0 - g.size().y) * 0.5;
     painter.galley(egui::pos2(hx, gy), g);
 }

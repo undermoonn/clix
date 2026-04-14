@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 #[cfg(target_os = "windows")]
-use winapi::um::xinput::{XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_UP};
+use winapi::um::xinput::{XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B, XINPUT_GAMEPAD_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_UP};
 
 use crate::cover;
 use crate::input::*;
@@ -80,7 +80,7 @@ impl LauncherApp {
 }
 
 impl eframe::App for LauncherApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let has_focus = ctx.input(|i| i.focused);
 
         if has_focus {
@@ -155,6 +155,9 @@ impl eframe::App for LauncherApp {
                             if (buttons & XINPUT_GAMEPAD_A) != 0 {
                                 raw_held.insert("launch");
                             }
+                            if (buttons & XINPUT_GAMEPAD_B) != 0 {
+                                raw_held.insert("quit");
+                            }
                             if *ly > 16000 {
                                 raw_held.insert("up");
                             } else if *ly < -16000 {
@@ -176,6 +179,9 @@ impl eframe::App for LauncherApp {
                                                 }
                                                 "launch" => {
                                                     raw_held.insert("launch");
+                                                }
+                                                "quit" => {
+                                                    raw_held.insert("quit");
                                                 }
                                                 _ => {}
                                             }
@@ -253,6 +259,9 @@ impl eframe::App for LauncherApp {
                                                 "launch" => {
                                                     raw_held.insert("launch");
                                                 }
+                                                "quit" => {
+                                                    raw_held.insert("quit");
+                                                }
                                                 _ => {}
                                             }
                                         }
@@ -295,7 +304,7 @@ impl eframe::App for LauncherApp {
         let now = Instant::now();
         self.nav_held.retain(|k, _| raw_held.contains(k));
 
-        for action_name in &["up", "down", "launch"] {
+        for action_name in &["up", "down", "launch", "quit"] {
             if raw_held.contains(action_name) {
                 let should_fire = if let Some(state) = self.nav_held.get_mut(action_name) {
                     if !state.past_initial {
@@ -331,6 +340,7 @@ impl eframe::App for LauncherApp {
                         "up" => actions.push(ControllerAction::Up),
                         "down" => actions.push(ControllerAction::Down),
                         "launch" => actions.push(ControllerAction::Launch),
+                        "quit" => actions.push(ControllerAction::Quit),
                         _ => {}
                     }
                 }
@@ -354,6 +364,9 @@ impl eframe::App for LauncherApp {
                 }
                 ControllerAction::Launch => {
                     self.launch_selected();
+                }
+                ControllerAction::Quit => {
+                    frame.close();
                 }
             }
         }

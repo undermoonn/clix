@@ -18,6 +18,7 @@ pub enum ControllerAction {
     Up,
     Down,
     Launch,
+    Quit,
 }
 
 pub struct NavState {
