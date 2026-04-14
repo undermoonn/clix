@@ -366,7 +366,8 @@ pub fn draw_achievement_panel(
                                     Some(false) => "[ ]",
                                     None => "[?]",
                                 };
-                                let mut line = format!("{} {}", state, item.api_name);
+                                let name = item.display_name.as_deref().unwrap_or(&item.api_name);
+                                let mut line = format!("{} {}", state, name);
                                 if let Some(p) = item.global_percent {
                                     line.push_str(&format!("  ({:.1}%)", p));
                                 }

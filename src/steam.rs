@@ -14,6 +14,7 @@ pub struct Game {
 #[derive(Clone, Debug, Default)]
 pub struct AchievementItem {
     pub api_name: String,
+    pub display_name: Option<String>,
     pub unlocked: Option<bool>,
     pub unlock_time: Option<u64>,
     pub global_percent: Option<f32>,
@@ -446,9 +447,16 @@ fn load_local_unlock_status(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<Str
     load_appcache_unlock_status(app_id, &account_id, steam_paths)
 }
 
-/// Parse the schema file to extract achievement bit-index-to-api-name mappings.
-/// Returns a map of section_id -> Vec<(bit_index, api_name)>.
-fn load_schema_achievement_bits(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<String, Vec<(u32, String)>> {
+/// Parsed achievement info from the schema: api_name and optional display_name.
+#[derive(Clone)]
+struct SchemaAchInfo {
+    api_name: String,
+    display_name: Option<String>,
+}
+
+/// Parse the schema file to extract achievement bit-index-to-info mappings.
+/// Returns a map of section_id -> Vec<(bit_index, SchemaAchInfo)>.
+fn load_schema_achievement_bits(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<String, Vec<(u32, SchemaAchInfo)>> {
     for steam_root in steam_paths {
         let schema_path = steam_root
             .join("appcache")
@@ -460,7 +468,7 @@ fn load_schema_achievement_bits(app_id: u32, steam_paths: &[PathBuf]) -> HashMap
             if start >= data.len() { break; }
             let mut pos = start;
             let root = bvdf_node(&data, &mut pos);
-            let mut result: HashMap<String, Vec<(u32, String)>> = HashMap::new();
+            let mut result: HashMap<String, Vec<(u32, SchemaAchInfo)>> = HashMap::new();
             collect_achievement_bits(&root, &mut result, 0);
             if !result.is_empty() {
                 return result;
@@ -472,7 +480,7 @@ fn load_schema_achievement_bits(app_id: u32, steam_paths: &[PathBuf]) -> HashMap
 
 fn collect_achievement_bits(
     node: &HashMap<String, BvdfVal>,
-    result: &mut HashMap<String, Vec<(u32, String)>>,
+    result: &mut HashMap<String, Vec<(u32, SchemaAchInfo)>>,
     depth: u32,
 ) {
     if depth > 6 { return; }
@@ -483,7 +491,7 @@ fn collect_achievement_bits(
                 .find(|(k, _)| k.eq_ignore_ascii_case("bits"))
                 .map(|(_, v)| v)
             {
-                let mut entries: Vec<(u32, String)> = Vec::new();
+                let mut entries: Vec<(u32, SchemaAchInfo)> = Vec::new();
                 for (bit_key, bit_val) in bits {
                     if let (Ok(bit_idx), BvdfVal::Nested(fields)) = (bit_key.parse::<u32>(), bit_val) {
                         if let Some(BvdfVal::Str(api_name)) = fields.iter()
@@ -491,7 +499,11 @@ fn collect_achievement_bits(
                             .map(|(_, v)| v)
                         {
                             if !api_name.is_empty() {
-                                entries.push((bit_idx, api_name.clone()));
+                                let display_name = extract_display_name(fields);
+                                entries.push((bit_idx, SchemaAchInfo {
+                                    api_name: api_name.clone(),
+                                    display_name,
+                                }));
                             }
                         }
                     }
@@ -504,6 +516,47 @@ fn collect_achievement_bits(
             collect_achievement_bits(inner, result, depth + 1);
         }
     }
+}
+
+/// Extract a localized display name from a bit entry's "display" -> "name" node.
+/// Prefers schinese, falls back to english.
+fn extract_display_name(fields: &HashMap<String, BvdfVal>) -> Option<String> {
+    let display = fields.iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("display"))
+        .and_then(|(_, v)| if let BvdfVal::Nested(d) = v { Some(d) } else { None })?;
+    let name_node = display.iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("name"))
+        .and_then(|(_, v)| if let BvdfVal::Nested(n) = v { Some(n) } else { None })?;
+
+    // Prefer schinese
+    if let Some(BvdfVal::Str(s)) = name_node.iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("schinese"))
+        .map(|(_, v)| v)
+    {
+        if !s.is_empty() { return Some(s.clone()); }
+    }
+    // Fall back to english
+    if let Some(BvdfVal::Str(s)) = name_node.iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("english"))
+        .map(|(_, v)| v)
+    {
+        if !s.is_empty() { return Some(s.clone()); }
+    }
+    None
+}
+
+/// Build a map from api_name -> display_name from the schema.
+fn load_schema_display_names(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<String, String> {
+    let bits = load_schema_achievement_bits(app_id, steam_paths);
+    let mut map = HashMap::new();
+    for (_, entries) in &bits {
+        for (_, info) in entries {
+            if let Some(dn) = &info.display_name {
+                map.insert(info.api_name.clone(), dn.clone());
+            }
+        }
+    }
+    map
 }
 
 /// Load achievement unlock status from appcache/stats/UserGameStats_<accountid>_<appid>.bin.
@@ -542,7 +595,7 @@ fn load_appcache_unlock_status(
 
 fn extract_bitmask_unlocks(
     node: &HashMap<String, BvdfVal>,
-    bit_mapping: &HashMap<String, Vec<(u32, String)>>,
+    bit_mapping: &HashMap<String, Vec<(u32, SchemaAchInfo)>>,
     result: &mut HashMap<String, (bool, Option<u64>)>,
     depth: u32,
 ) {
@@ -571,10 +624,10 @@ fn extract_bitmask_unlocks(
                         })
                         .unwrap_or_default();
 
-                    for (bit_idx, api_name) in entries {
+                    for (bit_idx, info) in entries {
                         let achieved = (bitmask >> bit_idx) & 1 != 0;
                         let time = if achieved { timestamps.get(bit_idx).copied() } else { None };
-                        result.insert(api_name.clone(), (achieved, time));
+                        result.insert(info.api_name.clone(), (achieved, time));
                     }
                 }
             }
@@ -838,6 +891,7 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
                         for item in list {
                             items_map.insert(item.name.clone(), AchievementItem {
                                 api_name: item.name,
+                                display_name: None,
                                 unlocked: None,
                                 unlock_time: None,
                                 global_percent: Some(item.percent),
@@ -856,6 +910,7 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
         for (api_name, (achieved, time)) in &local_unlocks {
             let e = items_map.entry(api_name.clone()).or_insert_with(|| AchievementItem {
                 api_name: api_name.clone(),
+                display_name: None,
                 unlocked: None,
                 unlock_time: None,
                 global_percent: None,
@@ -886,6 +941,7 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
                                 if achieved { api_count += 1; }
                                 let e = items_map.entry(pa.apiname.clone()).or_insert_with(|| AchievementItem {
                                     api_name: pa.apiname.clone(),
+                                    display_name: None,
                                     unlocked: None,
                                     unlock_time: None,
                                     global_percent: None,
@@ -909,6 +965,7 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
                 name.clone(),
                 AchievementItem {
                     api_name: name,
+                    display_name: None,
                     unlocked: None,
                     unlock_time: None,
                     global_percent: None,
@@ -919,6 +976,16 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
 
     if items_map.is_empty() {
         return None;
+    }
+
+    // Phase 6 — apply display names from schema
+    let display_names = load_schema_display_names(app_id, steam_paths);
+    for item in items_map.values_mut() {
+        if item.display_name.is_none() {
+            if let Some(dn) = display_names.get(&item.api_name) {
+                item.display_name = Some(dn.clone());
+            }
+        }
     }
 
     let mut items: Vec<AchievementItem> = items_map.into_values().collect();
