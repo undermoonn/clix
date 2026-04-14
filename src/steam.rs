@@ -15,6 +15,7 @@ pub struct Game {
 pub struct AchievementItem {
     pub api_name: String,
     pub display_name: Option<String>,
+    pub description: Option<String>,
     pub unlocked: Option<bool>,
     pub unlock_time: Option<u64>,
     pub global_percent: Option<f32>,
@@ -487,6 +488,7 @@ fn load_local_unlock_status(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<Str
 struct SchemaAchInfo {
     api_name: String,
     display_name: Option<String>,
+    description: Option<String>,
     icon_url: Option<String>,
     icon_gray_url: Option<String>,
 }
@@ -555,16 +557,21 @@ fn collect_schema_achievement_metadata(
 
             if let Some(api_name) = api_name {
                 let display_name = extract_display_name(inner);
+                let description = extract_description(inner);
                 let (icon_url, icon_gray_url) = extract_icon_urls(inner);
-                if display_name.is_some() || icon_url.is_some() || icon_gray_url.is_some() {
+                if display_name.is_some() || description.is_some() || icon_url.is_some() || icon_gray_url.is_some() {
                     let e = out.entry(api_name.clone()).or_insert_with(|| SchemaAchInfo {
                         api_name: api_name.clone(),
                         display_name: None,
+                        description: None,
                         icon_url: None,
                         icon_gray_url: None,
                     });
                     if e.display_name.is_none() {
                         e.display_name = display_name;
+                    }
+                    if e.description.is_none() {
+                        e.description = description;
                     }
                     if e.icon_url.is_none() {
                         e.icon_url = icon_url;
@@ -602,10 +609,12 @@ fn collect_achievement_bits(
                         {
                             if !api_name.is_empty() {
                                 let display_name = extract_display_name(fields);
+                                let description = extract_description(fields);
                                 let (icon_url, icon_gray_url) = extract_icon_urls(fields);
                                 entries.push((bit_idx, SchemaAchInfo {
                                     api_name: api_name.clone(),
                                     display_name,
+                                    description,
                                     icon_url,
                                     icon_gray_url,
                                 }));
@@ -646,6 +655,34 @@ fn extract_display_name(fields: &HashMap<String, BvdfVal>) -> Option<String> {
         .map(|(_, v)| v)
     {
         if !s.is_empty() { return Some(s.clone()); }
+    }
+    None
+}
+
+fn extract_description(fields: &HashMap<String, BvdfVal>) -> Option<String> {
+    let display = fields.iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("display"))
+        .and_then(|(_, v)| if let BvdfVal::Nested(d) = v { Some(d) } else { None })?;
+
+    let desc_node = display.iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("desc") || k.eq_ignore_ascii_case("description"))
+        .and_then(|(_, v)| if let BvdfVal::Nested(n) = v { Some(n) } else { None })?;
+
+    if let Some(BvdfVal::Str(s)) = desc_node.iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("schinese"))
+        .map(|(_, v)| v)
+    {
+        if !s.is_empty() {
+            return Some(s.clone());
+        }
+    }
+    if let Some(BvdfVal::Str(s)) = desc_node.iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("english"))
+        .map(|(_, v)| v)
+    {
+        if !s.is_empty() {
+            return Some(s.clone());
+        }
     }
     None
 }
@@ -726,6 +763,25 @@ fn load_schema_display_names(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<St
     for (api_name, info) in metadata {
         if let Some(dn) = info.display_name {
             map.entry(api_name).or_insert(dn);
+        }
+    }
+    map
+}
+
+fn load_schema_descriptions(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<String, String> {
+    let bits = load_schema_achievement_bits(app_id, steam_paths);
+    let metadata = load_schema_achievement_metadata(app_id, steam_paths);
+    let mut map = HashMap::new();
+    for (_, entries) in &bits {
+        for (_, info) in entries {
+            if let Some(description) = &info.description {
+                map.insert(info.api_name.clone(), description.clone());
+            }
+        }
+    }
+    for (api_name, info) in metadata {
+        if let Some(description) = info.description {
+            map.entry(api_name).or_insert(description);
         }
     }
     map
@@ -1062,6 +1118,7 @@ struct SchemaAchievementItem {
     name: String,
     #[serde(rename = "displayName")]
     display_name: Option<String>,
+    description: Option<String>,
     icon: Option<String>,
     icongray: Option<String>,
 }
@@ -1090,6 +1147,7 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
                             items_map.insert(item.name.clone(), AchievementItem {
                                 api_name: item.name,
                                 display_name: None,
+                                description: None,
                                 unlocked: None,
                                 unlock_time: None,
                                 global_percent: Some(item.percent),
@@ -1111,6 +1169,7 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
             let e = items_map.entry(api_name.clone()).or_insert_with(|| AchievementItem {
                 api_name: api_name.clone(),
                 display_name: None,
+                description: None,
                 unlocked: None,
                 unlock_time: None,
                 global_percent: None,
@@ -1145,6 +1204,7 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
                                 let e = items_map.entry(sa.name.clone()).or_insert_with(|| AchievementItem {
                                     api_name: sa.name.clone(),
                                     display_name: None,
+                                    description: None,
                                     unlocked: None,
                                     unlock_time: None,
                                     global_percent: None,
@@ -1153,6 +1213,9 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
                                 });
                                 if e.display_name.is_none() {
                                     e.display_name = sa.display_name.clone();
+                                }
+                                if e.description.is_none() {
+                                    e.description = sa.description.clone();
                                 }
                                 if e.icon_url.is_none() {
                                     e.icon_url = sa.icon.clone();
@@ -1186,6 +1249,7 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
                                 let e = items_map.entry(pa.apiname.clone()).or_insert_with(|| AchievementItem {
                                     api_name: pa.apiname.clone(),
                                     display_name: None,
+                                    description: None,
                                     unlocked: None,
                                     unlock_time: None,
                                     global_percent: None,
@@ -1212,6 +1276,7 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
                 AchievementItem {
                     api_name: name,
                     display_name: None,
+                    description: None,
                     unlocked: None,
                     unlock_time: None,
                     global_percent: None,
@@ -1228,11 +1293,17 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
 
     // Phase 7 — apply display names from local schema file
     let display_names = load_schema_display_names(app_id, steam_paths);
+    let descriptions = load_schema_descriptions(app_id, steam_paths);
     let schema_icons = load_schema_icon_urls(app_id, steam_paths);
     for item in items_map.values_mut() {
         if item.display_name.is_none() {
             if let Some(dn) = display_names.get(&item.api_name) {
                 item.display_name = Some(dn.clone());
+            }
+        }
+        if item.description.is_none() {
+            if let Some(description) = descriptions.get(&item.api_name) {
+                item.description = Some(description.clone());
             }
         }
         if item.icon_url.is_none() || item.icon_gray_url.is_none() {

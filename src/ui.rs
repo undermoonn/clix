@@ -10,6 +10,32 @@ fn format_achievement_status(unlocked: Option<bool>, unlock_time: Option<u64>) -
     }
 }
 
+fn build_wrapped_galley(
+    ui: &egui::Ui,
+    text: String,
+    font: egui::FontId,
+    color: egui::Color32,
+    max_width: f32,
+) -> std::sync::Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob::default();
+    job.wrap.max_width = max_width;
+    job.append(
+        &text,
+        0.0,
+        egui::TextFormat {
+            font_id: font,
+            color,
+            ..Default::default()
+        },
+    );
+    ui.ctx().fonts(|fonts| fonts.layout_job(job))
+}
+
+fn smoothstep01(value: f32) -> f32 {
+    let t = value.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
 pub struct HintIcons {
     pub btn_a: egui::TextureHandle,
     pub btn_b: egui::TextureHandle,
@@ -312,11 +338,31 @@ fn draw_achievement_icon(
     tint: egui::Color32,
     reveal: f32,
 ) {
+    let [tex_w, tex_h] = texture.size();
     let uv_rect = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+    
+    let draw_rect = if tex_w > 0 && tex_h > 0 {
+        let tex_w = tex_w as f32;
+        let tex_h = tex_h as f32;
+        let aspect = tex_w / tex_h;
+        let icon_size = icon_rect.width().min(icon_rect.height());
+        
+        let (scaled_w, scaled_h) = if aspect > 1.0 {
+            (icon_size, icon_size / aspect)
+        } else {
+            (icon_size * aspect, icon_size)
+        };
+        
+        let center = icon_rect.center();
+        egui::Rect::from_center_size(center, egui::vec2(scaled_w, scaled_h))
+    } else {
+        icon_rect
+    };
+    
     let reveal = reveal.clamp(0.0, 1.0);
     let alpha = ((tint.a() as f32) * reveal).round() as u8;
     let fade_tint = egui::Color32::from_rgba_unmultiplied(tint.r(), tint.g(), tint.b(), alpha);
-    painter.image(texture.id(), icon_rect, uv_rect, fade_tint);
+    painter.image(texture.id(), draw_rect, uv_rect, fade_tint);
 }
 
 pub fn draw_achievement_panel(
@@ -401,7 +447,7 @@ pub fn draw_achievement_panel(
 
     match summary {
         Some(s) => {
-            let list_left = (game_text_x - 52.0).max(panel_rect.min.x);
+            let list_left = (game_text_x - 52.0 - 50.0).max(panel_rect.min.x);
             let list_rect = egui::Rect::from_min_max(
                 egui::pos2(list_left, rect.min.y),
                 egui::pos2(rect.max.x - 10.0, rect.max.y),
@@ -411,6 +457,34 @@ pub fn draw_achievement_panel(
             let visible_above = 0_i32;
             let visible_below = 8_i32;
             let center_y = list_rect.min.y + 18.0;
+            let selection_t = 1.0 - (1.0 - achievement_select_anim) * (1.0 - achievement_select_anim);
+            let selected_description_galley = s.items.get(selected_index).and_then(|item| {
+                item.description.as_ref().and_then(|description| {
+                    let text = description.trim();
+                    if text.is_empty() {
+                        return None;
+                    }
+                    let desc_font = egui::FontId::proportional(12.0 + 1.3 * selection_t);
+                    let desc_color = egui::Color32::from_rgba_unmultiplied(
+                        162,
+                        168,
+                        180,
+                        (214.0 * activity_alpha * selection_t) as u8,
+                    );
+                    let desc_width = (list_rect.max.x - game_text_x - 20.0).max(120.0);
+                    Some(build_wrapped_galley(
+                        ui,
+                        text.to_string(),
+                        desc_font,
+                        desc_color,
+                        desc_width,
+                    ))
+                })
+            });
+            let selected_description_extra = selected_description_galley
+                .as_ref()
+                .map(|galley| (galley.size().y + 12.0) * selection_t)
+                .unwrap_or(0.0);
 
             for (idx, item) in s.items.iter().enumerate() {
                 let offset_f = idx as f32 - scroll_offset;
@@ -423,56 +497,19 @@ pub fn draw_achievement_panel(
                 let sign = if offset_f >= 0.0 { 1.0 } else { -1.0 };
                 let selected_gap = 8.0;
                 let extra = offset_f.clamp(-1.0, 1.0) * selected_gap;
-                let y_pos = center_y + sign * dist * row_spacing * (1.0 - dist * 0.03).max(0.72) + extra;
+                let mut y_pos = center_y + sign * dist * row_spacing * (1.0 - dist * 0.03).max(0.72) + extra;
+                let below_selected_t = smoothstep01((offset_f + 0.45) / 0.9);
+                y_pos += selected_description_extra * below_selected_t;
 
                 if y_pos < list_rect.min.y - 36.0 || y_pos > list_rect.max.y + 36.0 {
                     continue;
                 }
 
                 let alpha_factor = (1.0 - dist * 0.15).max(0.24);
-                let t = if is_selected {
-                    1.0 - (1.0 - achievement_select_anim) * (1.0 - achievement_select_anim)
-                } else {
-                    0.0
-                };
-                let icon_size = 20.0 + 8.0 * alpha_factor + 2.0 * t;
+                let t = if is_selected { selection_t } else { 0.0 };
                 let text_size = 14.0 + 2.5 * alpha_factor + 1.2 * t;
 
                 let text_x = game_text_x;
-                let icon_pos = egui::pos2(text_x - icon_size - 10.0, y_pos - icon_size * 0.5);
-                let icon_rect = egui::Rect::from_min_size(icon_pos, egui::vec2(icon_size, icon_size));
-                let icon_key = match item.unlocked {
-                    Some(true) => item.icon_url.as_ref().or(item.icon_gray_url.as_ref()),
-                    _ => item.icon_gray_url.as_ref().or(item.icon_url.as_ref()),
-                };
-                if let Some(tex) = icon_key.and_then(|k| achievement_icon_cache.get(k)) {
-                    let reveal = icon_key
-                        .and_then(|k| achievement_icon_reveal.get(k).copied())
-                        .unwrap_or(1.0);
-                    draw_achievement_icon(
-                        &list_painter,
-                        tex,
-                        icon_rect,
-                        egui::Color32::from_rgba_unmultiplied(
-                            255,
-                            255,
-                            255,
-                            (255.0 * alpha_factor * activity_alpha) as u8,
-                        ),
-                        reveal,
-                    );
-                } else {
-                    let fill = match item.unlocked {
-                        Some(true) => egui::Color32::from_rgba_unmultiplied(86, 172, 132, (220.0 * alpha_factor * activity_alpha) as u8),
-                        Some(false) => egui::Color32::from_rgba_unmultiplied(110, 116, 124, (200.0 * alpha_factor * activity_alpha) as u8),
-                        None => egui::Color32::from_rgba_unmultiplied(90, 98, 112, (180.0 * alpha_factor * activity_alpha) as u8),
-                    };
-                    list_painter.rect_filled(
-                        icon_rect,
-                        egui::Rounding::ZERO,
-                        fill,
-                    );
-                }
 
                 let name = item.display_name.as_deref().unwrap_or(&item.api_name);
                 let mut title = String::from(name);
@@ -512,7 +549,59 @@ pub fn draw_achievement_panel(
                     .as_ref()
                     .map(|galley| title_galley.size().y.max(galley.size().y))
                     .unwrap_or(title_galley.size().y);
-                let base_pos = egui::pos2(text_x, y_pos - total_height * 0.5);
+                let description_height = if is_selected {
+                    selected_description_galley
+                        .as_ref()
+                        .map(|galley| (galley.size().y + 6.0) * t)
+                        .unwrap_or(0.0)
+                } else {
+                    0.0
+                };
+                let content_height = total_height + description_height;
+                let icon_size = if is_selected {
+                    (20.0 + 8.0 * alpha_factor).max(content_height)
+                } else {
+                    20.0 + 8.0 * alpha_factor + 2.0 * t
+                };
+                let block_top = y_pos - total_height * 0.5;
+                let icon_pos = egui::pos2(
+                    text_x - icon_size - 10.0,
+                    block_top + (content_height - icon_size) * 0.5,
+                );
+                let icon_rect = egui::Rect::from_min_size(icon_pos, egui::vec2(icon_size, icon_size));
+                let icon_key = match item.unlocked {
+                    Some(true) => item.icon_url.as_ref().or(item.icon_gray_url.as_ref()),
+                    _ => item.icon_gray_url.as_ref().or(item.icon_url.as_ref()),
+                };
+                if let Some(tex) = icon_key.and_then(|k| achievement_icon_cache.get(k)) {
+                    let reveal = icon_key
+                        .and_then(|k| achievement_icon_reveal.get(k).copied())
+                        .unwrap_or(1.0);
+                    draw_achievement_icon(
+                        &list_painter,
+                        tex,
+                        icon_rect,
+                        egui::Color32::from_rgba_unmultiplied(
+                            255,
+                            255,
+                            255,
+                            (255.0 * alpha_factor * activity_alpha) as u8,
+                        ),
+                        reveal,
+                    );
+                } else {
+                    let fill = match item.unlocked {
+                        Some(true) => egui::Color32::from_rgba_unmultiplied(86, 172, 132, (220.0 * alpha_factor * activity_alpha) as u8),
+                        Some(false) => egui::Color32::from_rgba_unmultiplied(110, 116, 124, (200.0 * alpha_factor * activity_alpha) as u8),
+                        None => egui::Color32::from_rgba_unmultiplied(90, 98, 112, (180.0 * alpha_factor * activity_alpha) as u8),
+                    };
+                    list_painter.rect_filled(
+                        icon_rect,
+                        egui::Rounding::ZERO,
+                        fill,
+                    );
+                }
+                let base_pos = egui::pos2(text_x, block_top);
                 list_painter.galley(
                     egui::pos2(base_pos.x, base_pos.y + (total_height - title_galley.size().y) * 0.5),
                     title_galley,
@@ -525,6 +614,14 @@ pub fn draw_achievement_panel(
                         ),
                         status_galley,
                     );
+                }
+                if is_selected {
+                    if let Some(description_galley) = &selected_description_galley {
+                        list_painter.galley(
+                            egui::pos2(text_x, base_pos.y + total_height + 6.0),
+                            description_galley.clone(),
+                        );
+                    }
                 }
             }
         }
