@@ -444,6 +444,8 @@ fn load_local_unlock_status(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<Str
 struct SchemaAchInfo {
     api_name: String,
     display_name: Option<String>,
+    icon_url: Option<String>,
+    icon_gray_url: Option<String>,
 }
 
 /// Parse the schema file to extract achievement bit-index-to-info mappings.
@@ -470,6 +472,71 @@ fn load_schema_achievement_bits(app_id: u32, steam_paths: &[PathBuf]) -> HashMap
     HashMap::new()
 }
 
+fn load_schema_achievement_metadata(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<String, SchemaAchInfo> {
+    for steam_root in steam_paths {
+        let schema_path = steam_root
+            .join("appcache")
+            .join("stats")
+            .join(format!("UserGameStatsSchema_{}.bin", app_id));
+        let Ok(data) = std::fs::read(&schema_path) else { continue };
+
+        for &start in &[0usize, 2, 4, 8] {
+            if start >= data.len() { break; }
+            let mut pos = start;
+            let root = bvdf_node(&data, &mut pos);
+            let mut map: HashMap<String, SchemaAchInfo> = HashMap::new();
+            collect_schema_achievement_metadata(&root, &mut map, 0);
+            if !map.is_empty() {
+                return map;
+            }
+        }
+    }
+    HashMap::new()
+}
+
+fn collect_schema_achievement_metadata(
+    node: &HashMap<String, BvdfVal>,
+    out: &mut HashMap<String, SchemaAchInfo>,
+    depth: u32,
+) {
+    if depth > 8 {
+        return;
+    }
+
+    for (_, val) in node {
+        if let BvdfVal::Nested(inner) = val {
+            let api_name = inner
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("name"))
+                .and_then(|(_, v)| if let BvdfVal::Str(s) = v { Some(s.clone()) } else { None });
+
+            if let Some(api_name) = api_name {
+                let display_name = extract_display_name(inner);
+                let (icon_url, icon_gray_url) = extract_icon_urls(inner);
+                if display_name.is_some() || icon_url.is_some() || icon_gray_url.is_some() {
+                    let e = out.entry(api_name.clone()).or_insert_with(|| SchemaAchInfo {
+                        api_name: api_name.clone(),
+                        display_name: None,
+                        icon_url: None,
+                        icon_gray_url: None,
+                    });
+                    if e.display_name.is_none() {
+                        e.display_name = display_name;
+                    }
+                    if e.icon_url.is_none() {
+                        e.icon_url = icon_url;
+                    }
+                    if e.icon_gray_url.is_none() {
+                        e.icon_gray_url = icon_gray_url;
+                    }
+                }
+            }
+
+            collect_schema_achievement_metadata(inner, out, depth + 1);
+        }
+    }
+}
+
 fn collect_achievement_bits(
     node: &HashMap<String, BvdfVal>,
     result: &mut HashMap<String, Vec<(u32, SchemaAchInfo)>>,
@@ -492,9 +559,12 @@ fn collect_achievement_bits(
                         {
                             if !api_name.is_empty() {
                                 let display_name = extract_display_name(fields);
+                                let (icon_url, icon_gray_url) = extract_icon_urls(fields);
                                 entries.push((bit_idx, SchemaAchInfo {
                                     api_name: api_name.clone(),
                                     display_name,
+                                    icon_url,
+                                    icon_gray_url,
                                 }));
                             }
                         }
@@ -537,15 +607,135 @@ fn extract_display_name(fields: &HashMap<String, BvdfVal>) -> Option<String> {
     None
 }
 
+fn normalize_schema_icon_value(app_id: u32, raw: &str) -> Option<String> {
+    let v = raw.trim();
+    if v.is_empty() {
+        return None;
+    }
+    if v.starts_with("http://") || v.starts_with("https://") {
+        return Some(v.to_string());
+    }
+    // Local schema may store icon hash with or without extension.
+    if v.ends_with(".jpg") || v.ends_with(".png") {
+        return Some(format!(
+            "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/{}/{}",
+            app_id, v
+        ));
+    }
+    Some(format!(
+        "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/{}/{}.jpg",
+        app_id, v
+    ))
+}
+
+fn extract_icon_urls(fields: &HashMap<String, BvdfVal>) -> (Option<String>, Option<String>) {
+    let mut icon = fields
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("icon"))
+        .and_then(|(_, v)| if let BvdfVal::Str(s) = v { Some(s.clone()) } else { None });
+
+    let mut icon_gray = fields
+        .iter()
+        .find(|(k, _)| {
+            k.eq_ignore_ascii_case("icon_gray") || k.eq_ignore_ascii_case("icongray")
+        })
+        .and_then(|(_, v)| if let BvdfVal::Str(s) = v { Some(s.clone()) } else { None });
+
+    // Some schema variants place icon keys under a nested "display" object.
+    if icon.is_none() || icon_gray.is_none() {
+        if let Some(BvdfVal::Nested(display)) = fields
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("display"))
+            .map(|(_, v)| v)
+        {
+            if icon.is_none() {
+                icon = display
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("icon"))
+                    .and_then(|(_, v)| if let BvdfVal::Str(s) = v { Some(s.clone()) } else { None });
+            }
+            if icon_gray.is_none() {
+                icon_gray = display
+                    .iter()
+                    .find(|(k, _)| {
+                        k.eq_ignore_ascii_case("icon_gray") || k.eq_ignore_ascii_case("icongray")
+                    })
+                    .and_then(|(_, v)| if let BvdfVal::Str(s) = v { Some(s.clone()) } else { None });
+            }
+        }
+    }
+
+    (icon, icon_gray)
+}
+
 /// Build a map from api_name -> display_name from the schema.
 fn load_schema_display_names(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<String, String> {
     let bits = load_schema_achievement_bits(app_id, steam_paths);
+    let metadata = load_schema_achievement_metadata(app_id, steam_paths);
     let mut map = HashMap::new();
     for (_, entries) in &bits {
         for (_, info) in entries {
             if let Some(dn) = &info.display_name {
                 map.insert(info.api_name.clone(), dn.clone());
             }
+        }
+    }
+    for (api_name, info) in metadata {
+        if let Some(dn) = info.display_name {
+            map.entry(api_name).or_insert(dn);
+        }
+    }
+    map
+}
+
+fn load_schema_icon_urls(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<String, (String, String)> {
+    let bits = load_schema_achievement_bits(app_id, steam_paths);
+    let metadata = load_schema_achievement_metadata(app_id, steam_paths);
+    let mut map = HashMap::new();
+    for (_, entries) in &bits {
+        for (_, info) in entries {
+            let icon = info
+                .icon_url
+                .as_deref()
+                .and_then(|v| normalize_schema_icon_value(app_id, v));
+            let icon_gray = info
+                .icon_gray_url
+                .as_deref()
+                .and_then(|v| normalize_schema_icon_value(app_id, v));
+            match (icon, icon_gray) {
+                (Some(i), Some(g)) => {
+                    map.insert(info.api_name.clone(), (i, g));
+                }
+                (Some(i), None) => {
+                    map.insert(info.api_name.clone(), (i.clone(), i));
+                }
+                (None, Some(g)) => {
+                    map.insert(info.api_name.clone(), (g.clone(), g));
+                }
+                _ => {}
+            }
+        }
+    }
+    for (api_name, info) in metadata {
+        let icon = info
+            .icon_url
+            .as_deref()
+            .and_then(|v| normalize_schema_icon_value(app_id, v));
+        let icon_gray = info
+            .icon_gray_url
+            .as_deref()
+            .and_then(|v| normalize_schema_icon_value(app_id, v));
+        match (icon, icon_gray) {
+            (Some(i), Some(g)) => {
+                map.entry(api_name).or_insert((i, g));
+            }
+            (Some(i), None) => {
+                map.entry(api_name).or_insert((i.clone(), i));
+            }
+            (None, Some(g)) => {
+                map.entry(api_name).or_insert((g.clone(), g));
+            }
+            _ => {}
         }
     }
     map
@@ -995,10 +1185,21 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
 
     // Phase 7 — apply display names from local schema file
     let display_names = load_schema_display_names(app_id, steam_paths);
+    let schema_icons = load_schema_icon_urls(app_id, steam_paths);
     for item in items_map.values_mut() {
         if item.display_name.is_none() {
             if let Some(dn) = display_names.get(&item.api_name) {
                 item.display_name = Some(dn.clone());
+            }
+        }
+        if item.icon_url.is_none() || item.icon_gray_url.is_none() {
+            if let Some((icon, gray)) = schema_icons.get(&item.api_name) {
+                if item.icon_url.is_none() {
+                    item.icon_url = Some(icon.clone());
+                }
+                if item.icon_gray_url.is_none() {
+                    item.icon_gray_url = Some(gray.clone());
+                }
             }
         }
     }

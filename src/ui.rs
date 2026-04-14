@@ -376,8 +376,9 @@ pub fn draw_achievement_panel(
 
     match summary {
         Some(s) => {
+            let list_left = (game_text_x - 52.0).max(panel_rect.min.x);
             let list_rect = egui::Rect::from_min_max(
-                egui::pos2(rect.min.x + 10.0, rect.min.y),
+                egui::pos2(list_left, rect.min.y),
                 egui::pos2(rect.max.x - 10.0, rect.max.y),
             );
             let list_painter = ui.painter().with_clip_rect(list_rect);
