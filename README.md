@@ -1,6 +1,6 @@
 # Clix - Prototype
 
-This is a minimal prototype that demonstrates a controller-first game launcher for Windows built with Rust and eframe (egui).
+This is a minimal prototype that demonstrates a controller-only game launcher for Windows built with Rust and eframe (egui).
 
 ## Features (Prototype)
 
