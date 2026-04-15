@@ -551,10 +551,47 @@ fn draw_achievement_icon(
     painter.image(texture.id(), draw_rect, uv_rect, fade_tint);
 }
 
+fn draw_centered_achievement_loading(ui: &egui::Ui, rect: egui::Rect) {
+    let painter = ui.painter();
+    let time = ui.input(|input| input.time) as f32;
+    let center = rect.center();
+    let spacing = 24.0;
+    let radius = 5.5;
+    let jump = 10.0;
+    let color = egui::Color32::from_rgba_unmultiplied(255, 255, 255, 10);
+
+    for index in 0..3 {
+        let phase = time * 5.4 - index as f32 * 0.32;
+        let bounce = phase.sin().max(0.0);
+        let x = center.x + (index as f32 - 1.0) * spacing;
+        let y = center.y - bounce * jump;
+        painter.circle_filled(egui::pos2(x, y), radius, color);
+    }
+
+    ui.ctx().request_repaint();
+}
+
+fn draw_centered_achievement_empty(painter: &egui::Painter, rect: egui::Rect) {
+    let empty_galley = painter.layout_no_wrap(
+        "No Achievement".to_string(),
+        egui::FontId::proportional(18.0),
+        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 10),
+    );
+    painter.galley(
+        egui::pos2(
+            rect.center().x - empty_galley.size().x * 0.5,
+            rect.center().y - empty_galley.size().y * 0.5,
+        ),
+        empty_galley,
+    );
+}
+
 pub fn draw_achievement_page(
     ui: &mut egui::Ui,
     game: &crate::steam::Game,
     summary: Option<&crate::steam::AchievementSummary>,
+    is_loading: bool,
+    has_no_data: bool,
     achievement_summary_reveal_for_selected: f32,
     selected_index: usize,
     _achievement_select_anim: f32,
@@ -674,20 +711,22 @@ pub fn draw_achievement_page(
     );
 
     let Some(summary) = summary else {
-        let empty_galley = painter.layout_no_wrap(
-            "No achievement data available".to_string(),
-            egui::FontId::proportional(18.0),
-            egui::Color32::from_rgba_unmultiplied(194, 198, 208, 170),
-        );
-        painter.galley(
-            egui::pos2(
-                list_rect.center().x - empty_galley.size().x * 0.5,
-                list_rect.center().y - empty_galley.size().y * 0.5,
-            ),
-            empty_galley,
-        );
+        if is_loading && !has_no_data {
+            draw_centered_achievement_loading(ui, list_rect);
+        } else {
+            draw_centered_achievement_empty(painter, list_rect);
+        }
         return;
     };
+
+    if summary.items.is_empty() {
+        if is_loading && !has_no_data {
+            draw_centered_achievement_loading(ui, list_rect);
+        } else {
+            draw_centered_achievement_empty(painter, list_rect);
+        }
+        return;
+    }
 
     let item_gap_y = 16.0;
     let row_spacing = 96.0;

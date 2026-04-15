@@ -440,12 +440,7 @@ impl LauncherApp {
     }
 
     fn can_open_achievement_panel_for_selected(&self) -> bool {
-        self.games
-            .get(self.selected)
-            .and_then(|g| g.app_id)
-            .and_then(|id| self.achievement_cache.get(&id))
-            .map(|summary| !summary.items.is_empty())
-            .unwrap_or(false)
+        self.games.get(self.selected).is_some()
     }
 
     fn ensure_achievement_icons_for_selected(&mut self, ctx: &egui::Context) {
@@ -1111,6 +1106,7 @@ impl eframe::App for LauncherApp {
                 }
                 ControllerAction::Down => {
                     if self.can_open_achievement_panel_for_selected() {
+                        self.refresh_achievement_for_selected(ctx);
                         self.show_achievement_panel = true;
                         self.achievement_selected = 0;
                         self.achievement_select_anim = 0.0;
@@ -1299,9 +1295,17 @@ impl eframe::App for LauncherApp {
         let selected_achievement_reveal = selected_app_id
             .and_then(|id| self.achievement_text_reveal.get(&id).copied())
             .unwrap_or(1.0);
-        let can_open_achievement_panel = selected_achievement_summary
-            .map(|summary| !summary.items.is_empty())
+        let can_open_achievement_panel = self.can_open_achievement_panel_for_selected();
+        let achievement_loading = selected_app_id
+            .map(|id| {
+                self.achievement_loading.contains(&id)
+                    || (!self.achievement_cache.contains_key(&id)
+                        && !self.achievement_no_data.contains(&id))
+            })
             .unwrap_or(false);
+        let achievement_has_no_data = selected_app_id
+            .map(|id| self.achievement_no_data.contains(&id))
+            .unwrap_or(true);
         // Draw UI
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(egui::Color32::TRANSPARENT))
@@ -1325,6 +1329,8 @@ impl eframe::App for LauncherApp {
                             ui,
                             game,
                             selected_achievement_summary,
+                            achievement_loading,
+                            achievement_has_no_data,
                             selected_achievement_reveal,
                             self.achievement_selected,
                             self.achievement_select_anim,
