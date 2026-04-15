@@ -100,6 +100,53 @@ fn draw_game_icon(
     }));
 }
 
+fn dlss_tag_text(game: &crate::steam::Game) -> Option<String> {
+    game.dlss_version.as_ref().map(|version| {
+        let version = version.trim();
+        if version.is_empty() {
+            "DLSS".to_owned()
+        } else {
+            format!("DLSS {}", version)
+        }
+    })
+}
+
+fn draw_title_tag(
+    painter: &egui::Painter,
+    text: &str,
+    title_pos: egui::Pos2,
+    title_size: egui::Vec2,
+    opacity: f32,
+) {
+    let alpha = (255.0 * opacity.clamp(0.0, 1.0)).round() as u8;
+    if alpha == 0 {
+        return;
+    }
+
+    let tag_font = egui::FontId::new(
+        (title_size.y * 0.42).clamp(11.0, 14.0),
+        egui::FontFamily::Name("Bold".into()),
+    );
+    let text_color = egui::Color32::from_rgba_unmultiplied(18, 18, 18, alpha);
+    let galley = painter.layout_no_wrap(text.to_owned(), tag_font, text_color);
+    let padding_x = 11.0;
+    let padding_y = 4.0;
+    let tag_rect = egui::Rect::from_min_size(
+        egui::pos2(title_pos.x + title_size.x + 14.0, title_pos.y + title_size.y * 0.5 - galley.size().y * 0.5 - padding_y),
+        egui::vec2(galley.size().x + padding_x * 2.0, galley.size().y + padding_y * 2.0),
+    );
+
+    painter.rect_filled(
+        tag_rect,
+        egui::Rounding::same((tag_rect.height() * 0.5).min(10.0)),
+        egui::Color32::from_rgba_unmultiplied(228, 228, 220, ((alpha as f32) * 0.72).round() as u8),
+    );
+    painter.galley(
+        egui::pos2(tag_rect.min.x + padding_x, tag_rect.min.y + padding_y),
+        galley,
+    );
+}
+
 pub struct HintIcons {
     pub btn_a: egui::TextureHandle,
     pub btn_b: egui::TextureHandle,
@@ -451,6 +498,10 @@ pub fn draw_game_list(
                 painter.galley(normal_title_pos, galley.clone());
             }
 
+            if let Some(tag_text) = dlss_tag_text(g) {
+                draw_title_tag(painter, &tag_text, normal_title_pos, galley.size(), 0.94);
+            }
+
             if playtime_galley.is_some() || achievement_galley.is_some() {
                 let meta_pos = egui::pos2(text_x, text_y + galley.size().y + 2.0);
                 let mut pt_x = meta_pos.x;
@@ -609,6 +660,9 @@ pub fn draw_achievement_page(
         painter.galley(title_pos + off, outline_galley.clone());
     }
     painter.galley(title_pos, title_galley.clone());
+    if let Some(tag_text) = dlss_tag_text(game) {
+        draw_title_tag(painter, &tag_text, title_pos, title_galley.size(), panel_t);
+    }
     if let Some(meta_galley) = meta_galley {
         painter.galley(meta_pos, meta_galley);
     }
