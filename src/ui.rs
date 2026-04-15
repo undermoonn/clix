@@ -40,6 +40,49 @@ fn lerp_f32(start: f32, end: f32, t: f32) -> f32 {
     start + (end - start) * t
 }
 
+fn launch_title_wave_offset(time_seconds: f32, char_index: usize) -> f32 {
+    let phase = time_seconds * 7.2 - char_index as f32 * 0.55;
+    -(phase.sin().max(0.0) * 11.0)
+}
+
+fn draw_launching_title(
+    painter: &egui::Painter,
+    text: &str,
+    pos: egui::Pos2,
+    font_id: &egui::FontId,
+    text_color: egui::Color32,
+    time_seconds: f32,
+) {
+    let outline_color = egui::Color32::from_rgba_unmultiplied(0, 0, 0, 200);
+    let d = 0.8_f32;
+    let mut cursor_x = pos.x;
+
+    for (char_index, ch) in text.chars().enumerate() {
+        let glyph = ch.to_string();
+        let galley = painter.layout_no_wrap(glyph.clone(), font_id.clone(), text_color);
+        let outline_galley = painter.layout_no_wrap(glyph.clone(), font_id.clone(), outline_color);
+        let char_pos = egui::pos2(
+            cursor_x,
+            pos.y + launch_title_wave_offset(time_seconds, char_index),
+        );
+
+        for off in [
+            egui::vec2(d, 0.0),
+            egui::vec2(-d, 0.0),
+            egui::vec2(0.0, d),
+            egui::vec2(0.0, -d),
+            egui::vec2(d, d),
+            egui::vec2(-d, d),
+            egui::vec2(d, -d),
+            egui::vec2(-d, -d),
+        ] {
+            painter.galley(char_pos + off, outline_galley.clone());
+        }
+        painter.galley(char_pos, galley.clone());
+        cursor_x += galley.size().x;
+    }
+}
+
 fn draw_game_icon(
     painter: &egui::Painter,
     texture: &egui::TextureHandle,
@@ -225,6 +268,7 @@ pub fn draw_game_list(
     let base_icon_size: f32 = 92.0;
     let selected_icon_size: f32 = 160.0;
     let selected_icon_extra = selected_icon_size - base_icon_size;
+    let time_seconds = ui.ctx().input(|input| input.time) as f32;
 
     let panel_rect = ui.available_rect_before_wrap();
     let padding = 50.0;
@@ -265,6 +309,7 @@ pub fn draw_game_list(
         } else {
             0.0
         };
+        let is_launching = loading_index == Some(i);
         let font_size = if is_selected {
             base_size + (selected_size - base_size) * selection_t
         } else {
@@ -288,10 +333,7 @@ pub fn draw_game_list(
         } else {
             egui::FontId::proportional(font_size)
         };
-        let mut display_name = g.name.clone();
-        if loading_index == Some(i) {
-            display_name.push_str(" ...");
-        }
+        let display_name = g.name.clone();
         let galley = if is_selected {
             Some(painter.layout_no_wrap(display_name.clone(), font_id.clone(), text_color))
         } else {
@@ -380,24 +422,34 @@ pub fn draw_game_list(
 
         if let Some(galley) = galley {
             let normal_title_pos = egui::pos2(text_x, text_y);
-            let title_pos = normal_title_pos;
-            let outline_color = egui::Color32::from_rgba_unmultiplied(0, 0, 0, 200);
-            let outline_galley = painter.layout_no_wrap(display_name, font_id, outline_color);
-            let d = 0.8_f32;
-            for off in [
-                egui::vec2(d, 0.0),
-                egui::vec2(-d, 0.0),
-                egui::vec2(0.0, d),
-                egui::vec2(0.0, -d),
-                egui::vec2(d, d),
-                egui::vec2(-d, d),
-                egui::vec2(d, -d),
-                egui::vec2(-d, -d),
-            ] {
-                painter.galley(title_pos + off, outline_galley.clone());
-            }
+            if is_launching {
+                draw_launching_title(
+                    painter,
+                    &display_name,
+                    normal_title_pos,
+                    &font_id,
+                    text_color,
+                    time_seconds,
+                );
+            } else {
+                let outline_color = egui::Color32::from_rgba_unmultiplied(0, 0, 0, 200);
+                let outline_galley = painter.layout_no_wrap(display_name, font_id, outline_color);
+                let d = 0.8_f32;
+                for off in [
+                    egui::vec2(d, 0.0),
+                    egui::vec2(-d, 0.0),
+                    egui::vec2(0.0, d),
+                    egui::vec2(0.0, -d),
+                    egui::vec2(d, d),
+                    egui::vec2(-d, d),
+                    egui::vec2(d, -d),
+                    egui::vec2(-d, -d),
+                ] {
+                    painter.galley(normal_title_pos + off, outline_galley.clone());
+                }
 
-            painter.galley(title_pos, galley.clone());
+                painter.galley(normal_title_pos, galley.clone());
+            }
 
             if playtime_galley.is_some() || achievement_galley.is_some() {
                 let meta_pos = egui::pos2(text_x, text_y + galley.size().y + 2.0);
