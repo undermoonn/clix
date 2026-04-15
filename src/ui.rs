@@ -143,6 +143,8 @@ pub fn draw_background(
     ctx: &egui::Context,
     cover: &Option<(u32, egui::TextureHandle)>,
     cover_prev: &Option<(u32, egui::TextureHandle)>,
+    logo: &Option<(u32, egui::TextureHandle)>,
+    logo_prev: &Option<(u32, egui::TextureHandle)>,
     cover_fade: f32,
     cover_nav_dir: f32,
 ) {
@@ -150,6 +152,7 @@ pub fn draw_background(
     let bg_painter = ctx.layer_painter(egui::LayerId::background());
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
     let base_alpha: f32 = 60.0;
+    let hero_ratio = 1240.0 / 3840.0;
 
     // Solid dark background
     bg_painter.rect_filled(screen, egui::Rounding::ZERO, egui::Color32::from_rgb(18, 18, 18));
@@ -165,24 +168,81 @@ pub fn draw_background(
         )
     };
 
+    let fallback_hero_rect = |dx: f32| -> egui::Rect {
+        egui::Rect::from_min_size(
+            egui::pos2(screen.min.x + dx, screen.min.y),
+            egui::vec2(screen.width(), screen.width() * hero_ratio),
+        )
+    };
+
+    let draw_logo = |texture: &egui::TextureHandle,
+                     hero_rect: egui::Rect,
+                     alpha_scale: f32| {
+        let tex_size = texture.size_vec2();
+        if tex_size.x <= 0.0 || tex_size.y <= 0.0 {
+            return;
+        }
+
+        let draw_size = tex_size;
+        let margin_x = hero_rect.width() * 0.038;
+        let margin_bottom = hero_rect.height() * 0.085;
+        let logo_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                hero_rect.min.x + margin_x,
+                hero_rect.max.y - margin_bottom - draw_size.y,
+            ),
+            draw_size,
+        );
+        let logo_tint = egui::Color32::from_rgba_unmultiplied(
+            255,
+            255,
+            255,
+            (255.0 * alpha_scale).round() as u8,
+        );
+
+        bg_painter.image(texture.id(), logo_rect, uv, logo_tint);
+    };
+
     let slide_distance = 18.0;
     let ease_t = 1.0 - (1.0 - cover_fade) * (1.0 - cover_fade);
 
     // Previous cover (fading out)
     if cover_fade < 1.0 {
         if let Some((_id, tex)) = cover_prev {
+            let hero_rect = top_rect(tex, 0.0);
             let alpha = (base_alpha * (1.0 - cover_fade)) as u8;
             let tint = egui::Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
-            bg_painter.image(tex.id(), top_rect(tex, 0.0), uv, tint);
+            bg_painter.image(tex.id(), hero_rect, uv, tint);
         }
     }
 
     // Current cover (fading in, sliding in)
+    let current_dx = cover_nav_dir * slide_distance * (1.0 - ease_t);
     if let Some((_id, tex)) = cover {
+        let hero_rect = top_rect(tex, current_dx);
         let alpha = (base_alpha * cover_fade) as u8;
         let tint = egui::Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
-        let dx = cover_nav_dir * slide_distance * (1.0 - ease_t);
-        bg_painter.image(tex.id(), top_rect(tex, dx), uv, tint);
+        bg_painter.image(tex.id(), hero_rect, uv, tint);
+    }
+
+    if cover_fade < 1.0 {
+        if let Some((_id, tex)) = logo_prev {
+            let hero_rect = if let Some((_cover_id, cover_tex)) = cover_prev {
+                top_rect(cover_tex, 0.0)
+            } else {
+                fallback_hero_rect(0.0)
+            };
+            draw_logo(tex, hero_rect, 1.0 - cover_fade);
+        }
+    }
+
+    if let Some((_id, tex)) = logo {
+        let hero_rect = if let Some((_cover_id, cover_tex)) = cover {
+            top_rect(cover_tex, current_dx)
+        } else {
+            fallback_hero_rect(current_dx)
+        };
+        draw_logo(tex, hero_rect, cover_fade);
     }
 }
 

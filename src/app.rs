@@ -45,6 +45,12 @@ struct LaunchState {
     last_keep_foreground_at: Instant,
 }
 
+struct PendingBackgroundAssets {
+    app_id: u32,
+    cover_bytes: Option<Vec<u8>>,
+    logo_bytes: Option<Vec<u8>>,
+}
+
 #[cfg(target_os = "windows")]
 fn normalize_windows_path(path: &Path) -> String {
     path.to_string_lossy().replace('/', "\\").to_ascii_lowercase()
@@ -230,10 +236,12 @@ pub struct LauncherApp {
     steam_paths: Vec<std::path::PathBuf>,
     cover: Option<(u32, egui::TextureHandle)>,
     cover_prev: Option<(u32, egui::TextureHandle)>,
+    logo: Option<(u32, egui::TextureHandle)>,
+    logo_prev: Option<(u32, egui::TextureHandle)>,
     cover_fade: f32,
     cover_nav_dir: f32,
     selected_assets_loaded_for: Option<usize>,
-    cover_pending: Arc<Mutex<Option<(u32, Vec<u8>)>>>,
+    cover_pending: Arc<Mutex<Option<PendingBackgroundAssets>>>,
     selected_assets_debounce_until: Option<Instant>,
     selected_assets_debounce_for: Option<usize>,
     select_anim: f32,
@@ -282,6 +290,8 @@ impl LauncherApp {
             steam_paths,
             cover: None,
             cover_prev: None,
+            logo: None,
+            logo_prev: None,
             cover_fade: 1.0,
             cover_nav_dir: 0.0,
             selected_assets_loaded_for: None,
@@ -355,6 +365,7 @@ impl LauncherApp {
 
     fn refresh_cover_for_selected(&mut self, ctx: &egui::Context) {
         self.cover_prev = self.cover.take();
+        self.logo_prev = self.logo.take();
         self.cover_fade = 0.0;
 
         let Some(app_id) = self.games.get(self.selected).and_then(|g| g.app_id) else {
@@ -368,10 +379,15 @@ impl LauncherApp {
             *lock = None;
         }
         std::thread::spawn(move || {
-            let bytes = cover::load_cover_bytes(&paths, app_id);
-            if let Some(bytes) = bytes {
+            let cover_bytes = cover::load_cover_bytes(&paths, app_id);
+            let logo_bytes = cover::load_logo_bytes(&paths, app_id);
+            if cover_bytes.is_some() || logo_bytes.is_some() {
                 if let Ok(mut lock) = pending.lock() {
-                    *lock = Some((app_id, bytes));
+                    *lock = Some(PendingBackgroundAssets {
+                        app_id,
+                        cover_bytes,
+                        logo_bytes,
+                    });
                 }
                 ctx_clone.request_repaint();
             }
@@ -1087,17 +1103,32 @@ impl eframe::App for LauncherApp {
             }
         }
 
-        if self.cover.is_none() {
-            let result = self
-                .cover_pending
-                .lock()
-                .ok()
-                .and_then(|mut lock| lock.take());
-            if let Some((app_id, bytes)) = result {
-                if let Some(tex) =
-                    cover::bytes_to_texture(ctx, &bytes, format!("cover_{}", app_id))
-                {
-                    self.cover = Some((app_id, tex));
+        let result = self
+            .cover_pending
+            .lock()
+            .ok()
+            .and_then(|mut lock| lock.take());
+        if let Some(assets) = result {
+            if Some(assets.app_id) == self.games.get(self.selected).and_then(|g| g.app_id) {
+                let mut loaded_any = false;
+
+                self.cover = assets.cover_bytes.and_then(|bytes| {
+                    cover::bytes_to_texture(ctx, &bytes, format!("cover_{}", assets.app_id))
+                        .map(|tex| {
+                            loaded_any = true;
+                            (assets.app_id, tex)
+                        })
+                });
+
+                self.logo = assets.logo_bytes.and_then(|bytes| {
+                    cover::bytes_to_texture(ctx, &bytes, format!("logo_{}", assets.app_id))
+                        .map(|tex| {
+                            loaded_any = true;
+                            (assets.app_id, tex)
+                        })
+                });
+
+                if loaded_any {
                     self.cover_fade = 0.0;
                 }
             }
@@ -1235,6 +1266,8 @@ impl eframe::App for LauncherApp {
                     ctx,
                     &self.cover,
                     &self.cover_prev,
+                    &self.logo,
+                    &self.logo_prev,
                     self.cover_fade,
                     self.cover_nav_dir,
                 );

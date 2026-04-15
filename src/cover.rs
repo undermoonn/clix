@@ -56,6 +56,15 @@ pub fn hd_cache_dir() -> PathBuf {
     dir
 }
 
+fn hero_logo_cache_path(app_id: u32) -> PathBuf {
+    hd_cache_dir().join(format!("{}_logo.img", app_id))
+}
+
+fn is_png_bytes(bytes: &[u8]) -> bool {
+    const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    bytes.len() >= PNG_SIGNATURE.len() && &bytes[..PNG_SIGNATURE.len()] == PNG_SIGNATURE
+}
+
 fn achievement_icon_cache_dir() -> PathBuf {
     let mut dir = std::env::current_exe()
         .unwrap_or_else(|_| PathBuf::from("."))
@@ -136,6 +145,49 @@ fn download_hd_cover(app_id: u32) -> Option<Vec<u8>> {
     None
 }
 
+fn download_logo_bytes(app_id: u32) -> Option<Vec<u8>> {
+    let urls = [
+        format!(
+            "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{}/library_logo.png",
+            app_id
+        ),
+        format!(
+            "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{}/logo.png",
+            app_id
+        ),
+        format!(
+            "https://steamcdn-a.akamaihd.net/steam/apps/{}/library_logo.png",
+            app_id
+        ),
+        format!(
+            "https://steamcdn-a.akamaihd.net/steam/apps/{}/logo.png",
+            app_id
+        ),
+    ];
+
+    for url in &urls {
+        if let Ok(resp) = ureq::get(url).call() {
+            if resp.status() == 200 {
+                let mut bytes: Vec<u8> = Vec::new();
+                if resp
+                    .into_reader()
+                    .take(4 * 1024 * 1024)
+                    .read_to_end(&mut bytes)
+                    .is_ok()
+                    && bytes.len() > 512
+                    && is_png_bytes(&bytes)
+                {
+                    let cache_path = hero_logo_cache_path(app_id);
+                    let _ = std::fs::write(&cache_path, &bytes);
+                    return Some(bytes);
+                }
+            }
+        }
+    }
+
+    None
+}
+
 pub fn load_cover_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>> {
     // 1. Check local cache
     let cache_path = hd_cache_dir().join(format!("{}_hero.jpg", app_id));
@@ -168,6 +220,65 @@ pub fn load_cover_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>>
         }
     }
     None
+}
+
+pub fn load_logo_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>> {
+    let cache_path = hero_logo_cache_path(app_id);
+    if cache_path.exists() {
+        if let Ok(bytes) = std::fs::read(&cache_path) {
+            if bytes.len() > 512 && is_png_bytes(&bytes) {
+                return Some(bytes);
+            }
+        }
+    }
+
+    let preferred_names = ["library_logo.png", "logo.png"];
+
+    for steam_root in steam_paths {
+        let dir = steam_root
+            .join("appcache")
+            .join("librarycache")
+            .join(app_id.to_string());
+        if !dir.exists() {
+            continue;
+        }
+
+        for name in preferred_names {
+            let candidate = dir.join(name);
+            if !candidate.exists() {
+                continue;
+            }
+
+            if let Ok(bytes) = std::fs::read(&candidate) {
+                if bytes.len() > 512 && is_png_bytes(&bytes) {
+                    let _ = std::fs::write(&cache_path, &bytes);
+                    return Some(bytes);
+                }
+            }
+        }
+
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+                    continue;
+                };
+                let lower_name = name.to_ascii_lowercase();
+                if !lower_name.contains("logo") || !lower_name.ends_with(".png") {
+                    continue;
+                }
+
+                if let Ok(bytes) = std::fs::read(&path) {
+                    if bytes.len() > 512 && is_png_bytes(&bytes) {
+                        let _ = std::fs::write(&cache_path, &bytes);
+                        return Some(bytes);
+                    }
+                }
+            }
+        }
+    }
+
+    download_logo_bytes(app_id)
 }
 
 #[cfg(target_os = "windows")]
