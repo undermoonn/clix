@@ -1,19 +1,19 @@
-# Clix — 原型
+# Clix - Prototype
 
-这是一个最小原型，演示在 Windows 上使用 Rust + eframe（egui）构建以手柄为主的游戏启动器原型。
+This is a minimal prototype that demonstrates a controller-first game launcher for Windows built with Rust and eframe (egui).
 
-## 特性（原型）
+## Features (Prototype)
 
-识别本机安装的 Steam 游戏，支持展示成就列表展示
+Detects locally installed Steam games and supports displaying achievement lists.
 
-## 项目截图
+## Screenshots
 
-当前版本界面示例如下：
+Examples of the current UI are shown below:
 
-![Clix 启动器原型截图 1](./Clix%20Launcher%20Prototype%202026_4_15%2021_00_23.png)
+![Clix Launcher Prototype Screenshot 1](./Clix%20Launcher%20Prototype%202026_4_15%2021_00_23.png)
 
-![Clix 启动器原型截图 2](./Clix%20Launcher%20Prototype%202026_4_15%2021_00_25.png)
+![Clix Launcher Prototype Screenshot 2](./Clix%20Launcher%20Prototype%202026_4_15%2021_00_25.png)
 
-## 开源协议
+## License
 
-本项目采用 GNU General Public License v3.0（GPLv3），详见 LICENSE。
+This project is licensed under the GNU General Public License v3.0 (GPLv3). See LICENSE for details.
