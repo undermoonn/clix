@@ -1,6 +1,28 @@
 use eframe::egui;
+use image::ImageEncoder;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+#[cfg(target_os = "windows")]
+use walkdir::WalkDir;
+
+#[cfg(target_os = "windows")]
+use winapi::shared::minwindef::UINT;
+
+#[cfg(target_os = "windows")]
+use winapi::shared::windef::{HBITMAP, HDC, HGDIOBJ, HICON};
+
+#[cfg(target_os = "windows")]
+use winapi::um::shellapi::ExtractIconExW;
+
+#[cfg(target_os = "windows")]
+use winapi::um::wingdi::{
+    CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetObjectW, SelectObject, BITMAP,
+    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+};
+
+#[cfg(target_os = "windows")]
+use winapi::um::winuser::{DestroyIcon, GetIconInfo, ICONINFO};
 
 pub fn bytes_to_texture(
     ctx: &egui::Context,
@@ -13,6 +35,14 @@ pub fn bytes_to_texture(
     let pixels = rgba.into_raw();
     let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
     Some(ctx.load_texture(label, color_image, egui::TextureOptions::LINEAR))
+}
+
+fn png_bytes_from_rgba(width: u32, height: u32, rgba: &[u8]) -> Option<Vec<u8>> {
+    let mut bytes = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut bytes)
+        .write_image(rgba, width, height, image::ColorType::Rgba8)
+        .ok()?;
+    Some(bytes)
 }
 
 pub fn hd_cache_dir() -> PathBuf {
@@ -138,6 +168,284 @@ pub fn load_cover_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>>
         }
     }
     None
+}
+
+#[cfg(target_os = "windows")]
+fn normalize_name_for_match(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch.to_ascii_lowercase() } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(target_os = "windows")]
+fn exe_candidate_score(path: &Path, game_name: &str, root: &Path) -> i64 {
+    let file_stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    let normalized_stem = normalize_name_for_match(file_stem);
+    let normalized_game = normalize_name_for_match(game_name);
+    let lower_name = file_stem.to_ascii_lowercase();
+    let mut score = 0_i64;
+
+    if !normalized_game.is_empty() && normalized_stem == normalized_game {
+        score += 10_000;
+    } else if !normalized_game.is_empty()
+        && (normalized_stem.contains(&normalized_game) || normalized_game.contains(&normalized_stem))
+    {
+        score += 6_000;
+    }
+
+    for token in normalized_game.split_whitespace() {
+        if token.len() >= 3 && normalized_stem.contains(token) {
+            score += 700;
+        }
+    }
+
+    if let Ok(relative) = path.strip_prefix(root) {
+        let depth = relative.components().count() as i64;
+        score += (6 - depth).max(0) * 350;
+    }
+
+    if let Ok(metadata) = std::fs::metadata(path) {
+        score += (metadata.len() / (1024 * 1024)).min(64) as i64 * 20;
+    }
+
+    let negative_markers = [
+        "unins",
+        "crash",
+        "report",
+        "launcher",
+        "setup",
+        "install",
+        "uninstall",
+        "benchmark",
+        "config",
+        "updater",
+        "redistributable",
+        "redist",
+        "eac",
+        "anticheat",
+    ];
+    for marker in negative_markers {
+        if lower_name.contains(marker) {
+            score -= 2_500;
+        }
+    }
+
+    score
+}
+
+#[cfg(target_os = "windows")]
+fn find_preferred_executable(install_path: &Path, game_name: &str) -> Option<PathBuf> {
+    if install_path.is_file() {
+        let is_exe = install_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("exe"))
+            .unwrap_or(false);
+        return is_exe.then(|| install_path.to_path_buf());
+    }
+
+    if !install_path.is_dir() {
+        return None;
+    }
+
+    let mut best: Option<(i64, PathBuf)> = None;
+    for entry in WalkDir::new(install_path)
+        .follow_links(false)
+        .max_depth(4)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+    {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+
+        let path = entry.path();
+        let is_exe = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("exe"))
+            .unwrap_or(false);
+        if !is_exe {
+            continue;
+        }
+
+        let score = exe_candidate_score(path, game_name, install_path);
+        match &best {
+            Some((best_score, _)) if score <= *best_score => {}
+            _ => best = Some((score, path.to_path_buf())),
+        }
+    }
+
+    best.map(|(_, path)| path)
+}
+
+#[cfg(target_os = "windows")]
+fn read_bitmap_rgba(hdc: HDC, bitmap: HBITMAP, width: i32, height: i32) -> Option<Vec<u8>> {
+    let mut info = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: width,
+            biHeight: -height,
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: BI_RGB,
+            biSizeImage: 0,
+            biXPelsPerMeter: 0,
+            biYPelsPerMeter: 0,
+            biClrUsed: 0,
+            biClrImportant: 0,
+        },
+        bmiColors: [unsafe { std::mem::zeroed() }; 1],
+    };
+
+    let mut pixels = vec![0_u8; (width as usize) * (height as usize) * 4];
+    let copied = unsafe {
+        GetDIBits(
+            hdc,
+            bitmap,
+            0,
+            height as UINT,
+            pixels.as_mut_ptr() as *mut _,
+            &mut info,
+            DIB_RGB_COLORS,
+        )
+    };
+    if copied == 0 {
+        return None;
+    }
+
+    for pixel in pixels.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+
+    Some(pixels)
+}
+
+#[cfg(target_os = "windows")]
+fn merge_icon_mask_alpha(rgba: &mut [u8], mask_rgba: &[u8]) {
+    let has_alpha = rgba.chunks_exact(4).any(|pixel| pixel[3] != 0);
+    if has_alpha {
+        return;
+    }
+
+    for (pixel, mask_pixel) in rgba.chunks_exact_mut(4).zip(mask_rgba.chunks_exact(4)) {
+        let mask_value = mask_pixel[0].max(mask_pixel[1]).max(mask_pixel[2]);
+        pixel[3] = if mask_value > 127 { 0 } else { 255 };
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn extract_icon_bytes_from_executable(executable_path: &Path) -> Option<Vec<u8>> {
+    use std::os::windows::ffi::OsStrExt;
+
+    let wide_path = executable_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<u16>>();
+
+    unsafe {
+        let mut large_icon: HICON = std::ptr::null_mut();
+        if ExtractIconExW(wide_path.as_ptr(), 0, &mut large_icon, std::ptr::null_mut(), 1) == 0
+            || large_icon.is_null()
+        {
+            return None;
+        }
+
+        let mut icon_info: ICONINFO = std::mem::zeroed();
+        if GetIconInfo(large_icon, &mut icon_info) == 0 {
+            DestroyIcon(large_icon);
+            return None;
+        }
+
+        let mut color_bitmap: BITMAP = std::mem::zeroed();
+        let source_bitmap = if !icon_info.hbmColor.is_null() {
+            icon_info.hbmColor
+        } else {
+            icon_info.hbmMask
+        };
+
+        if GetObjectW(
+            source_bitmap as *mut _,
+            std::mem::size_of::<BITMAP>() as i32,
+            &mut color_bitmap as *mut _ as *mut _,
+        ) == 0
+        {
+            if !icon_info.hbmColor.is_null() {
+                DeleteObject(icon_info.hbmColor as HGDIOBJ);
+            }
+            if !icon_info.hbmMask.is_null() {
+                DeleteObject(icon_info.hbmMask as HGDIOBJ);
+            }
+            DestroyIcon(large_icon);
+            return None;
+        }
+
+        let width = color_bitmap.bmWidth;
+        let mut height = color_bitmap.bmHeight;
+        if icon_info.hbmColor.is_null() {
+            height /= 2;
+        }
+
+        let hdc = CreateCompatibleDC(std::ptr::null_mut());
+        if hdc.is_null() {
+            if !icon_info.hbmColor.is_null() {
+                DeleteObject(icon_info.hbmColor as HGDIOBJ);
+            }
+            if !icon_info.hbmMask.is_null() {
+                DeleteObject(icon_info.hbmMask as HGDIOBJ);
+            }
+            DestroyIcon(large_icon);
+            return None;
+        }
+
+        let old_bitmap = SelectObject(hdc, source_bitmap as HGDIOBJ);
+        let mut rgba = read_bitmap_rgba(hdc, source_bitmap, width, height);
+        if !icon_info.hbmColor.is_null() && !icon_info.hbmMask.is_null() {
+            let _ = SelectObject(hdc, icon_info.hbmMask as HGDIOBJ);
+            if let (Some(ref mut rgba_pixels), Some(mask_rgba)) = (
+                rgba.as_mut(),
+                read_bitmap_rgba(hdc, icon_info.hbmMask, width, height),
+            ) {
+                merge_icon_mask_alpha(rgba_pixels, &mask_rgba);
+            }
+        }
+        SelectObject(hdc, old_bitmap);
+        DeleteDC(hdc);
+
+        if !icon_info.hbmColor.is_null() {
+            DeleteObject(icon_info.hbmColor as HGDIOBJ);
+        }
+        if !icon_info.hbmMask.is_null() {
+            DeleteObject(icon_info.hbmMask as HGDIOBJ);
+        }
+        DestroyIcon(large_icon);
+
+        let rgba = rgba?;
+        png_bytes_from_rgba(width as u32, height as u32, &rgba)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn load_executable_icon_bytes(game: &crate::steam::Game) -> Option<Vec<u8>> {
+    let executable = find_preferred_executable(&game.path, &game.name)?;
+    extract_icon_bytes_from_executable(&executable)
+}
+
+pub fn load_game_icon_bytes(steam_paths: &[PathBuf], game: &crate::steam::Game) -> Option<Vec<u8>> {
+    #[cfg(target_os = "windows")]
+    if let Some(bytes) = load_executable_icon_bytes(game) {
+        return Some(bytes);
+    }
+
+    game.app_id.and_then(|app_id| load_icon_bytes(steam_paths, app_id))
 }
 
 /// Load game icon bytes from Steam's local library cache.

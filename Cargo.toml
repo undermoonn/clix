@@ -17,5 +17,5 @@ ureq = "2"
 chrono = { version = "0.4", default-features = true, features = ["clock"] }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["winuser", "xinput", "psapi", "processthreadsapi", "handleapi"] }
+winapi = { version = "0.3", features = ["winuser", "wingdi", "shellapi", "xinput", "psapi", "processthreadsapi", "handleapi"] }
 libloading = "0.7"

@@ -1196,7 +1196,7 @@ impl eframe::App for LauncherApp {
             self.icons_loaded = true;
             for game in &self.games {
                 if let Some(app_id) = game.app_id {
-                    if let Some(bytes) = cover::load_icon_bytes(&self.steam_paths, app_id) {
+                    if let Some(bytes) = cover::load_game_icon_bytes(&self.steam_paths, game) {
                         if let Some(tex) = cover::bytes_to_texture(
                             ctx,
                             &bytes,

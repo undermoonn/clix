@@ -1140,6 +1140,21 @@ fn load_local_schema_items(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<Stri
     items_map
 }
 
+fn achievement_unlock_sort_rank(unlocked: Option<bool>) -> u8 {
+    match unlocked {
+        Some(false) => 0,
+        None => 1,
+        Some(true) => 2,
+    }
+}
+
+fn achievement_percent_sort_value(global_percent: Option<f32>) -> f32 {
+    match global_percent {
+        Some(value) if value.is_finite() => value,
+        _ => 101.0,
+    }
+}
+
 pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<AchievementSummary> {
     // Phase 1 — local Binary VDF unlock state
     let local_unlocks = load_local_unlock_status(app_id, steam_paths);
@@ -1221,16 +1236,14 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
     }
 
     let mut items: Vec<AchievementItem> = items_map.into_values().collect();
-    items.sort_by(|a, b| match (a.unlocked, b.unlocked) {
-        (Some(false), Some(true)) => std::cmp::Ordering::Less,
-        (Some(true), Some(false)) => std::cmp::Ordering::Greater,
-        _ => {
-            let ap = a.global_percent.unwrap_or(101.0);
-            let bp = b.global_percent.unwrap_or(101.0);
-            ap.partial_cmp(&bp)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.api_name.cmp(&b.api_name))
-        }
+    items.sort_by(|a, b| {
+        achievement_unlock_sort_rank(a.unlocked)
+            .cmp(&achievement_unlock_sort_rank(b.unlocked))
+            .then_with(|| {
+                achievement_percent_sort_value(a.global_percent)
+                    .total_cmp(&achievement_percent_sort_value(b.global_percent))
+            })
+            .then_with(|| a.api_name.cmp(&b.api_name))
     });
 
     Some(AchievementSummary {
@@ -1238,6 +1251,50 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
         total: items.len() as u32,
         items,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        achievement_percent_sort_value, achievement_unlock_sort_rank, AchievementItem,
+    };
+
+    #[test]
+    fn achievement_sort_handles_mixed_states_and_nan() {
+        let mut items = vec![
+            AchievementItem {
+                api_name: "unknown".to_string(),
+                unlocked: None,
+                global_percent: Some(2.0),
+                ..AchievementItem::default()
+            },
+            AchievementItem {
+                api_name: "unlocked".to_string(),
+                unlocked: Some(true),
+                global_percent: Some(1.0),
+                ..AchievementItem::default()
+            },
+            AchievementItem {
+                api_name: "locked".to_string(),
+                unlocked: Some(false),
+                global_percent: Some(f32::NAN),
+                ..AchievementItem::default()
+            },
+        ];
+
+        items.sort_by(|a, b| {
+            achievement_unlock_sort_rank(a.unlocked)
+                .cmp(&achievement_unlock_sort_rank(b.unlocked))
+                .then_with(|| {
+                    achievement_percent_sort_value(a.global_percent)
+                        .total_cmp(&achievement_percent_sort_value(b.global_percent))
+                })
+                .then_with(|| a.api_name.cmp(&b.api_name))
+        });
+
+        let names: Vec<_> = items.into_iter().map(|item| item.api_name).collect();
+        assert_eq!(names, vec!["locked", "unknown", "unlocked"]);
+    }
 }
 
 fn steamid64_to_accountid(steamid64: &str) -> Option<String> {
