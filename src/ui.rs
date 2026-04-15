@@ -788,89 +788,80 @@ pub fn draw_hint_bar(
     let hint_font = egui::FontId::proportional(20.0);
     let hint_color = egui::Color32::from_rgba_unmultiplied(200, 200, 210, 160);
     let icon_h = 32.0_f32;
-    let row_h = icon_h;
+    let action_icon_h = icon_h + 8.0;
+    let row_h = action_icon_h;
     let hint_y = padded_rect.max.y - 10.0;
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
 
     let painter = ui.painter();
-    let draw_icon = |painter: &egui::Painter, tex: &egui::TextureHandle, x: f32| {
+    let draw_icon = |painter: &egui::Painter, tex: &egui::TextureHandle, x: f32, size: f32| {
         painter.image(
             tex.id(),
             egui::Rect::from_min_size(
-                egui::pos2(x, hint_y + (row_h - icon_h) * 0.5),
-                egui::vec2(icon_h, icon_h),
+                egui::pos2(x, hint_y + (row_h - size) * 0.5),
+                egui::vec2(size, size),
             ),
             uv,
             egui::Color32::WHITE,
         );
     };
 
+    let g_back = painter.layout_no_wrap("Back".to_string(), hint_font.clone(), hint_color);
+    let g_quit = painter.layout_no_wrap("Quit".to_string(), hint_font.clone(), hint_color);
+    let b_label_reserve = g_back.size().x.max(g_quit.size().x);
+    let b_icon_x = padded_rect.max.x - b_label_reserve - 6.0 - action_icon_h;
+    let b_label_x = b_icon_x + action_icon_h + 6.0;
+
     if achievement_panel_active {
         let g_scroll = painter.layout_no_wrap("Scroll".to_string(), hint_font.clone(), hint_color);
-        let g_back = painter.layout_no_wrap("Back".to_string(), hint_font, hint_color);
-        let total_w = icon_h + 6.0 + g_scroll.size().x + 20.0 + icon_h + 6.0 + g_back.size().x;
-        let mut hx = padded_rect.max.x - total_w;
+        let scroll_group_w = icon_h + 6.0 + g_scroll.size().x;
+        let hx = b_icon_x - 20.0 - scroll_group_w;
 
-        draw_icon(painter, &icons.dpad_down, hx);
-        hx += icon_h + 6.0;
+        draw_icon(painter, &icons.dpad_down, hx, icon_h);
+        let text_x = hx + icon_h + 6.0;
 
         let gy = hint_y + (row_h - g_scroll.size().y) * 0.5;
-        let scroll_width = g_scroll.size().x;
-        painter.galley(egui::pos2(hx, gy), g_scroll);
-        hx += scroll_width + 20.0;
+        painter.galley(egui::pos2(text_x, gy), g_scroll);
 
-        draw_icon(painter, &icons.btn_b, hx);
-        hx += icon_h + 6.0;
+        draw_icon(painter, &icons.btn_b, b_icon_x, action_icon_h);
 
         let gy = hint_y + (row_h - g_back.size().y) * 0.5;
-        painter.galley(egui::pos2(hx, gy), g_back);
+        painter.galley(egui::pos2(b_label_x, gy), g_back);
         return;
     }
 
-    // Measure total width first (right-aligned)
     let g_launch = painter.layout_no_wrap("Start".to_string(), hint_font.clone(), hint_color);
-    let g_quit = painter.layout_no_wrap("Quit".to_string(), hint_font.clone(), hint_color);
     let g_achievements = painter.layout_no_wrap(
         "Achievements".to_string(),
         hint_font.clone(),
         hint_color,
     );
-    let total_w = if can_open_achievement_panel {
-        icon_h + 6.0 + g_launch.size().x
-            + 20.0
-            + icon_h + 6.0 + g_achievements.size().x
-            + 20.0
-            + icon_h + 6.0 + g_quit.size().x
-    } else {
-        icon_h + 6.0 + g_launch.size().x + 20.0 + icon_h + 6.0 + g_quit.size().x
-    };
-    let mut hx = padded_rect.max.x - total_w;
+    let launch_group_w = action_icon_h + 6.0 + g_launch.size().x;
+    let launch_x = b_icon_x - 20.0 - launch_group_w;
 
     if can_open_achievement_panel {
-        draw_icon(painter, &icons.dpad_down, hx);
-        hx += icon_h + 6.0;
+        let achievements_group_w = icon_h + 6.0 + g_achievements.size().x;
+        let achievements_x = launch_x - 20.0 - achievements_group_w;
+        draw_icon(painter, &icons.dpad_down, achievements_x, icon_h);
 
         let gy = hint_y + (row_h - g_achievements.size().y) * 0.5;
-        let g_width = g_achievements.size().x;
-        painter.galley(egui::pos2(hx, gy), g_achievements);
-        hx += g_width + 20.0;
+        painter.galley(
+            egui::pos2(achievements_x + icon_h + 6.0, gy),
+            g_achievements,
+        );
     }
 
-    // A button
-    draw_icon(painter, &icons.btn_a, hx);
-    hx += icon_h + 6.0;
+    draw_icon(painter, &icons.btn_a, launch_x, action_icon_h);
 
-    // "Launch"
     let gy = hint_y + (row_h - g_launch.size().y) * 0.5;
-    let g_width = g_launch.size().x;
-    painter.galley(egui::pos2(hx, gy), g_launch);
-    hx += g_width + 20.0;
+    painter.galley(
+        egui::pos2(launch_x + action_icon_h + 6.0, gy),
+        g_launch,
+    );
 
-    // B button
-    draw_icon(painter, &icons.btn_b, hx);
-    hx += icon_h + 6.0;
+    draw_icon(painter, &icons.btn_b, b_icon_x, action_icon_h);
 
     // "Quit"
     let gy = hint_y + (row_h - g_quit.size().y) * 0.5;
-    painter.galley(egui::pos2(hx, gy), g_quit);
+    painter.galley(egui::pos2(b_label_x, gy), g_quit);
 }
