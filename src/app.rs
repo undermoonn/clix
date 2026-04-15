@@ -912,24 +912,6 @@ impl eframe::App for LauncherApp {
                 }
             }
 
-            if ctx.input(|i| i.key_down(egui::Key::ArrowUp)) {
-                raw_held.insert("up");
-            }
-            if ctx.input(|i| i.key_down(egui::Key::ArrowDown)) {
-                raw_held.insert("down");
-            }
-            if ctx.input(|i| i.key_down(egui::Key::ArrowLeft)) {
-                raw_held.insert("left");
-            }
-            if ctx.input(|i| i.key_down(egui::Key::ArrowRight)) {
-                raw_held.insert("right");
-            }
-            if ctx.input(|i| i.key_down(egui::Key::Enter)) {
-                raw_held.insert("launch");
-            }
-            if ctx.input(|i| i.key_down(egui::Key::Escape)) {
-                raw_held.insert("quit");
-            }
         } // end if process_input
 
         // Track nav direction for hint bar icon
