@@ -239,6 +239,7 @@ pub struct LauncherApp {
     logo: Option<(u32, egui::TextureHandle)>,
     logo_prev: Option<(u32, egui::TextureHandle)>,
     cover_fade: f32,
+    cover_transition_ready: bool,
     cover_nav_dir: f32,
     selected_assets_loaded_for: Option<usize>,
     cover_pending: Arc<Mutex<Option<PendingBackgroundAssets>>>,
@@ -293,6 +294,7 @@ impl LauncherApp {
             logo: None,
             logo_prev: None,
             cover_fade: 1.0,
+            cover_transition_ready: true,
             cover_nav_dir: 0.0,
             selected_assets_loaded_for: None,
             cover_pending: Arc::new(Mutex::new(None)),
@@ -367,8 +369,10 @@ impl LauncherApp {
         self.cover_prev = self.cover.take();
         self.logo_prev = self.logo.take();
         self.cover_fade = 0.0;
+        self.cover_transition_ready = false;
 
         let Some(app_id) = self.games.get(self.selected).and_then(|g| g.app_id) else {
+            self.cover_transition_ready = true;
             return;
         };
 
@@ -381,16 +385,14 @@ impl LauncherApp {
         std::thread::spawn(move || {
             let cover_bytes = cover::load_cover_bytes(&paths, app_id);
             let logo_bytes = cover::load_logo_bytes(&paths, app_id);
-            if cover_bytes.is_some() || logo_bytes.is_some() {
-                if let Ok(mut lock) = pending.lock() {
-                    *lock = Some(PendingBackgroundAssets {
-                        app_id,
-                        cover_bytes,
-                        logo_bytes,
-                    });
-                }
-                ctx_clone.request_repaint();
+            if let Ok(mut lock) = pending.lock() {
+                *lock = Some(PendingBackgroundAssets {
+                    app_id,
+                    cover_bytes,
+                    logo_bytes,
+                });
             }
+            ctx_clone.request_repaint();
         });
     }
 
@@ -1128,14 +1130,15 @@ impl eframe::App for LauncherApp {
                         })
                 });
 
-                if loaded_any {
+                if loaded_any || self.cover_prev.is_some() || self.logo_prev.is_some() {
                     self.cover_fade = 0.0;
                 }
+                self.cover_transition_ready = true;
             }
         }
 
         // Advance crossfade
-        if self.cover_fade < 1.0 {
+        if self.cover_transition_ready && self.cover_fade < 1.0 {
             let dt = ctx.input(|i| i.predicted_dt);
             self.cover_fade = (self.cover_fade + dt * 3.0).min(1.0);
             ctx.request_repaint();
