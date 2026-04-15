@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run clix release",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\target\\release\\clix.exe",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "cargo build --release",
+      "console": "integratedTerminal"
+    }
+  ]
+}

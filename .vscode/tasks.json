@@ -1,0 +1,35 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "cargo build --release",
+      "type": "shell",
+      "command": "cargo",
+      "args": [
+        "build",
+        "--release"
+      ],
+      "group": "build",
+      "problemMatcher": [
+        "$rustc"
+      ]
+    },
+    {
+      "label": "run clix release",
+      "type": "shell",
+      "command": "${workspaceFolder}\\target\\release\\clix.exe",
+      "dependsOn": [
+        "cargo build --release"
+      ],
+      "dependsOrder": "sequence"
+    },
+    {
+      "label": "build and run clix release",
+      "dependsOn": [
+        "cargo build --release",
+        "run clix release"
+      ],
+      "dependsOrder": "sequence"
+    }
+  ]
+}
