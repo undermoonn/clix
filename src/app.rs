@@ -1208,7 +1208,7 @@ impl eframe::App for LauncherApp {
         }
 
         // Achievement smooth scroll
-        let ach_target = self.achievement_selected as f32;
+        let ach_target = self.achievement_selected.saturating_sub(2) as f32;
         let ach_diff = ach_target - self.achievement_scroll_offset;
         if ach_diff.abs() > 0.001 {
             self.achievement_scroll_offset += ach_diff * (1.0 - (-14.0 * dt).exp());
@@ -1252,12 +1252,6 @@ impl eframe::App for LauncherApp {
         let can_open_achievement_panel = selected_achievement_summary
             .map(|summary| !summary.items.is_empty())
             .unwrap_or(false);
-        let selected_achievements_loading = selected_app_id
-            .map(|id| {
-                self.achievement_loading.contains(&id)
-                    && !self.achievement_no_data.contains(&id)
-            })
-            .unwrap_or(false);
         // Draw UI
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(egui::Color32::TRANSPARENT))
@@ -1272,41 +1266,42 @@ impl eframe::App for LauncherApp {
                     self.cover_nav_dir,
                 );
 
-                ui::draw_game_list(
-                    ui,
-                    &self.games,
-                    self.selected,
-                    self.select_anim,
-                    self.achievement_panel_anim,
-                    self.scroll_offset,
-                    &self.game_icons,
-                    self.launch_state.as_ref().map(|s| s.game_index),
-                    self.show_achievement_panel,
-                    selected_achievement_summary,
-                    selected_achievement_reveal,
-                );
-
                 if self.show_achievement_panel {
                     if let Some(game) = self.games.get(self.selected) {
-                        ui::draw_achievement_panel(
+                        let game_icon = game
+                            .app_id
+                            .and_then(|app_id| self.game_icons.get(&app_id));
+                        ui::draw_achievement_page(
                             ui,
-                            &game.name,
-                            game.playtime_minutes,
-                            self.selected,
+                            game,
                             selected_achievement_summary,
                             selected_achievement_reveal,
-                            selected_achievements_loading,
                             self.achievement_selected,
                             self.achievement_select_anim,
-                            self.select_anim,
                             self.achievement_panel_anim,
+                            self.selected,
+                            self.select_anim,
                             self.scroll_offset,
                             self.achievement_scroll_offset,
-                            self.show_achievement_panel,
+                            game_icon,
                             &self.achievement_icon_cache,
                             &self.achievement_icon_reveal,
                         );
                     }
+                } else {
+                    ui::draw_game_list(
+                        ui,
+                        &self.games,
+                        self.selected,
+                        self.select_anim,
+                        self.achievement_panel_anim,
+                        self.scroll_offset,
+                        &self.game_icons,
+                        self.launch_state.as_ref().map(|s| s.game_index),
+                        self.show_achievement_panel,
+                        selected_achievement_summary,
+                        selected_achievement_reveal,
+                    );
                 }
 
                 if let Some(icons) = &self.hint_icons {
