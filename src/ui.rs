@@ -835,6 +835,7 @@ pub fn draw_hint_bar(
     icons: &HintIcons,
     achievement_panel_active: bool,
     can_open_achievement_panel: bool,
+    quit_hold_progress: f32,
 ) {
     let panel_rect = ui.available_rect_before_wrap();
     let padding = 50.0;
@@ -859,9 +860,35 @@ pub fn draw_hint_bar(
             egui::Color32::WHITE,
         );
     };
+    let draw_progress_ring = |painter: &egui::Painter,
+                              center: egui::Pos2,
+                              radius: f32,
+                              progress: f32| {
+        if progress <= 0.0 {
+            return;
+        }
+
+        let clamped = progress.clamp(0.0, 1.0);
+        let bg_stroke = egui::Stroke::new(2.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 40));
+        let fg_stroke = egui::Stroke::new(2.5, egui::Color32::from_rgb(255, 255, 255));
+        painter.circle_stroke(center, radius, bg_stroke);
+
+        let start_angle = -std::f32::consts::FRAC_PI_2;
+        let sweep = std::f32::consts::TAU * clamped;
+        let segments = ((64.0 * clamped).ceil() as usize).max(8);
+        let mut points = Vec::with_capacity(segments + 1);
+
+        for index in 0..=segments {
+            let t = index as f32 / segments as f32;
+            let angle = start_angle + sweep * t;
+            points.push(center + egui::vec2(angle.cos() * radius, angle.sin() * radius));
+        }
+
+        painter.add(egui::Shape::line(points, fg_stroke));
+    };
 
     let g_back = painter.layout_no_wrap("Back".to_string(), hint_font.clone(), hint_color);
-    let g_quit = painter.layout_no_wrap("Quit".to_string(), hint_font.clone(), hint_color);
+    let g_quit = painter.layout_no_wrap("Hold Quit".to_string(), hint_font.clone(), hint_color);
     let b_label_reserve = g_back.size().x.max(g_quit.size().x);
     let b_icon_x = padded_rect.max.x - b_label_reserve - 6.0 - action_icon_h;
     let b_label_x = b_icon_x + action_icon_h + 6.0;
@@ -914,6 +941,15 @@ pub fn draw_hint_bar(
     );
 
     draw_icon(painter, &icons.btn_b, b_icon_x, action_icon_h);
+    draw_progress_ring(
+        painter,
+        egui::pos2(
+            b_icon_x + action_icon_h * 0.5,
+            hint_y + row_h * 0.5,
+        ),
+        action_icon_h * 0.48,
+        quit_hold_progress,
+    );
 
     // "Quit"
     let gy = hint_y + (row_h - g_quit.size().y) * 0.5;

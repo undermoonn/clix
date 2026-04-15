@@ -31,6 +31,8 @@ use crate::input::*;
 use crate::steam::{self, Game};
 use crate::ui;
 
+const QUIT_HOLD_TO_EXIT_SECONDS: f32 = 0.8;
+
 struct LaunchState {
     game_index: usize,
     game_name: String,
@@ -269,6 +271,10 @@ pub struct LauncherApp {
     achievement_select_anim: f32,
     achievement_select_anim_target: Option<usize>,
     achievement_scroll_offset: f32,
+    quit_hold_started_at: Option<Instant>,
+    quit_hold_progress: f32,
+    quit_hold_consumed: bool,
+    suppress_quit_hold_until_release: bool,
 }
 
 impl LauncherApp {
@@ -324,6 +330,10 @@ impl LauncherApp {
             achievement_select_anim: 0.0,
             achievement_select_anim_target: None,
             achievement_scroll_offset: 0.0,
+            quit_hold_started_at: None,
+            quit_hold_progress: 0.0,
+            quit_hold_consumed: false,
+            suppress_quit_hold_until_release: false,
         }
     }
 
@@ -951,7 +961,13 @@ impl eframe::App for LauncherApp {
         let now = Instant::now();
         self.nav_held.retain(|k, _| raw_held.contains(k));
 
-        for action_name in &["up", "down", "left", "right", "launch", "quit"] {
+        let action_names: &[&str] = if self.show_achievement_panel {
+            &["up", "down", "left", "right", "launch", "quit"]
+        } else {
+            &["up", "down", "left", "right", "launch"]
+        };
+
+        for action_name in action_names {
             if raw_held.contains(action_name) {
                 let should_fire = if let Some(state) = self.nav_held.get_mut(action_name) {
                     if !state.past_initial {
@@ -1008,6 +1024,36 @@ impl eframe::App for LauncherApp {
             }
         }
 
+        if self.suppress_quit_hold_until_release {
+            if raw_held.contains("quit") {
+                self.quit_hold_started_at = None;
+                self.quit_hold_progress = 0.0;
+                self.quit_hold_consumed = false;
+            } else {
+                self.suppress_quit_hold_until_release = false;
+            }
+        } else if process_input && !self.show_achievement_panel && raw_held.contains("quit") {
+            if self.quit_hold_consumed {
+                self.quit_hold_progress = 1.0;
+            } else {
+                let started_at = self.quit_hold_started_at.get_or_insert(now);
+                let held_seconds = now.duration_since(*started_at).as_secs_f32();
+                self.quit_hold_progress =
+                    (held_seconds / QUIT_HOLD_TO_EXIT_SECONDS).clamp(0.0, 1.0);
+
+                if self.quit_hold_progress >= 1.0 {
+                    self.quit_hold_consumed = true;
+                    actions.push(ControllerAction::Quit);
+                } else {
+                    ctx.request_repaint();
+                }
+            }
+        } else {
+            self.quit_hold_started_at = None;
+            self.quit_hold_progress = 0.0;
+            self.quit_hold_consumed = false;
+        }
+
         // Apply actions
         for act in &actions {
             if self.show_achievement_panel {
@@ -1035,6 +1081,7 @@ impl eframe::App for LauncherApp {
                         self.achievement_select_anim = 0.0;
                         self.achievement_select_anim_target = None;
                         self.achievement_scroll_offset = 0.0;
+                        self.suppress_quit_hold_until_release = true;
                     }
                     _ => {}
                 }
@@ -1308,7 +1355,13 @@ impl eframe::App for LauncherApp {
                 }
 
                 if let Some(icons) = &self.hint_icons {
-                    ui::draw_hint_bar(ui, icons, self.show_achievement_panel, can_open_achievement_panel);
+                    ui::draw_hint_bar(
+                        ui,
+                        icons,
+                        self.show_achievement_panel,
+                        can_open_achievement_panel,
+                        self.quit_hold_progress,
+                    );
                 }
             });
     }
