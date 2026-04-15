@@ -312,8 +312,8 @@ pub fn draw_game_list(
     achievement_summary_for_selected: Option<&crate::steam::AchievementSummary>,
     achievement_summary_reveal_for_selected: f32,
 ) {
-    let base_icon_size: f32 = 92.0;
-    let selected_icon_size: f32 = 160.0;
+    let base_icon_size: f32 = 122.0;
+    let selected_icon_size: f32 = 256.0;
     let selected_icon_extra = selected_icon_size - base_icon_size;
     let time_seconds = ui.ctx().input(|input| input.time) as f32;
 
@@ -323,7 +323,7 @@ pub fn draw_game_list(
 
     let selected_size = 30.0;
     let base_size = 18.0;
-    let column_spacing = 112.0;
+    let column_spacing = 152.0;
 
     let hero_ratio = 1240.0 / 3840.0;
     let img_bottom = panel_rect.min.y + panel_rect.width() * hero_ratio;
@@ -453,7 +453,7 @@ pub fn draw_game_list(
         } else {
             None
         };
-        let text_y = content_top + icon_size + 14.0;
+        let text_y = content_top + icon_size + 20.0;
 
         if let Some(app_id) = g.app_id {
             if let Some(icon_tex) = game_icons.get(&app_id) {
