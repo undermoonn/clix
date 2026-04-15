@@ -1,5 +1,6 @@
 mod app;
 mod cover;
+mod dlss;
 mod input;
 mod steam;
 mod ui;
