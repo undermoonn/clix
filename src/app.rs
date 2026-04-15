@@ -232,10 +232,10 @@ pub struct LauncherApp {
     cover_prev: Option<(u32, egui::TextureHandle)>,
     cover_fade: f32,
     cover_nav_dir: f32,
-    cover_loaded_for: Option<usize>,
+    selected_assets_loaded_for: Option<usize>,
     cover_pending: Arc<Mutex<Option<(u32, Vec<u8>)>>>,
-    cover_debounce_until: Option<Instant>,
-    cover_debounce_for: Option<usize>,
+    selected_assets_debounce_until: Option<Instant>,
+    selected_assets_debounce_for: Option<usize>,
     select_anim: f32,
     select_anim_target: Option<usize>,
     scroll_offset: f32,
@@ -252,6 +252,7 @@ pub struct LauncherApp {
     achievement_icon_pending: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
     achievement_icon_loading: HashSet<String>,
     achievement_icon_reveal: HashMap<String, f32>,
+    achievement_text_reveal: HashMap<u32, f32>,
     achievement_checked_for: Option<u32>,
     show_achievement_panel: bool,
     achievement_selected: usize,
@@ -282,10 +283,10 @@ impl LauncherApp {
             cover_prev: None,
             cover_fade: 1.0,
             cover_nav_dir: 0.0,
-            cover_loaded_for: None,
+            selected_assets_loaded_for: None,
             cover_pending: Arc::new(Mutex::new(None)),
-            cover_debounce_until: None,
-            cover_debounce_for: None,
+            selected_assets_debounce_until: None,
+            selected_assets_debounce_for: None,
             select_anim: 0.0,
             select_anim_target: None,
             scroll_offset: 0.0,
@@ -302,6 +303,7 @@ impl LauncherApp {
             achievement_icon_pending: Arc::new(Mutex::new(Vec::new())),
             achievement_icon_loading: HashSet::new(),
             achievement_icon_reveal: HashMap::new(),
+            achievement_text_reveal: HashMap::new(),
             achievement_checked_for: None,
             show_achievement_panel: false,
             achievement_selected: 0,
@@ -326,6 +328,7 @@ impl LauncherApp {
         if let Some(summary) = steam::load_cached_achievement_summary(app_id) {
             self.achievement_no_data.remove(&app_id);
             self.achievement_cache.insert(app_id, summary);
+            self.achievement_text_reveal.insert(app_id, 1.0);
         }
 
         self.achievement_no_data.remove(&app_id);
@@ -348,6 +351,36 @@ impl LauncherApp {
         });
     }
 
+    fn refresh_cover_for_selected(&mut self, ctx: &egui::Context) {
+        self.cover_prev = self.cover.take();
+        self.cover_fade = 0.0;
+
+        let Some(app_id) = self.games.get(self.selected).and_then(|g| g.app_id) else {
+            return;
+        };
+
+        let pending = Arc::clone(&self.cover_pending);
+        let paths = self.steam_paths.clone();
+        let ctx_clone = ctx.clone();
+        if let Ok(mut lock) = pending.lock() {
+            *lock = None;
+        }
+        std::thread::spawn(move || {
+            let bytes = cover::load_cover_bytes(&paths, app_id);
+            if let Some(bytes) = bytes {
+                if let Ok(mut lock) = pending.lock() {
+                    *lock = Some((app_id, bytes));
+                }
+                ctx_clone.request_repaint();
+            }
+        });
+    }
+
+    fn refresh_assets_for_selected(&mut self, ctx: &egui::Context) {
+        self.refresh_achievement_for_selected(ctx);
+        self.refresh_cover_for_selected(ctx);
+    }
+
     fn drain_achievement_results(&mut self) {
         let Ok(mut lock) = self.achievement_pending.lock() else {
             return;
@@ -357,9 +390,15 @@ impl LauncherApp {
             self.achievement_loading.remove(&app_id);
             match summary {
                 Some(s) => {
+                    let had_summary = self.achievement_cache.contains_key(&app_id);
                     steam::store_cached_achievement_summary(app_id, &s);
                     self.achievement_no_data.remove(&app_id);
                     self.achievement_cache.insert(app_id, s);
+                    if !had_summary {
+                        self.achievement_text_reveal.insert(app_id, 0.0);
+                    } else {
+                        self.achievement_text_reveal.entry(app_id).or_insert(1.0);
+                    }
                 }
                 None => {
                     if !self.achievement_cache.contains_key(&app_id) {
@@ -595,9 +634,9 @@ impl LauncherApp {
         self.select_anim = 1.0;
 
         // Force assets to refresh for the selected game after resume.
-        self.cover_loaded_for = None;
-        self.cover_debounce_for = None;
-        self.cover_debounce_until = None;
+        self.selected_assets_loaded_for = None;
+        self.selected_assets_debounce_for = None;
+        self.selected_assets_debounce_until = None;
         self.icons_loaded = false;
     }
 }
@@ -1027,39 +1066,19 @@ impl eframe::App for LauncherApp {
         self.drain_achievement_icon_results(ctx);
 
         // Cover loading (async with 300ms debounce)
-        if self.cover_loaded_for != Some(self.selected) {
+        if self.selected_assets_loaded_for != Some(self.selected) {
             // Only reset timer if selection actually changed since last debounce start
-            if self.cover_debounce_for != Some(self.selected) {
-                self.cover_debounce_for = Some(self.selected);
-                self.cover_debounce_until = Some(Instant::now() + std::time::Duration::from_millis(300));
+            if self.selected_assets_debounce_for != Some(self.selected) {
+                self.selected_assets_debounce_for = Some(self.selected);
+                self.selected_assets_debounce_until = Some(Instant::now() + std::time::Duration::from_millis(300));
             }
         }
-        if let Some(deadline) = self.cover_debounce_until {
+        if let Some(deadline) = self.selected_assets_debounce_until {
             if Instant::now() >= deadline {
-                self.cover_debounce_until = None;
-                if self.cover_loaded_for != Some(self.selected) {
-                    self.cover_loaded_for = Some(self.selected);
-                    self.cover_prev = self.cover.take();
-                    self.cover_fade = 0.0;
-                    if let Some(game) = self.games.get(self.selected) {
-                        if let Some(app_id) = game.app_id {
-                            let pending = Arc::clone(&self.cover_pending);
-                            let paths = self.steam_paths.clone();
-                            let ctx_clone = ctx.clone();
-                            if let Ok(mut lock) = pending.lock() {
-                                *lock = None;
-                            }
-                            std::thread::spawn(move || {
-                                let bytes = cover::load_cover_bytes(&paths, app_id);
-                                if let Some(bytes) = bytes {
-                                    if let Ok(mut lock) = pending.lock() {
-                                        *lock = Some((app_id, bytes));
-                                    }
-                                    ctx_clone.request_repaint();
-                                }
-                            });
-                        }
-                    }
+                self.selected_assets_debounce_until = None;
+                if self.selected_assets_loaded_for != Some(self.selected) {
+                    self.selected_assets_loaded_for = Some(self.selected);
+                    self.refresh_assets_for_selected(ctx);
                 }
             } else {
                 ctx.request_repaint();
@@ -1115,6 +1134,16 @@ impl eframe::App for LauncherApp {
             }
         });
 
+        for progress in self.achievement_text_reveal.values_mut() {
+            if *progress < 0.999 {
+                const ACHIEVEMENT_TEXT_FADE_IN_SECONDS: f32 = 0.35;
+                *progress = (*progress + dt / ACHIEVEMENT_TEXT_FADE_IN_SECONDS).min(1.0);
+                if *progress < 0.999 {
+                    ctx.request_repaint();
+                }
+            }
+        }
+
         // Smooth scroll animation (exponential decay towards target)
         let scroll_target = self.selected as f32;
         let scroll_diff = scroll_target - self.scroll_offset;
@@ -1169,12 +1198,15 @@ impl eframe::App for LauncherApp {
             }
         }
 
-        self.refresh_achievement_for_selected(ctx);
+        let selected_app_id = self.games.get(self.selected).and_then(|g| g.app_id);
+
         self.ensure_achievement_icons_for_selected(ctx);
 
-        let selected_app_id = self.games.get(self.selected).and_then(|g| g.app_id);
         let selected_achievement_summary =
             selected_app_id.and_then(|id| self.achievement_cache.get(&id));
+        let selected_achievement_reveal = selected_app_id
+            .and_then(|id| self.achievement_text_reveal.get(&id).copied())
+            .unwrap_or(1.0);
         let can_open_achievement_panel = selected_achievement_summary
             .map(|summary| !summary.items.is_empty())
             .unwrap_or(false);
@@ -1206,6 +1238,7 @@ impl eframe::App for LauncherApp {
                     self.launch_state.as_ref().map(|s| s.game_index),
                     self.show_achievement_panel,
                     selected_achievement_summary,
+                    selected_achievement_reveal,
                 );
 
                 if self.show_achievement_panel {

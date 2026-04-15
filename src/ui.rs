@@ -138,6 +138,7 @@ pub fn draw_game_list(
     loading_index: Option<usize>,
     achievement_panel_active: bool,
     achievement_summary_for_selected: Option<&crate::steam::AchievementSummary>,
+    achievement_summary_reveal_for_selected: f32,
 ) {
     let panel_rect = ui.available_rect_before_wrap();
     let padding = 50.0;
@@ -189,9 +190,18 @@ pub fn draw_game_list(
         } else {
             1.0
         };
+        let selection_t = if is_selected {
+            smoothstep01(select_anim)
+        } else {
+            0.0
+        };
+        let meta_t = if is_selected {
+            smoothstep01((select_anim - 0.18) / 0.82)
+        } else {
+            0.0
+        };
         let font_size = if is_selected {
-            let t = 1.0 - (1.0 - select_anim) * (1.0 - select_anim);
-            base_size + (selected_size - base_size) * t
+            base_size + (selected_size - base_size) * selection_t
         } else {
             base_size
         };
@@ -211,8 +221,7 @@ pub fn draw_game_list(
         let selected_icon_size = selected_size + 26.0;
         let base_icon_size = base_size + 4.0;
         let icon_size = if is_selected {
-            let t = 1.0 - (1.0 - select_anim) * (1.0 - select_anim);
-            base_icon_size + (selected_icon_size - base_icon_size) * t
+            base_icon_size + (selected_icon_size - base_icon_size) * selection_t
         } else {
             base_icon_size
         };
@@ -246,10 +255,9 @@ pub fn draw_game_list(
             String::new()
         };
 
-        let mut meta_parts: Vec<String> = Vec::new();
-        if !playtime_str.is_empty() {
-            meta_parts.push(playtime_str);
-        }
+        let has_playtime_meta = !playtime_str.is_empty();
+        let mut achievement_meta_text: Option<String> = None;
+        let mut has_achievement_meta = false;
         if is_selected {
             if let Some(summary) = achievement_summary_for_selected {
                 if summary.total > 0 {
@@ -258,22 +266,55 @@ pub fn draw_game_list(
                     } else {
                         format!("--/{} achievements", summary.total)
                     };
-                    meta_parts.push(ach_text);
+                    achievement_meta_text = Some(ach_text);
+                    has_achievement_meta = true;
                 }
             }
         }
-        let meta_str = meta_parts.join("  •  ");
+        let has_meta = has_playtime_meta || has_achievement_meta;
+        let achievement_meta_reveal = if is_selected && has_achievement_meta {
+            achievement_summary_reveal_for_selected.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
 
-        // Measure playtime galley (only shown when selected)
-        let pt_font_size = font_size * 0.5;
+        // Subtitle uses fade-in only; keep size and position stable.
+        let pt_font_size = selected_size * 0.5;
         let pt_font = egui::FontId::proportional(pt_font_size);
-        let pt_color = egui::Color32::from_rgba_unmultiplied(180, 180, 190, 140);
-        let pt_galley = if is_selected && !meta_str.is_empty() {
-            Some(painter.layout_no_wrap(meta_str, pt_font, pt_color))
+        let pt_color = egui::Color32::from_rgba_unmultiplied(
+            180,
+            180,
+            190,
+            (140.0 * meta_t) as u8,
+        );
+        let playtime_galley = if is_selected && meta_t > 0.0 && has_playtime_meta {
+            Some(painter.layout_no_wrap(playtime_str, pt_font.clone(), pt_color))
         } else {
             None
         };
-        let pt_row_h = pt_galley.as_ref().map_or(0.0, |g| g.size().y + 2.0);
+        let achievement_color = egui::Color32::from_rgba_unmultiplied(
+            180,
+            180,
+            190,
+            (140.0 * meta_t * achievement_meta_reveal) as u8,
+        );
+        let achievement_galley = if is_selected && meta_t > 0.0 && has_achievement_meta {
+            achievement_meta_text.map(|text| {
+                let prefixed = if has_playtime_meta {
+                    format!("  •  {}", text)
+                } else {
+                    text
+                };
+                painter.layout_no_wrap(prefixed, pt_font, achievement_color)
+            })
+        } else {
+            None
+        };
+        let pt_row_h = if is_selected && has_meta {
+            pt_font_size + 4.0
+        } else {
+            0.0
+        };
 
         // Layout: name + playtime stacked, centered on y_pos
         let total_h = galley.size().y + pt_row_h;
@@ -324,9 +365,16 @@ pub fn draw_game_list(
         painter.galley(egui::pos2(text_x, text_y), galley.clone());
 
         // Playtime text (below game name)
-        if let Some(pt_g) = pt_galley {
+        if playtime_galley.is_some() || achievement_galley.is_some() {
             let pt_y = text_y + galley.size().y + 2.0;
-            painter.galley(egui::pos2(text_x, pt_y), pt_g);
+            let mut pt_x = text_x;
+            if let Some(pt_g) = playtime_galley {
+                painter.galley(egui::pos2(pt_x, pt_y), pt_g.clone());
+                pt_x += pt_g.size().x;
+            }
+            if let Some(ach_g) = achievement_galley {
+                painter.galley(egui::pos2(pt_x, pt_y), ach_g);
+            }
         }
     }
 }
