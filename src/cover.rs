@@ -24,6 +24,20 @@ use winapi::um::wingdi::{
 #[cfg(target_os = "windows")]
 use winapi::um::winuser::{DestroyIcon, GetIconInfo, ICONINFO};
 
+#[cfg(target_os = "windows")]
+extern "system" {
+    fn PrivateExtractIconsW(
+        szFileName: *const u16,
+        nIconIndex: i32,
+        cxIcon: i32,
+        cyIcon: i32,
+        phicon: *mut HICON,
+        piconid: *mut UINT,
+        nIcons: UINT,
+        flags: UINT,
+    ) -> UINT;
+}
+
 pub fn bytes_to_texture(
     ctx: &egui::Context,
     bytes: &[u8],
@@ -511,26 +525,11 @@ fn merge_icon_mask_alpha(rgba: &mut [u8], mask_rgba: &[u8]) {
 }
 
 #[cfg(target_os = "windows")]
-fn extract_icon_bytes_from_executable(executable_path: &Path) -> Option<Vec<u8>> {
-    use std::os::windows::ffi::OsStrExt;
-
-    let wide_path = executable_path
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect::<Vec<u16>>();
-
+fn icon_handle_to_png_bytes(icon: HICON) -> Option<Vec<u8>> {
     unsafe {
-        let mut large_icon: HICON = std::ptr::null_mut();
-        if ExtractIconExW(wide_path.as_ptr(), 0, &mut large_icon, std::ptr::null_mut(), 1) == 0
-            || large_icon.is_null()
-        {
-            return None;
-        }
-
         let mut icon_info: ICONINFO = std::mem::zeroed();
-        if GetIconInfo(large_icon, &mut icon_info) == 0 {
-            DestroyIcon(large_icon);
+        if GetIconInfo(icon, &mut icon_info) == 0 {
+            DestroyIcon(icon);
             return None;
         }
 
@@ -553,7 +552,7 @@ fn extract_icon_bytes_from_executable(executable_path: &Path) -> Option<Vec<u8>>
             if !icon_info.hbmMask.is_null() {
                 DeleteObject(icon_info.hbmMask as HGDIOBJ);
             }
-            DestroyIcon(large_icon);
+            DestroyIcon(icon);
             return None;
         }
 
@@ -571,7 +570,7 @@ fn extract_icon_bytes_from_executable(executable_path: &Path) -> Option<Vec<u8>>
             if !icon_info.hbmMask.is_null() {
                 DeleteObject(icon_info.hbmMask as HGDIOBJ);
             }
-            DestroyIcon(large_icon);
+            DestroyIcon(icon);
             return None;
         }
 
@@ -595,10 +594,68 @@ fn extract_icon_bytes_from_executable(executable_path: &Path) -> Option<Vec<u8>>
         if !icon_info.hbmMask.is_null() {
             DeleteObject(icon_info.hbmMask as HGDIOBJ);
         }
-        DestroyIcon(large_icon);
+        DestroyIcon(icon);
 
         let rgba = rgba?;
         png_bytes_from_rgba(width as u32, height as u32, &rgba)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn extract_private_icon_bytes(executable_path: &Path, size: i32) -> Option<Vec<u8>> {
+    use std::os::windows::ffi::OsStrExt;
+
+    let wide_path = executable_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<u16>>();
+
+    unsafe {
+        let mut icon: HICON = std::ptr::null_mut();
+        let mut icon_id: UINT = 0;
+        if PrivateExtractIconsW(
+            wide_path.as_ptr(),
+            0,
+            size,
+            size,
+            &mut icon,
+            &mut icon_id,
+            1,
+            0,
+        ) == 0
+            || icon.is_null()
+        {
+            return None;
+        }
+
+        icon_handle_to_png_bytes(icon)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn extract_icon_bytes_from_executable(executable_path: &Path) -> Option<Vec<u8>> {
+    use std::os::windows::ffi::OsStrExt;
+
+    if let Some(bytes) = extract_private_icon_bytes(executable_path, 256) {
+        return Some(bytes);
+    }
+
+    let wide_path = executable_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<u16>>();
+
+    unsafe {
+        let mut large_icon: HICON = std::ptr::null_mut();
+        if ExtractIconExW(wide_path.as_ptr(), 0, &mut large_icon, std::ptr::null_mut(), 1) == 0
+            || large_icon.is_null()
+        {
+            return None;
+        }
+
+        icon_handle_to_png_bytes(large_icon)
     }
 }
 
