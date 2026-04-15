@@ -255,6 +255,7 @@ pub struct LauncherApp {
     achievement_text_reveal: HashMap<u32, f32>,
     achievement_checked_for: Option<u32>,
     show_achievement_panel: bool,
+    achievement_panel_anim: f32,
     achievement_selected: usize,
     achievement_select_anim: f32,
     achievement_select_anim_target: Option<usize>,
@@ -306,6 +307,7 @@ impl LauncherApp {
             achievement_text_reveal: HashMap::new(),
             achievement_checked_for: None,
             show_achievement_panel: false,
+            achievement_panel_anim: 0.0,
             achievement_selected: 0,
             achievement_select_anim: 0.0,
             achievement_select_anim_target: None,
@@ -1009,7 +1011,7 @@ impl eframe::App for LauncherApp {
                             self.achievement_selected += 1;
                         }
                     }
-                    ControllerAction::Left | ControllerAction::Quit => {
+                    ControllerAction::Quit => {
                         self.show_achievement_panel = false;
                         self.achievement_selected = 0;
                         self.achievement_select_anim = 0.0;
@@ -1022,7 +1024,7 @@ impl eframe::App for LauncherApp {
             }
 
             match act {
-                ControllerAction::Up => {
+                ControllerAction::Left => {
                     if self.selected > 0 {
                         self.selected -= 1;
                         self.cover_nav_dir = -1.0;
@@ -1032,7 +1034,7 @@ impl eframe::App for LauncherApp {
                         self.achievement_scroll_offset = 0.0;
                     }
                 }
-                ControllerAction::Down => {
+                ControllerAction::Right => {
                     if self.selected + 1 < self.games.len() {
                         self.selected += 1;
                         self.cover_nav_dir = 1.0;
@@ -1042,8 +1044,7 @@ impl eframe::App for LauncherApp {
                         self.achievement_scroll_offset = 0.0;
                     }
                 }
-                ControllerAction::Left => {}
-                ControllerAction::Right => {
+                ControllerAction::Down => {
                     if self.can_open_achievement_panel_for_selected() {
                         self.show_achievement_panel = true;
                         self.achievement_selected = 0;
@@ -1052,6 +1053,7 @@ impl eframe::App for LauncherApp {
                         self.achievement_scroll_offset = 0.0;
                     }
                 }
+                ControllerAction::Up => {}
                 ControllerAction::Launch => {
                     self.launch_selected();
                 }
@@ -1117,6 +1119,15 @@ impl eframe::App for LauncherApp {
         self.select_anim = 1.0 - (1.0 - self.select_anim) * (-10.0 * dt).exp();
         if self.select_anim < 0.999 {
             ctx.request_repaint();
+        }
+
+        let panel_target = if self.show_achievement_panel { 1.0 } else { 0.0 };
+        let panel_diff = panel_target - self.achievement_panel_anim;
+        if panel_diff.abs() > 0.001 {
+            self.achievement_panel_anim += panel_diff * (1.0 - (-12.0 * dt).exp());
+            ctx.request_repaint();
+        } else {
+            self.achievement_panel_anim = panel_target;
         }
 
         self.achievement_icon_reveal.retain(|_, progress| {
@@ -1233,6 +1244,7 @@ impl eframe::App for LauncherApp {
                     &self.games,
                     self.selected,
                     self.select_anim,
+                    self.achievement_panel_anim,
                     self.scroll_offset,
                     &self.game_icons,
                     self.launch_state.as_ref().map(|s| s.game_index),
@@ -1243,21 +1255,20 @@ impl eframe::App for LauncherApp {
 
                 if self.show_achievement_panel {
                     if let Some(game) = self.games.get(self.selected) {
-                    let selected_game_has_icon = game
-                        .app_id
-                        .map(|id| self.game_icons.contains_key(&id))
-                        .unwrap_or(false);
                         ui::draw_achievement_panel(
                             ui,
                             &game.name,
-                            selected_game_has_icon,
                             game.playtime_minutes,
+                            self.selected,
                             selected_achievement_summary,
+                            selected_achievement_reveal,
                             selected_achievements_loading,
                             self.achievement_selected,
                             self.achievement_select_anim,
-                            self.achievement_scroll_offset,
                             self.select_anim,
+                            self.achievement_panel_anim,
+                            self.scroll_offset,
+                            self.achievement_scroll_offset,
                             self.show_achievement_panel,
                             &self.achievement_icon_cache,
                             &self.achievement_icon_reveal,
