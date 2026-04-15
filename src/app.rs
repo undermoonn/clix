@@ -443,23 +443,12 @@ impl LauncherApp {
         self.games.get(self.selected).is_some()
     }
 
-    fn ensure_achievement_icons_for_selected(&mut self, ctx: &egui::Context) {
-        let Some(app_id) = self.games.get(self.selected).and_then(|g| g.app_id) else {
-            return;
-        };
-        let Some(summary) = self.achievement_cache.get(&app_id) else {
-            return;
-        };
-
-        for item in &summary.items {
-            let url_opt = match item.unlocked {
-                Some(true) => item.icon_url.as_ref().or(item.icon_gray_url.as_ref()),
-                _ => item.icon_gray_url.as_ref().or(item.icon_url.as_ref()),
-            };
-            let Some(url) = url_opt else {
-                continue;
-            };
-
+    fn ensure_achievement_icons_for_urls(
+        &mut self,
+        ctx: &egui::Context,
+        visible_icon_urls: &[String],
+    ) {
+        for url in visible_icon_urls {
             if self.achievement_icon_cache.contains_key(url)
                 || self.achievement_icon_loading.contains(url)
             {
@@ -1288,8 +1277,6 @@ impl eframe::App for LauncherApp {
 
         let selected_app_id = self.games.get(self.selected).and_then(|g| g.app_id);
 
-        self.ensure_achievement_icons_for_selected(ctx);
-
         let selected_achievement_summary =
             selected_app_id.and_then(|id| self.achievement_cache.get(&id));
         let selected_achievement_reveal = selected_app_id
@@ -1307,6 +1294,8 @@ impl eframe::App for LauncherApp {
             .map(|id| self.achievement_no_data.contains(&id))
             .unwrap_or(true);
         // Draw UI
+        let mut visible_achievement_icon_urls = Vec::new();
+
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(egui::Color32::TRANSPARENT))
             .show(ctx, |ui| {
@@ -1342,7 +1331,9 @@ impl eframe::App for LauncherApp {
                             game_icon,
                             &self.achievement_icon_cache,
                             &self.achievement_icon_reveal,
-                        );
+                        )
+                        .into_iter()
+                        .for_each(|url| visible_achievement_icon_urls.push(url));
                     }
                 } else {
                     ui::draw_game_list(
@@ -1370,5 +1361,9 @@ impl eframe::App for LauncherApp {
                     );
                 }
             });
+
+        if !visible_achievement_icon_urls.is_empty() {
+            self.ensure_achievement_icons_for_urls(ctx, &visible_achievement_icon_urls);
+        }
     }
 }

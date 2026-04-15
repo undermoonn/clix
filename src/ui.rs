@@ -329,7 +329,7 @@ pub fn draw_game_list(
     let img_bottom = panel_rect.min.y + panel_rect.width() * hero_ratio;
     let content_top = img_bottom + 32.0;
     let anchor_x = padded_rect.min.x + 24.0;
-    let painter = ui.painter();
+    let painter = ui.painter().clone();
 
     for (i, g) in games.iter().enumerate() {
         let offset_f = i as f32 - scroll_offset;
@@ -463,7 +463,7 @@ pub fn draw_game_list(
                     egui::pos2(item_left, content_top),
                     egui::vec2(icon_size, icon_size),
                 );
-                draw_game_icon(painter, icon_tex, icon_rect, icon_tint);
+                draw_game_icon(&painter, icon_tex, icon_rect, icon_tint);
             }
         }
 
@@ -471,7 +471,7 @@ pub fn draw_game_list(
             let normal_title_pos = egui::pos2(text_x, text_y);
             if is_launching {
                 draw_launching_title(
-                    painter,
+                    &painter,
                     &display_name,
                     normal_title_pos,
                     &font_id,
@@ -499,7 +499,7 @@ pub fn draw_game_list(
             }
 
             if let Some(tag_text) = dlss_tag_text(g) {
-                draw_title_tag(painter, &tag_text, normal_title_pos, galley.size(), 0.94);
+                draw_title_tag(&painter, &tag_text, normal_title_pos, galley.size(), 0.94);
             }
 
             if playtime_galley.is_some() || achievement_galley.is_some() {
@@ -524,35 +524,43 @@ fn draw_achievement_icon(
     tint: egui::Color32,
     reveal: f32,
 ) {
+    const ACHIEVEMENT_ICON_ROUNDING: f32 = 4.0;
     let [tex_w, tex_h] = texture.size();
-    let uv_rect = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-    
+    let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+
     let draw_rect = if tex_w > 0 && tex_h > 0 {
         let tex_w = tex_w as f32;
         let tex_h = tex_h as f32;
         let aspect = tex_w / tex_h;
         let icon_size = icon_rect.width().min(icon_rect.height());
-        
+
         let (scaled_w, scaled_h) = if aspect > 1.0 {
             (icon_size, icon_size / aspect)
         } else {
             (icon_size * aspect, icon_size)
         };
-        
+
         let center = icon_rect.center();
         egui::Rect::from_center_size(center, egui::vec2(scaled_w, scaled_h))
     } else {
         icon_rect
     };
-    
+
     let reveal = reveal.clamp(0.0, 1.0);
     let alpha = ((tint.a() as f32) * reveal).round() as u8;
     let fade_tint = egui::Color32::from_rgba_unmultiplied(tint.r(), tint.g(), tint.b(), alpha);
-    painter.image(texture.id(), draw_rect, uv_rect, fade_tint);
+    painter.add(egui::Shape::Rect(egui::epaint::RectShape {
+        rect: draw_rect,
+        rounding: egui::Rounding::same(ACHIEVEMENT_ICON_ROUNDING),
+        fill: fade_tint,
+        stroke: egui::Stroke::NONE,
+        fill_texture_id: texture.id(),
+        uv,
+    }));
 }
 
 fn draw_centered_achievement_loading(ui: &egui::Ui, rect: egui::Rect) {
-    let painter = ui.painter();
+    let painter = ui.painter().clone();
     let time = ui.input(|input| input.time) as f32;
     let center = rect.center();
     let spacing = 24.0;
@@ -603,11 +611,12 @@ pub fn draw_achievement_page(
     _game_icon: Option<&egui::TextureHandle>,
     achievement_icon_cache: &std::collections::HashMap<String, egui::TextureHandle>,
     achievement_icon_reveal: &std::collections::HashMap<String, f32>,
-) {
+) -> Vec<String> {
+    let mut visible_icon_urls = Vec::new();
     let panel_rect = ui.available_rect_before_wrap();
     let padding = 50.0;
     let padded_rect = panel_rect.shrink(padding);
-    let painter = ui.painter();
+    let painter = ui.painter().clone();
     let panel_t = smoothstep01(achievement_panel_anim);
     let enter_offset_y = lerp_f32(-14.0, 0.0, panel_t);
     let content_top = padded_rect.min.y + 18.0;
@@ -698,7 +707,7 @@ pub fn draw_achievement_page(
     }
     painter.galley(title_pos, title_galley.clone());
     if let Some(tag_text) = dlss_tag_text(game) {
-        draw_title_tag(painter, &tag_text, title_pos, title_galley.size(), panel_t);
+        draw_title_tag(&painter, &tag_text, title_pos, title_galley.size(), panel_t);
     }
     if let Some(meta_galley) = meta_galley {
         painter.galley(meta_pos, meta_galley);
@@ -714,18 +723,18 @@ pub fn draw_achievement_page(
         if is_loading && !has_no_data {
             draw_centered_achievement_loading(ui, list_rect);
         } else {
-            draw_centered_achievement_empty(painter, list_rect);
+            draw_centered_achievement_empty(&painter, list_rect);
         }
-        return;
+        return visible_icon_urls;
     };
 
     if summary.items.is_empty() {
         if is_loading && !has_no_data {
             draw_centered_achievement_loading(ui, list_rect);
         } else {
-            draw_centered_achievement_empty(painter, list_rect);
+            draw_centered_achievement_empty(&painter, list_rect);
         }
-        return;
+        return visible_icon_urls;
     }
 
     let item_gap_y = 16.0;
@@ -822,17 +831,14 @@ pub fn draw_achievement_page(
             Some(true) => item.icon_url.as_ref().or(item.icon_gray_url.as_ref()),
             _ => item.icon_gray_url.as_ref().or(item.icon_url.as_ref()),
         };
+        if let Some(key) = icon_key {
+            visible_icon_urls.push(key.clone());
+        }
         if let Some(tex) = icon_key.and_then(|key| achievement_icon_cache.get(key)) {
             let reveal = icon_key
                 .and_then(|key| achievement_icon_reveal.get(key).copied())
                 .unwrap_or(1.0);
-            draw_achievement_icon(
-                &list_painter,
-                tex,
-                icon_rect,
-                egui::Color32::WHITE,
-                reveal,
-            );
+            draw_achievement_icon(&list_painter, tex, icon_rect, egui::Color32::WHITE, reveal);
         } else {
             let fill = match item.unlocked {
                 Some(true) => egui::Color32::from_rgb(86, 172, 132),
@@ -867,6 +873,8 @@ pub fn draw_achievement_page(
             );
         }
     }
+
+    visible_icon_urls
 }
 
 pub fn draw_hint_bar(
