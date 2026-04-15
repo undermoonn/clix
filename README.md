@@ -13,3 +13,7 @@
 ![Clix 启动器原型截图 1](./Clix%20Launcher%20Prototype%202026_4_15%2021_00_23.png)
 
 ![Clix 启动器原型截图 2](./Clix%20Launcher%20Prototype%202026_4_15%2021_00_25.png)
+
+## 开源协议
+
+本项目采用 GNU General Public License v3.0（GPLv3），详见 LICENSE。
