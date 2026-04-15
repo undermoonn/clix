@@ -188,9 +188,78 @@ fn download_logo_bytes(app_id: u32) -> Option<Vec<u8>> {
     None
 }
 
+fn librarycache_candidate_dirs(steam_paths: &[PathBuf], app_id: u32) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    for steam_root in steam_paths {
+        let app_dir = steam_root
+            .join("appcache")
+            .join("librarycache")
+            .join(app_id.to_string());
+        if !app_dir.exists() {
+            continue;
+        }
+
+        dirs.push(app_dir.clone());
+
+        if let Ok(entries) = std::fs::read_dir(&app_dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if path.is_dir() {
+                    dirs.push(path);
+                }
+            }
+        }
+    }
+
+    dirs
+}
+
+fn load_named_librarycache_asset_bytes(
+    steam_paths: &[PathBuf],
+    app_id: u32,
+    preferred_names: &[&str],
+    min_size: usize,
+    require_png: bool,
+) -> Option<Vec<u8>> {
+    for dir in librarycache_candidate_dirs(steam_paths, app_id) {
+        for name in preferred_names {
+            let candidate = dir.join(name);
+            if !candidate.exists() {
+                continue;
+            }
+
+            if let Ok(bytes) = std::fs::read(&candidate) {
+                if bytes.len() < min_size {
+                    continue;
+                }
+                if require_png && !is_png_bytes(&bytes) {
+                    continue;
+                }
+                return Some(bytes);
+            }
+        }
+    }
+
+    None
+}
+
 pub fn load_cover_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>> {
-    // 1. Check local cache
     let cache_path = hd_cache_dir().join(format!("{}_hero.jpg", app_id));
+
+    // 1. Prefer Steam's local librarycache so hashed subdirectories override stale cache.
+    if let Some(bytes) = load_named_librarycache_asset_bytes(
+        steam_paths,
+        app_id,
+        &["library_hero.jpg"],
+        1024,
+        false,
+    ) {
+        let _ = std::fs::write(&cache_path, &bytes);
+        return Some(bytes);
+    }
+
+    // 2. Check local app cache
     if cache_path.exists() {
         if let Ok(bytes) = std::fs::read(&cache_path) {
             if bytes.len() > 1024 {
@@ -199,31 +268,28 @@ pub fn load_cover_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>>
         }
     }
 
-    // 2. Try downloading library_hero from Steam CDN
+    // 3. Try downloading library_hero from Steam CDN
     if let Some(bytes) = download_hd_cover(app_id) {
         return Some(bytes);
     }
 
-    // 3. Fallback: local Steam library cache
-    for steam_root in steam_paths {
-        let img_path = steam_root
-            .join("appcache")
-            .join("librarycache")
-            .join(app_id.to_string())
-            .join("library_hero.jpg");
-        if img_path.exists() {
-            if let Ok(bytes) = std::fs::read(&img_path) {
-                if bytes.len() > 1024 {
-                    return Some(bytes);
-                }
-            }
-        }
-    }
     None
 }
 
 pub fn load_logo_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>> {
     let cache_path = hero_logo_cache_path(app_id);
+
+    if let Some(bytes) = load_named_librarycache_asset_bytes(
+        steam_paths,
+        app_id,
+        &["library_logo.png", "logo.png"],
+        512,
+        true,
+    ) {
+        let _ = std::fs::write(&cache_path, &bytes);
+        return Some(bytes);
+    }
+
     if cache_path.exists() {
         if let Ok(bytes) = std::fs::read(&cache_path) {
             if bytes.len() > 512 && is_png_bytes(&bytes) {
@@ -234,15 +300,7 @@ pub fn load_logo_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>> 
 
     let preferred_names = ["library_logo.png", "logo.png"];
 
-    for steam_root in steam_paths {
-        let dir = steam_root
-            .join("appcache")
-            .join("librarycache")
-            .join(app_id.to_string());
-        if !dir.exists() {
-            continue;
-        }
-
+    for dir in librarycache_candidate_dirs(steam_paths, app_id) {
         for name in preferred_names {
             let candidate = dir.join(name);
             if !candidate.exists() {
@@ -596,4 +654,45 @@ pub fn load_icon_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>> 
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::load_named_librarycache_asset_bytes;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("clix_{}_{}", label, unique))
+    }
+
+    #[test]
+    fn load_named_librarycache_asset_bytes_finds_hashed_subdirectory_assets() {
+        let root = unique_temp_dir("librarycache");
+        let nested_dir = root
+            .join("appcache")
+            .join("librarycache")
+            .join("3764200")
+            .join("90d7401b621e98bd61b2f66616ffafcb58d75fd7");
+        std::fs::create_dir_all(&nested_dir).unwrap();
+
+        let expected = vec![7_u8; 2048];
+        std::fs::write(nested_dir.join("library_hero.jpg"), &expected).unwrap();
+
+        let bytes = load_named_librarycache_asset_bytes(
+            &[root.clone()],
+            3764200,
+            &["library_hero.jpg"],
+            1024,
+            false,
+        );
+
+        assert_eq!(bytes, Some(expected));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
