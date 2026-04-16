@@ -18,8 +18,10 @@ use winapi::um::xinput::{XINPUT_STATE, XINPUT_VIBRATION};
 
 pub const NAV_INITIAL_DELAY_MS: u128 = 350;
 pub const NAV_REPEAT_INTERVAL_MS: u128 = 120;
-pub const NAV_REPEAT_ACCEL_AFTER_MS: u128 = 700;
-pub const NAV_REPEAT_INTERVAL_FAST_MS: u128 = 60;
+pub const NAV_REPEAT_ACCEL_STAGE1_AFTER_MS: u128 = 500;
+pub const NAV_REPEAT_ACCEL_STAGE2_AFTER_MS: u128 = 1300;
+pub const NAV_REPEAT_INTERVAL_STAGE1_MS: u128 = 80;
+pub const NAV_REPEAT_INTERVAL_STAGE2_MS: u128 = 45;
 pub const FOCUS_COOLDOWN_MS: u128 = 500;
 const GILRS_AXIS_THRESHOLD: f32 = 0.45;
 #[cfg(target_os = "windows")]
@@ -188,15 +190,7 @@ impl InputController {
                     }
                 } else {
                     let held_ms = now.duration_since(state.since).as_millis();
-                    let repeat_interval_ms = if *action_name == "up" || *action_name == "down" {
-                        if held_ms >= NAV_REPEAT_ACCEL_AFTER_MS {
-                            NAV_REPEAT_INTERVAL_FAST_MS
-                        } else {
-                            NAV_REPEAT_INTERVAL_MS
-                        }
-                    } else {
-                        NAV_REPEAT_INTERVAL_MS
-                    };
+                    let repeat_interval_ms = nav_repeat_interval_ms(action_name, held_ms);
 
                     if now.duration_since(state.last_fire).as_millis() >= repeat_interval_ms {
                         state.last_fire = now;
@@ -574,6 +568,21 @@ impl InputController {
         if key == "down" {
             raw_held.insert("down");
         }
+    }
+}
+
+fn nav_repeat_interval_ms(action_name: &str, held_ms: u128) -> u128 {
+    match action_name {
+        "up" | "down" | "left" | "right" => {
+            if held_ms >= NAV_REPEAT_ACCEL_STAGE2_AFTER_MS {
+                NAV_REPEAT_INTERVAL_STAGE2_MS
+            } else if held_ms >= NAV_REPEAT_ACCEL_STAGE1_AFTER_MS {
+                NAV_REPEAT_INTERVAL_STAGE1_MS
+            } else {
+                NAV_REPEAT_INTERVAL_MS
+            }
+        }
+        _ => NAV_REPEAT_INTERVAL_MS,
     }
 }
 
