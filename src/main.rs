@@ -8,6 +8,7 @@ mod input;
 mod launch;
 mod runtime_state;
 mod page_state;
+mod settings;
 mod steam;
 mod ui;
 

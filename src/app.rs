@@ -8,6 +8,7 @@ use crate::input::{ControllerAction, ControllerBrand, InputController};
 use crate::launch::{self, LaunchState};
 use crate::page_state::PageState;
 use crate::runtime_state::RuntimeState;
+use crate::settings;
 use crate::steam::{self, Game};
 use crate::ui;
 
@@ -27,16 +28,17 @@ pub struct LauncherApp {
 
 impl LauncherApp {
     pub fn new() -> Self {
+        let app_settings = settings::load_settings();
         let steam_paths = steam::find_steam_paths();
         let games = steam::scan_games_with_paths(&steam_paths);
         LauncherApp {
             games,
-            input: InputController::new(),
+            input: InputController::new(app_settings.controller_brand),
             steam_paths,
             artwork: ArtworkState::new(),
             page: PageState::new(),
             hint_icons: None,
-            hint_icon_brand: ControllerBrand::Xbox,
+            hint_icon_brand: app_settings.controller_brand,
             game_icons: GameIconState::new(),
             launch_state: None,
             achievements: AchievementState::new(),
@@ -188,6 +190,7 @@ impl eframe::App for LauncherApp {
         if self.hint_icons.is_none() || self.hint_icon_brand != controller_brand {
             self.hint_icons = ui::load_hint_icons(ctx, controller_brand);
             self.hint_icon_brand = controller_brand;
+            settings::save_controller_brand(controller_brand);
         }
 
         self.game_icons

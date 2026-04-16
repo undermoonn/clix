@@ -29,6 +29,25 @@ pub enum ControllerBrand {
     PlayStation,
 }
 
+impl ControllerBrand {
+    pub fn as_ini_value(self) -> &'static str {
+        match self {
+            ControllerBrand::Xbox => "xbox",
+            ControllerBrand::PlayStation => "playstation",
+        }
+    }
+
+    pub fn from_ini_value(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "xbox" => Some(ControllerBrand::Xbox),
+            "playstation" | "ps" | "ps5" | "dualsense" | "dualsence" => {
+                Some(ControllerBrand::PlayStation)
+            }
+            _ => None,
+        }
+    }
+}
+
 pub enum ControllerAction {
     Up,
     Down,
@@ -74,7 +93,7 @@ pub struct InputController {
 }
 
 impl InputController {
-    pub fn new() -> Self {
+    pub fn new(controller_brand: ControllerBrand) -> Self {
         Self {
             gilrs: Gilrs::new().ok(),
             #[cfg(target_os = "windows")]
@@ -82,7 +101,7 @@ impl InputController {
             mapping: Mapping::default(),
             remap_target: None,
             nav_held: HashMap::new(),
-            controller_brand: ControllerBrand::Xbox,
+            controller_brand,
         }
     }
 
