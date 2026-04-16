@@ -4,7 +4,7 @@ use std::time::Instant;
 use crate::achievements::AchievementState;
 use crate::artwork::ArtworkState;
 use crate::game_icons::GameIconState;
-use crate::input::{ControllerAction, InputController};
+use crate::input::{ControllerAction, ControllerBrand, InputController};
 use crate::launch::{self, LaunchState};
 use crate::page_state::PageState;
 use crate::runtime_state::RuntimeState;
@@ -18,6 +18,7 @@ pub struct LauncherApp {
     artwork: ArtworkState,
     page: PageState,
     hint_icons: Option<ui::HintIcons>,
+    hint_icon_brand: ControllerBrand,
     game_icons: GameIconState,
     launch_state: Option<LaunchState>,
     achievements: AchievementState,
@@ -35,6 +36,7 @@ impl LauncherApp {
             artwork: ArtworkState::new(),
             page: PageState::new(),
             hint_icons: None,
+            hint_icon_brand: ControllerBrand::Xbox,
             game_icons: GameIconState::new(),
             launch_state: None,
             achievements: AchievementState::new(),
@@ -182,8 +184,10 @@ impl eframe::App for LauncherApp {
         self.page.tick_animations(ctx, dt);
         self.achievements.animate_reveals(ctx, dt);
 
-        if self.hint_icons.is_none() {
-            self.hint_icons = ui::load_hint_icons(ctx);
+        let controller_brand = self.input.controller_brand();
+        if self.hint_icons.is_none() || self.hint_icon_brand != controller_brand {
+            self.hint_icons = ui::load_hint_icons(ctx, controller_brand);
+            self.hint_icon_brand = controller_brand;
         }
 
         self.game_icons

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use gilrs::{EventType, Gilrs};
+use gilrs::{Axis, Button, EventType, Gilrs};
 
 #[cfg(target_os = "windows")]
 use winapi::um::xinput::{
@@ -21,6 +21,13 @@ pub const NAV_REPEAT_INTERVAL_MS: u128 = 120;
 pub const NAV_REPEAT_ACCEL_AFTER_MS: u128 = 700;
 pub const NAV_REPEAT_INTERVAL_FAST_MS: u128 = 60;
 pub const FOCUS_COOLDOWN_MS: u128 = 500;
+const GILRS_AXIS_THRESHOLD: f32 = 0.45;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ControllerBrand {
+    Xbox,
+    PlayStation,
+}
 
 pub enum ControllerAction {
     Up,
@@ -63,6 +70,7 @@ pub struct InputController {
     mapping: Mapping,
     remap_target: Option<String>,
     nav_held: HashMap<&'static str, NavState>,
+    controller_brand: ControllerBrand,
 }
 
 impl InputController {
@@ -74,7 +82,12 @@ impl InputController {
             mapping: Mapping::default(),
             remap_target: None,
             nav_held: HashMap::new(),
+            controller_brand: ControllerBrand::Xbox,
         }
+    }
+
+    pub fn controller_brand(&self) -> ControllerBrand {
+        self.controller_brand
     }
 
     pub fn clear_held(&mut self) {
@@ -160,41 +173,49 @@ impl InputController {
     }
 
     fn collect_raw_held(&mut self, raw_held: &mut std::collections::HashSet<&'static str>) {
-        #[cfg(target_os = "windows")]
-        self.collect_xinput(raw_held);
+        #[cfg(not(target_os = "windows"))]
+        let xinput_active = false;
 
-        if raw_held.is_empty() {
+        #[cfg(target_os = "windows")]
+        let xinput_active = self.collect_xinput(raw_held);
+
+        if !xinput_active {
             self.collect_gilrs(raw_held);
         }
     }
 
     #[cfg(target_os = "windows")]
-    fn collect_xinput(&mut self, raw_held: &mut std::collections::HashSet<&'static str>) {
+    fn collect_xinput(&mut self, raw_held: &mut std::collections::HashSet<&'static str>) -> bool {
         let Some(xinput) = &self.xinput else {
-            return;
+            return false;
         };
 
         let states = xinput.get_states();
+        if states.is_empty() {
+            return false;
+        }
+
+        self.controller_brand = ControllerBrand::Xbox;
 
         if let Some(target) = self.remap_target.clone() {
             for (buttons, ly, _) in &states {
                 if *buttons != 0 {
                     self.mapping.map.insert(target.clone(), InputToken::XButton(*buttons));
                     self.remap_target = None;
-                    return;
+                    return true;
                 }
                 if *ly < -16000 {
                     self.mapping.map.insert(target.clone(), InputToken::XAxis(-1));
                     self.remap_target = None;
-                    return;
+                    return true;
                 }
                 if *ly > 16000 {
                     self.mapping.map.insert(target.clone(), InputToken::XAxis(1));
                     self.remap_target = None;
-                    return;
+                    return true;
                 }
             }
-            return;
+            return true;
         }
 
         for (buttons, ly, lx) in &states {
@@ -250,6 +271,8 @@ impl InputController {
                 _ => {}
             }
         }
+
+        true
     }
 
     fn collect_gilrs(&mut self, raw_held: &mut std::collections::HashSet<&'static str>) {
@@ -307,6 +330,75 @@ impl InputController {
                 }
                 _ => {}
             }
+        }
+
+        let mut active_brand = None;
+        let mut single_connected_brand = None;
+        let mut connected_count = 0;
+
+        for (_, gamepad) in gilrs.gamepads() {
+            connected_count += 1;
+            let brand = infer_controller_brand(&gamepad);
+            if connected_count == 1 {
+                single_connected_brand = Some(brand);
+            }
+
+            let mut gamepad_active = false;
+
+            if gamepad.is_pressed(Button::DPadUp) {
+                raw_held.insert("up");
+                gamepad_active = true;
+            }
+            if gamepad.is_pressed(Button::DPadDown) {
+                raw_held.insert("down");
+                gamepad_active = true;
+            }
+            if gamepad.is_pressed(Button::DPadLeft) {
+                raw_held.insert("left");
+                gamepad_active = true;
+            }
+            if gamepad.is_pressed(Button::DPadRight) {
+                raw_held.insert("right");
+                gamepad_active = true;
+            }
+            if gamepad.is_pressed(Button::South) {
+                raw_held.insert("launch");
+                gamepad_active = true;
+            }
+            if gamepad.is_pressed(Button::East) {
+                raw_held.insert("quit");
+                gamepad_active = true;
+            }
+
+            let left_stick_x = gamepad.value(Axis::LeftStickX);
+            if left_stick_x <= -GILRS_AXIS_THRESHOLD {
+                raw_held.insert("left");
+                gamepad_active = true;
+            } else if left_stick_x >= GILRS_AXIS_THRESHOLD {
+                raw_held.insert("right");
+                gamepad_active = true;
+            }
+
+            let left_stick_y = gamepad.value(Axis::LeftStickY);
+            if left_stick_y <= -GILRS_AXIS_THRESHOLD {
+                raw_held.insert("down");
+                gamepad_active = true;
+            } else if left_stick_y >= GILRS_AXIS_THRESHOLD {
+                raw_held.insert("up");
+                gamepad_active = true;
+            }
+
+            if gamepad_active {
+                active_brand = Some(brand);
+            }
+        }
+
+        if let Some(brand) = active_brand.or(if connected_count == 1 {
+            single_connected_brand
+        } else {
+            None
+        }) {
+            self.controller_brand = brand;
         }
     }
 
@@ -410,4 +502,20 @@ pub enum InputToken {
 #[derive(Debug, Default)]
 pub struct Mapping {
     pub map: HashMap<String, InputToken>,
+}
+
+fn infer_controller_brand(gamepad: &gilrs::Gamepad<'_>) -> ControllerBrand {
+    let name = gamepad.name().to_ascii_lowercase();
+    let is_playstation = gamepad.vendor_id() == Some(0x054c)
+        || name.contains("dualsense")
+        || name.contains("dualsence")
+        || name.contains("wireless controller")
+        || name.contains("playstation")
+        || name.contains("ps5");
+
+    if is_playstation {
+        ControllerBrand::PlayStation
+    } else {
+        ControllerBrand::Xbox
+    }
 }
