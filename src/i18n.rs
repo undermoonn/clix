@@ -79,8 +79,8 @@ impl AppLanguage {
 
     pub fn achievements_text(self) -> &'static str {
         match self {
-            Self::English => "Achievements",
-            Self::SimplifiedChinese => "成就",
+            Self::English => "Details",
+            Self::SimplifiedChinese => "详情",
         }
     }
 

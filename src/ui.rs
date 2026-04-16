@@ -496,10 +496,6 @@ pub fn draw_game_list(
                 painter.galley(normal_title_pos, galley.clone());
             }
 
-            if let Some(tag_text) = dlss_tag_text(g) {
-                draw_title_tag(&painter, &tag_text, normal_title_pos, galley.size(), 0.94);
-            }
-
             if playtime_galley.is_some() || achievement_galley.is_some() {
                 let meta_pos = egui::pos2(text_x, text_y + galley.size().y + 2.0);
                 let mut pt_x = meta_pos.x;
