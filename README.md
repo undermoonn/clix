@@ -10,9 +10,9 @@ Detects locally installed Steam games and supports displaying achievement lists.
 
 Examples of the current UI are shown below:
 
-![Clix Launcher Prototype Screenshot 1](./Clix%20Launcher%20Prototype%202026_4_15%2021_00_23.png)
+![Clix Launcher Prototype Screenshot 1](./Clix%20Launcher%20Prototype%204_16_2026%2012_32_44%20PM.png)
 
-![Clix Launcher Prototype Screenshot 2](./Clix%20Launcher%20Prototype%202026_4_15%2021_00_25.png)
+![Clix Launcher Prototype Screenshot 2](./Clix%20Launcher%20Prototype%204_16_2026%2012_32_54%20PM.png)
 
 ## License
 
