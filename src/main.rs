@@ -1,7 +1,13 @@
 mod app;
+mod achievements;
+mod artwork;
 mod cover;
 mod dlss;
+mod game_icons;
 mod input;
+mod launch;
+mod runtime_state;
+mod page_state;
 mod steam;
 mod ui;
 

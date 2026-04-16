@@ -1,0 +1,148 @@
+use std::time::{Duration, Instant};
+
+use crate::input::FOCUS_COOLDOWN_MS;
+
+pub const QUIT_HOLD_TO_EXIT_MS: f32 = 800.0;
+
+pub struct RuntimeState {
+    had_focus: bool,
+    lost_focus_at: Option<Instant>,
+    focus_cooldown_until: Option<Instant>,
+    quit_hold_started_at: Option<Instant>,
+    quit_hold_progress: f32,
+    quit_hold_consumed: bool,
+    suppress_quit_hold_until_release: bool,
+}
+
+pub struct FocusUpdate {
+    pub should_refresh_games: bool,
+    pub should_clear_input: bool,
+    pub in_cooldown: bool,
+}
+
+pub struct QuitHoldUpdate {
+    pub trigger_quit: bool,
+    pub should_repaint: bool,
+}
+
+impl RuntimeState {
+    pub fn new() -> Self {
+        Self {
+            had_focus: true,
+            lost_focus_at: None,
+            focus_cooldown_until: None,
+            quit_hold_started_at: None,
+            quit_hold_progress: 0.0,
+            quit_hold_consumed: false,
+            suppress_quit_hold_until_release: false,
+        }
+    }
+
+    pub fn update_focus(&mut self, has_focus: bool, now: Instant) -> FocusUpdate {
+        let mut should_refresh_games = false;
+        let mut should_clear_input = false;
+
+        if has_focus {
+            if !self.had_focus {
+                should_refresh_games = self
+                    .lost_focus_at
+                    .take()
+                    .map(|lost_at| now.duration_since(lost_at) >= Duration::from_secs(5))
+                    .unwrap_or(false);
+                self.focus_cooldown_until = Some(now);
+                should_clear_input = true;
+            }
+        } else {
+            if self.had_focus {
+                self.lost_focus_at = Some(now);
+            }
+            should_clear_input = true;
+        }
+
+        self.had_focus = has_focus;
+
+        let in_cooldown = match self.focus_cooldown_until {
+            Some(timestamp) => {
+                if now.duration_since(timestamp).as_millis() < FOCUS_COOLDOWN_MS {
+                    true
+                } else {
+                    self.focus_cooldown_until = None;
+                    false
+                }
+            }
+            None => false,
+        };
+
+        FocusUpdate {
+            should_refresh_games,
+            should_clear_input,
+            in_cooldown,
+        }
+    }
+
+    pub fn update_quit_hold(
+        &mut self,
+        process_input: bool,
+        achievement_panel_open: bool,
+        quit_held: bool,
+        now: Instant,
+    ) -> QuitHoldUpdate {
+        if self.suppress_quit_hold_until_release {
+            if quit_held {
+                self.quit_hold_started_at = None;
+                self.quit_hold_progress = 0.0;
+                self.quit_hold_consumed = false;
+            } else {
+                self.suppress_quit_hold_until_release = false;
+            }
+
+            return QuitHoldUpdate {
+                trigger_quit: false,
+                should_repaint: false,
+            };
+        }
+
+        if process_input && !achievement_panel_open && quit_held {
+            if self.quit_hold_consumed {
+                self.quit_hold_progress = 1.0;
+                return QuitHoldUpdate {
+                    trigger_quit: false,
+                    should_repaint: false,
+                };
+            }
+
+            let started_at = self.quit_hold_started_at.get_or_insert(now);
+            let held_ms = now.duration_since(*started_at).as_secs_f32() * 1000.0;
+            self.quit_hold_progress = (held_ms / QUIT_HOLD_TO_EXIT_MS).clamp(0.0, 1.0);
+
+            if self.quit_hold_progress >= 1.0 {
+                self.quit_hold_consumed = true;
+                QuitHoldUpdate {
+                    trigger_quit: true,
+                    should_repaint: false,
+                }
+            } else {
+                QuitHoldUpdate {
+                    trigger_quit: false,
+                    should_repaint: true,
+                }
+            }
+        } else {
+            self.quit_hold_started_at = None;
+            self.quit_hold_progress = 0.0;
+            self.quit_hold_consumed = false;
+            QuitHoldUpdate {
+                trigger_quit: false,
+                should_repaint: false,
+            }
+        }
+    }
+
+    pub fn suppress_quit_hold_until_release(&mut self) {
+        self.suppress_quit_hold_until_release = true;
+    }
+
+    pub fn quit_hold_progress(&self) -> f32 {
+        self.quit_hold_progress
+    }
+}
