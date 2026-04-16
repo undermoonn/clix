@@ -22,6 +22,12 @@ pub const NAV_REPEAT_ACCEL_AFTER_MS: u128 = 700;
 pub const NAV_REPEAT_INTERVAL_FAST_MS: u128 = 60;
 pub const FOCUS_COOLDOWN_MS: u128 = 500;
 const GILRS_AXIS_THRESHOLD: f32 = 0.45;
+#[cfg(target_os = "windows")]
+const XINPUT_SELECTION_RUMBLE_DURATION_MS: u128 = 40;
+#[cfg(target_os = "windows")]
+const XINPUT_SELECTION_RUMBLE_LEFT_STRENGTH: u16 = 0;
+#[cfg(target_os = "windows")]
+const XINPUT_SELECTION_RUMBLE_RIGHT_STRENGTH: u16 = 10_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ControllerBrand {
@@ -87,10 +93,28 @@ pub struct InputController {
     gilrs: Option<Gilrs>,
     #[cfg(target_os = "windows")]
     xinput: Option<XInput>,
+    #[cfg(target_os = "windows")]
+    rumble_state: Option<RumbleState>,
     mapping: Mapping,
     remap_target: Option<String>,
     nav_held: HashMap<&'static str, NavState>,
     controller_brand: ControllerBrand,
+}
+
+#[cfg(target_os = "windows")]
+enum RumbleState {
+    XInput {
+        controller_index: DWORD,
+        active_until: Instant,
+    },
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Clone, Copy)]
+struct RumbleSettings {
+    duration_ms: u128,
+    left_strength: u16,
+    right_strength: u16,
 }
 
 impl InputController {
@@ -99,6 +123,8 @@ impl InputController {
             gilrs: Gilrs::new().ok(),
             #[cfg(target_os = "windows")]
             xinput: XInput::new().ok(),
+            #[cfg(target_os = "windows")]
+            rumble_state: None,
             mapping: Mapping::default(),
             remap_target: None,
             nav_held: HashMap::new(),
@@ -112,6 +138,18 @@ impl InputController {
 
     pub fn clear_held(&mut self) {
         self.nav_held.clear();
+        #[cfg(target_os = "windows")]
+        self.stop_rumble();
+    }
+
+    pub fn tick(&mut self) {
+        #[cfg(target_os = "windows")]
+        self.tick_rumble();
+    }
+
+    pub fn pulse_selection_change(&mut self) {
+        #[cfg(target_os = "windows")]
+        self.start_selection_rumble();
     }
 
     pub fn poll(&mut self, process_input: bool, include_quit_action: bool) -> InputFrame {
@@ -206,6 +244,72 @@ impl InputController {
     }
 
     #[cfg(target_os = "windows")]
+    fn start_selection_rumble(&mut self) {
+        self.stop_rumble();
+        let _ = self.start_xinput_selection_rumble();
+    }
+
+    #[cfg(target_os = "windows")]
+    fn start_xinput_selection_rumble(&mut self) -> bool {
+        let settings = xinput_rumble_settings();
+        let Some(xinput) = &self.xinput else {
+            return false;
+        };
+
+        let Some(controller_index) = xinput.first_connected_index() else {
+            return false;
+        };
+
+        if xinput
+            .set_state(
+                controller_index,
+                settings.left_strength,
+                settings.right_strength,
+            )
+            .is_ok()
+        {
+            self.rumble_state = Some(RumbleState::XInput {
+                controller_index,
+                active_until: Instant::now()
+                    + std::time::Duration::from_millis(settings.duration_ms as u64),
+            });
+            true
+        } else {
+            false
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn tick_rumble(&mut self) {
+        let should_stop = self
+            .rumble_state
+            .as_ref()
+            .map(|state| match state {
+                RumbleState::XInput { active_until, .. } => Instant::now() >= *active_until,
+            })
+            .unwrap_or(false);
+
+        if should_stop {
+            self.stop_rumble();
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn stop_rumble(&mut self) {
+        let Some(state) = self.rumble_state.take() else {
+            return;
+        };
+
+        match state {
+            RumbleState::XInput { controller_index, .. } => {
+                if let Some(xinput) = &self.xinput {
+                    let _ = xinput.set_state(controller_index, 0, 0);
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
     fn collect_xinput(&mut self, raw_held: &mut std::collections::HashSet<&'static str>) -> bool {
         let Some(xinput) = &self.xinput else {
             return false;
@@ -219,7 +323,7 @@ impl InputController {
         self.controller_brand = ControllerBrand::Xbox;
 
         if let Some(target) = self.remap_target.clone() {
-            for (buttons, ly, _) in &states {
+            for (_, buttons, ly, _) in &states {
                 if *buttons != 0 {
                     self.mapping.map.insert(target.clone(), InputToken::XButton(*buttons));
                     self.remap_target = None;
@@ -239,7 +343,7 @@ impl InputController {
             return true;
         }
 
-        for (buttons, ly, lx) in &states {
+        for (_, buttons, ly, lx) in &states {
             if (buttons & XINPUT_GAMEPAD_DPAD_UP) != 0 {
                 raw_held.insert("up");
             }
@@ -276,14 +380,14 @@ impl InputController {
         for (key, token) in &self.mapping.map {
             match token {
                 InputToken::XButton(mask) => {
-                    for (buttons, _, _) in &states {
+                    for (_, buttons, _, _) in &states {
                         if (buttons & mask) != 0 {
                             Self::insert_mapped_action(raw_held, key);
                         }
                     }
                 }
                 InputToken::XAxis(dir) => {
-                    for (_, ly, _) in &states {
+                    for (_, _, ly, _) in &states {
                         if *dir > 0 && *ly > 16000 {
                             Self::insert_mapped_vertical_action(raw_held, key);
                         }
@@ -474,6 +578,13 @@ impl InputController {
 }
 
 #[cfg(target_os = "windows")]
+impl Drop for InputController {
+    fn drop(&mut self) {
+        self.stop_rumble();
+    }
+}
+
+#[cfg(target_os = "windows")]
 pub struct XInput {
     _lib: Library,
     get_state: unsafe extern "system" fn(DWORD, *mut XINPUT_STATE) -> DWORD,
@@ -506,17 +617,41 @@ impl XInput {
         Err(())
     }
 
-    pub fn get_states(&self) -> Vec<(u16, i32, i32)> {
+    pub fn get_states(&self) -> Vec<(DWORD, u16, i32, i32)> {
         let mut resvec = Vec::new();
         for idx in 0..4 {
             let mut state: XINPUT_STATE = unsafe { std::mem::zeroed() };
             let res = unsafe { (self.get_state)(idx, &mut state as *mut XINPUT_STATE) };
             if res == 0 {
                 let gp = state.Gamepad;
-                resvec.push((gp.wButtons as u16, gp.sThumbLY as i32, gp.sThumbLX as i32));
+                resvec.push((idx, gp.wButtons as u16, gp.sThumbLY as i32, gp.sThumbLX as i32));
             }
         }
         resvec
+    }
+
+    pub fn first_connected_index(&self) -> Option<DWORD> {
+        self.get_states()
+            .into_iter()
+            .map(|(index, _, _, _)| index)
+            .next()
+    }
+
+    pub fn set_state(&self, index: DWORD, left_motor: u16, right_motor: u16) -> Result<(), ()> {
+        let Some(set_state) = self._set_state else {
+            return Err(());
+        };
+
+        let mut vibration = XINPUT_VIBRATION {
+            wLeftMotorSpeed: left_motor,
+            wRightMotorSpeed: right_motor,
+        };
+        let res = unsafe { set_state(index, &mut vibration as *mut XINPUT_VIBRATION) };
+        if res == 0 {
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 }
 
@@ -550,3 +685,13 @@ fn infer_controller_brand(gamepad: &gilrs::Gamepad<'_>) -> ControllerBrand {
         ControllerBrand::Xbox
     }
 }
+
+#[cfg(target_os = "windows")]
+fn xinput_rumble_settings() -> RumbleSettings {
+    RumbleSettings {
+        duration_ms: XINPUT_SELECTION_RUMBLE_DURATION_MS,
+        left_strength: XINPUT_SELECTION_RUMBLE_LEFT_STRENGTH,
+        right_strength: XINPUT_SELECTION_RUMBLE_RIGHT_STRENGTH,
+    }
+}
+

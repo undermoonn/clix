@@ -163,6 +163,7 @@ impl eframe::App for LauncherApp {
         if focus.should_clear_input {
             self.input.clear_held();
         }
+        self.input.tick();
 
         let process_input = has_focus && !focus.in_cooldown && self.launch_state.is_none();
         let input_frame = self.input.poll(process_input, self.page.show_achievement_panel());
@@ -213,6 +214,9 @@ impl eframe::App for LauncherApp {
                     self.language,
                     ctx,
                 );
+            }
+            if result.selected_changed {
+                self.input.pulse_selection_change();
             }
             if result.launch_selected {
                 self.launch_selected();

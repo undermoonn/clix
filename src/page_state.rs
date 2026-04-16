@@ -5,6 +5,7 @@ use crate::input::ControllerAction;
 pub struct PageActionResult {
     pub open_achievement_panel: bool,
     pub launch_selected: bool,
+    pub selected_changed: bool,
     pub close_frame: bool,
     pub suppress_quit_hold_until_release: bool,
 }
@@ -95,6 +96,7 @@ impl PageState {
         let mut result = PageActionResult {
             open_achievement_panel: false,
             launch_selected: false,
+            selected_changed: false,
             close_frame: false,
             suppress_quit_hold_until_release: false,
         };
@@ -127,6 +129,7 @@ impl PageState {
                     self.selected -= 1;
                     self.cover_nav_dir = -1.0;
                     self.reset_achievement_selection();
+                    result.selected_changed = true;
                 }
             }
             ControllerAction::Right => {
@@ -134,6 +137,7 @@ impl PageState {
                     self.selected += 1;
                     self.cover_nav_dir = 1.0;
                     self.reset_achievement_selection();
+                    result.selected_changed = true;
                 }
             }
             ControllerAction::Down => {
