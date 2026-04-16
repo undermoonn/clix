@@ -14,6 +14,8 @@ mod page_state;
 mod settings;
 mod steam;
 mod ui;
+#[cfg(target_os = "windows")]
+mod xbox_home;
 
 use eframe::egui;
 
@@ -95,7 +97,7 @@ fn main() {
         options,
         Box::new(move |cc| {
             configure_fonts(&cc.egui_ctx, language);
-            Box::new(app::LauncherApp::new(language))
+            Box::new(app::LauncherApp::new(language, &cc.egui_ctx))
         }),
     );
 }

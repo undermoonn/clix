@@ -558,6 +558,16 @@ fn bring_current_app_to_foreground() {
 }
 
 #[cfg(target_os = "windows")]
+pub fn focus_current_app_window() -> bool {
+    if let Some(hwnd) = find_current_app_window() {
+        bring_window_to_foreground(hwnd);
+        true
+    } else {
+        false
+    }
+}
+
+#[cfg(target_os = "windows")]
 fn find_current_app_window() -> Option<HWND> {
     let current_pid = unsafe { GetCurrentProcessId() } as u32;
     collect_visible_windows()

@@ -31,7 +31,12 @@ pub struct LauncherApp {
 }
 
 impl LauncherApp {
-    pub fn new(language: AppLanguage) -> Self {
+    pub fn new(language: AppLanguage, ctx: &egui::Context) -> Self {
+        #[cfg(target_os = "windows")]
+        crate::xbox_home::start(ctx.clone());
+        #[cfg(not(target_os = "windows"))]
+        let _ = ctx;
+
         let app_settings = settings::load_settings();
         let steam_paths = steam::find_steam_paths();
         let games = steam::scan_games_with_paths(&steam_paths);
