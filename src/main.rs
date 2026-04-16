@@ -32,11 +32,31 @@ fn load_windows_font(file_name: &str) -> Option<egui::FontData> {
 }
 
 #[cfg(target_os = "windows")]
-fn configure_fonts(ctx: &egui::Context) {
-    let Some(regular_font) = load_windows_font("msyh.ttc") else {
+fn load_first_available_font(file_names: &[&str]) -> Option<egui::FontData> {
+    file_names.iter().find_map(|file_name| load_windows_font(file_name))
+}
+
+#[cfg(target_os = "windows")]
+fn configure_fonts(ctx: &egui::Context, language: i18n::AppLanguage) {
+    let (regular_candidates, bold_candidates): (&[&str], &[&str]) = match language {
+        i18n::AppLanguage::English => (
+            &["segoeui.ttf"],
+            &["segoeuib.ttf"],
+        ),
+        i18n::AppLanguage::SimplifiedChinese => (
+            &["msyh.ttc"],
+            &["msyhbd.ttc"],
+        ),
+    };
+
+    let Some(regular_font) = load_first_available_font(regular_candidates)
+        .or_else(|| load_first_available_font(&["segoeui.ttf"]))
+    else {
         return;
     };
-    let bold_font = load_windows_font("msyhbd.ttc").unwrap_or_else(|| regular_font.clone());
+    let bold_font = load_first_available_font(bold_candidates)
+        .or_else(|| load_first_available_font(&["segoeuib.ttf"]))
+        .unwrap_or_else(|| regular_font.clone());
 
     let mut fonts = egui::FontDefinitions::default();
 
@@ -62,7 +82,7 @@ fn configure_fonts(ctx: &egui::Context) {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn configure_fonts(_ctx: &egui::Context) {}
+fn configure_fonts(_ctx: &egui::Context, _language: i18n::AppLanguage) {}
 
 fn main() {
     let language = i18n::AppLanguage::detect_system();
@@ -74,7 +94,7 @@ fn main() {
         language.window_title(),
         options,
         Box::new(move |cc| {
-            configure_fonts(&cc.egui_ctx);
+            configure_fonts(&cc.egui_ctx, language);
             Box::new(app::LauncherApp::new(language))
         }),
     );
