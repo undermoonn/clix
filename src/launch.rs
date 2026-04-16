@@ -10,6 +10,7 @@ pub struct LaunchState {
     game_name: String,
     started_at: Instant,
     launch_app_id: Option<u32>,
+    awaiting_launch_release: bool,
     #[cfg(target_os = "windows")]
     baseline_pids: HashSet<u32>,
     #[cfg(target_os = "windows")]
@@ -18,6 +19,12 @@ pub struct LaunchState {
     target_path: Option<PathBuf>,
     #[cfg(target_os = "windows")]
     last_keep_foreground_at: Instant,
+    #[cfg(target_os = "windows")]
+    focus_pids: Option<HashSet<u32>>,
+    #[cfg(target_os = "windows")]
+    current_app_hwnd: Option<isize>,
+    #[cfg(target_os = "windows")]
+    transition: Option<WindowTransition>,
 }
 
 pub struct RunningGameState {
@@ -103,6 +110,7 @@ pub fn begin_launch(game_index: usize, game: &Game, steam_paths: &[PathBuf]) -> 
         game_name,
         started_at: Instant::now(),
         launch_app_id,
+        awaiting_launch_release: false,
         #[cfg(target_os = "windows")]
         baseline_pids,
         #[cfg(target_os = "windows")]
@@ -111,13 +119,85 @@ pub fn begin_launch(game_index: usize, game: &Game, steam_paths: &[PathBuf]) -> 
         target_path: if target_path.exists() { Some(target_path) } else { None },
         #[cfg(target_os = "windows")]
         last_keep_foreground_at: Instant::now() - Duration::from_millis(400),
+        #[cfg(target_os = "windows")]
+        focus_pids: None,
+        #[cfg(target_os = "windows")]
+        current_app_hwnd: find_current_app_window().map(|hwnd| hwnd as isize),
+        #[cfg(target_os = "windows")]
+        transition: None,
     })
 }
 
-pub fn tick_launch_progress(state: &mut LaunchState) -> LaunchTickResult {
+pub fn begin_focus_transition(game_index: usize, state: &RunningGameState) -> Option<LaunchState> {
+    #[cfg(target_os = "windows")]
+    {
+        Some(LaunchState {
+            game_index,
+            game_name: state.game_name.clone(),
+            started_at: Instant::now(),
+            launch_app_id: state.app_id,
+            awaiting_launch_release: true,
+            baseline_pids: HashSet::new(),
+            baseline_hwnds: HashSet::new(),
+            target_path: state.target_path.clone(),
+            last_keep_foreground_at: Instant::now(),
+            focus_pids: Some(state.tracked_pids.clone()),
+            current_app_hwnd: find_current_app_window().map(|hwnd| hwnd as isize),
+            transition: None,
+        })
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = game_index;
+        let _ = state;
+        None
+    }
+}
+
+pub fn tick_launch_progress(state: &mut LaunchState, launch_held: bool) -> LaunchTickResult {
     #[cfg(target_os = "windows")]
     {
         let now = Instant::now();
+
+        if state.awaiting_launch_release {
+            if launch_held {
+                return LaunchTickResult::Pending;
+            }
+            state.awaiting_launch_release = false;
+        }
+
+        if let Some(mut transition) = state.transition.take() {
+            if tick_window_transition(&mut transition) {
+                return LaunchTickResult::Ready(build_running_game_state(state, transition.target_pid));
+            }
+            state.transition = Some(transition);
+            return LaunchTickResult::Pending;
+        }
+
+        if let Some(focus_pids) = &state.focus_pids {
+            if let Some((hwnd, pid)) = find_best_window_for_pids(focus_pids, &state.game_name) {
+                maybe_align_window_top_left(hwnd, state.launch_app_id);
+
+                if let Some(current_hwnd) = state.current_app_hwnd.map(|hwnd| hwnd as HWND) {
+                    if current_hwnd != hwnd {
+                        if let Some(transition) = start_window_transition(current_hwnd, hwnd, pid) {
+                            state.transition = Some(transition);
+                            return LaunchTickResult::Pending;
+                        }
+                    }
+                }
+
+                bring_window_to_foreground(hwnd);
+                return LaunchTickResult::Ready(build_running_game_state(state, pid));
+            }
+
+            if now.duration_since(state.started_at) >= Duration::from_secs(3) {
+                return LaunchTickResult::TimedOut;
+            }
+
+            return LaunchTickResult::Pending;
+        }
 
         if now.duration_since(state.last_keep_foreground_at) >= Duration::from_millis(250) {
             bring_current_app_to_foreground();
@@ -131,14 +211,17 @@ pub fn tick_launch_progress(state: &mut LaunchState) -> LaunchTickResult {
             &state.game_name,
         ) {
             maybe_align_window_top_left(hwnd, state.launch_app_id);
+            if let Some(current_hwnd) = state.current_app_hwnd.map(|hwnd| hwnd as HWND) {
+                if current_hwnd != hwnd {
+                    if let Some(transition) = start_window_transition(current_hwnd, hwnd, pid) {
+                        state.transition = Some(transition);
+                        return LaunchTickResult::Pending;
+                    }
+                }
+            }
+
             bring_window_to_foreground(hwnd);
-            return LaunchTickResult::Ready(RunningGameState {
-                game_index: state.game_index,
-                app_id: state.launch_app_id,
-                game_name: state.game_name.clone(),
-                target_path: state.target_path.clone(),
-                tracked_pids: std::iter::once(pid).collect(),
-            });
+            return LaunchTickResult::Ready(build_running_game_state(state, pid));
         }
 
         if now.duration_since(state.started_at) >= Duration::from_secs(25) {
@@ -150,6 +233,7 @@ pub fn tick_launch_progress(state: &mut LaunchState) -> LaunchTickResult {
 
     #[cfg(not(target_os = "windows"))]
     {
+        let _ = launch_held;
         if Instant::now().duration_since(state.started_at) >= Duration::from_secs(5) {
             LaunchTickResult::TimedOut
         } else {
@@ -218,12 +302,23 @@ use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE, PROCESS_VM
 #[cfg(target_os = "windows")]
 use winapi::um::winuser::{
     EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
-    PostMessageW, SetForegroundWindow, SetWindowPos, ShowWindow, SWP_NOSIZE, SWP_NOZORDER,
-    SW_RESTORE, WM_CLOSE,
+    GetWindowLongW, PostMessageW, SetForegroundWindow, SetLayeredWindowAttributes,
+    SetWindowLongW, SetWindowPos, ShowWindow, GWL_EXSTYLE, LWA_ALPHA, SWP_NOSIZE,
+    SWP_NOZORDER, SW_RESTORE, WM_CLOSE, WS_EX_LAYERED,
 };
 
 #[cfg(target_os = "windows")]
 const ALIGN_TOP_LEFT_APP_ID: u32 = 601150;
+#[cfg(target_os = "windows")]
+const WINDOW_TRANSITION_MS: u64 = 100;
+
+#[cfg(target_os = "windows")]
+struct WindowTransition {
+    target_hwnd: HWND,
+    target_pid: u32,
+    started_at: Instant,
+    target_ex_style: i32,
+}
 
 #[cfg(target_os = "windows")]
 fn normalize_windows_path(path: &Path) -> String {
@@ -338,6 +433,103 @@ fn bring_window_to_foreground(hwnd: HWND) {
 }
 
 #[cfg(target_os = "windows")]
+fn build_running_game_state(state: &LaunchState, fallback_pid: u32) -> RunningGameState {
+    let tracked_pids = if let Some(tracked_pids) = &state.focus_pids {
+        let matched = collect_matching_process_ids(
+            state.target_path.as_deref(),
+            &state.game_name,
+            tracked_pids,
+        );
+        if matched.is_empty() {
+            tracked_pids.clone()
+        } else {
+            matched
+        }
+    } else {
+        std::iter::once(fallback_pid).collect()
+    };
+
+    RunningGameState {
+        game_index: state.game_index,
+        app_id: state.launch_app_id,
+        game_name: state.game_name.clone(),
+        target_path: state.target_path.clone(),
+        tracked_pids,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn enable_layered_alpha(hwnd: HWND) -> Option<i32> {
+    unsafe {
+        let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+        SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_LAYERED as i32);
+        let updated_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+        if (updated_style & WS_EX_LAYERED as i32) == 0 {
+            None
+        } else {
+            Some(ex_style)
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn restore_window_ex_style(hwnd: HWND, ex_style: i32) {
+    unsafe {
+        SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn set_window_alpha(hwnd: HWND, alpha: u8) -> bool {
+    unsafe { SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA) != 0 }
+}
+
+#[cfg(target_os = "windows")]
+fn start_window_transition(_source_hwnd: HWND, target_hwnd: HWND, target_pid: u32) -> Option<WindowTransition> {
+    let target_ex_style = enable_layered_alpha(target_hwnd)?;
+
+    if !set_window_alpha(target_hwnd, 0) {
+        restore_window_ex_style(target_hwnd, target_ex_style);
+        return None;
+    }
+
+    bring_window_to_foreground(target_hwnd);
+
+    Some(WindowTransition {
+        target_hwnd,
+        target_pid,
+        started_at: Instant::now(),
+        target_ex_style,
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn finish_window_transition(transition: &WindowTransition) {
+    let _ = set_window_alpha(transition.target_hwnd, 255);
+    restore_window_ex_style(transition.target_hwnd, transition.target_ex_style);
+    bring_window_to_foreground(transition.target_hwnd);
+}
+
+#[cfg(target_os = "windows")]
+fn tick_window_transition(transition: &mut WindowTransition) -> bool {
+    let elapsed = Instant::now().duration_since(transition.started_at);
+    let progress = (elapsed.as_secs_f32() / (WINDOW_TRANSITION_MS as f32 / 1000.0)).clamp(0.0, 1.0);
+    let target_alpha = (progress * 255.0).round().clamp(0.0, 255.0) as u8;
+
+    if !set_window_alpha(transition.target_hwnd, target_alpha) {
+        finish_window_transition(transition);
+        return true;
+    }
+
+    if progress >= 1.0 {
+        finish_window_transition(transition);
+        true
+    } else {
+        false
+    }
+}
+
+#[cfg(target_os = "windows")]
 fn maybe_align_window_top_left(hwnd: HWND, app_id: Option<u32>) {
     if app_id != Some(ALIGN_TOP_LEFT_APP_ID) {
         return;
@@ -357,6 +549,14 @@ fn bring_current_app_to_foreground() {
             break;
         }
     }
+}
+
+#[cfg(target_os = "windows")]
+fn find_current_app_window() -> Option<HWND> {
+    let current_pid = unsafe { GetCurrentProcessId() } as u32;
+    collect_visible_windows()
+        .into_iter()
+        .find_map(|(hwnd, pid)| (pid == current_pid).then_some(hwnd))
 }
 
 #[cfg(target_os = "windows")]
@@ -500,8 +700,18 @@ pub fn focus_running_game(state: &RunningGameState) -> bool {
 
 #[cfg(target_os = "windows")]
 fn focus_best_window_for_pids(pids: &HashSet<u32>, game_name: &str) -> bool {
+    if let Some((hwnd, _)) = find_best_window_for_pids(pids, game_name) {
+        bring_window_to_foreground(hwnd);
+        return true;
+    }
+
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn find_best_window_for_pids(pids: &HashSet<u32>, game_name: &str) -> Option<(HWND, u32)> {
     if pids.is_empty() {
-        return false;
+        return None;
     }
 
     let game_name_lower = game_name.to_ascii_lowercase();
@@ -513,17 +723,15 @@ fn focus_best_window_for_pids(pids: &HashSet<u32>, game_name: &str) -> bool {
                 .to_ascii_lowercase()
                 .contains(&game_name_lower)
         {
-            bring_window_to_foreground(hwnd);
-            return true;
+            return Some((hwnd, pid));
         }
     }
 
     for (hwnd, pid) in collect_visible_windows() {
         if pids.contains(&pid) {
-            bring_window_to_foreground(hwnd);
-            return true;
+            return Some((hwnd, pid));
         }
     }
 
-    false
+    None
 }

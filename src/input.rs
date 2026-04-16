@@ -87,6 +87,7 @@ pub struct NavState {
 
 pub struct InputFrame {
     pub actions: Vec<ControllerAction>,
+    pub launch_held: bool,
     pub quit_held: bool,
     pub force_close_held: bool,
 }
@@ -159,67 +160,72 @@ impl InputController {
             std::collections::HashSet::new();
         let mut actions = Vec::new();
 
-        if process_input {
-            self.collect_raw_held(&mut raw_held);
-        } else {
+        self.collect_raw_held(&mut raw_held);
+
+        if !process_input {
             self.nav_held.clear();
         }
 
         let now = Instant::now();
-        self.nav_held.retain(|key, _| raw_held.contains(key));
+        if process_input {
+            self.nav_held.retain(|key, _| raw_held.contains(key));
+        }
 
-        let action_names: &[&str] = if include_quit_action {
-            &["up", "down", "left", "right", "launch", "quit"]
-        } else {
-            &["up", "down", "left", "right", "launch"]
-        };
-
-        for action_name in action_names {
-            if !raw_held.contains(action_name) {
-                continue;
-            }
-
-            let should_fire = if let Some(state) = self.nav_held.get_mut(action_name) {
-                if !state.past_initial {
-                    if now.duration_since(state.since).as_millis() >= NAV_INITIAL_DELAY_MS {
-                        state.past_initial = true;
-                        state.last_fire = now;
-                        true
-                    } else {
-                        false
-                    }
-                } else {
-                    let held_ms = now.duration_since(state.since).as_millis();
-                    let repeat_interval_ms = nav_repeat_interval_ms(action_name, held_ms);
-
-                    if now.duration_since(state.last_fire).as_millis() >= repeat_interval_ms {
-                        state.last_fire = now;
-                        true
-                    } else {
-                        false
-                    }
-                }
+        if process_input {
+            let action_names: &[&str] = if include_quit_action {
+                &["up", "down", "left", "right", "launch", "quit"]
             } else {
-                self.nav_held.insert(
-                    action_name,
-                    NavState {
-                        since: now,
-                        last_fire: now,
-                        past_initial: false,
-                    },
-                );
-                true
+                &["up", "down", "left", "right", "launch"]
             };
 
-            if should_fire {
-                if let Some(action) = ControllerAction::from_str(action_name) {
-                    actions.push(action);
+            for action_name in action_names {
+                if !raw_held.contains(action_name) {
+                    continue;
+                }
+
+                let should_fire = if let Some(state) = self.nav_held.get_mut(action_name) {
+                    if !state.past_initial {
+                        if now.duration_since(state.since).as_millis() >= NAV_INITIAL_DELAY_MS {
+                            state.past_initial = true;
+                            state.last_fire = now;
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        let held_ms = now.duration_since(state.since).as_millis();
+                        let repeat_interval_ms = nav_repeat_interval_ms(action_name, held_ms);
+
+                        if now.duration_since(state.last_fire).as_millis() >= repeat_interval_ms {
+                            state.last_fire = now;
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                } else {
+                    self.nav_held.insert(
+                        action_name,
+                        NavState {
+                            since: now,
+                            last_fire: now,
+                            past_initial: false,
+                        },
+                    );
+                    true
+                };
+
+                if should_fire {
+                    if let Some(action) = ControllerAction::from_str(action_name) {
+                        actions.push(action);
+                    }
                 }
             }
         }
 
         InputFrame {
             actions,
+            launch_held: raw_held.contains("launch"),
             quit_held: raw_held.contains("quit"),
             force_close_held: raw_held.contains("force_close"),
         }

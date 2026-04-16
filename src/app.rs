@@ -60,7 +60,11 @@ impl LauncherApp {
     fn launch_selected(&mut self) {
         let selected = self.page.selected();
         if let Some(state) = self.running_games.get(&selected) {
-            let _ = launch::focus_running_game(state);
+            if let Some(focus_state) = launch::begin_focus_transition(selected, state) {
+                self.launch_state = Some(focus_state);
+            } else {
+                let _ = launch::focus_running_game(state);
+            }
             return;
         }
 
@@ -70,10 +74,10 @@ impl LauncherApp {
         }
     }
 
-    fn tick_launch_progress(&mut self, ctx: &egui::Context) {
+    fn tick_launch_progress(&mut self, ctx: &egui::Context, launch_held: bool) {
         if let Some(state) = self.launch_state.as_mut() {
             ctx.request_repaint();
-            match launch::tick_launch_progress(state) {
+            match launch::tick_launch_progress(state, launch_held) {
                 launch::LaunchTickResult::Pending => {}
                 launch::LaunchTickResult::Ready(running_game) => {
                     self.running_games.insert(running_game.game_index, running_game);
@@ -229,7 +233,7 @@ impl eframe::App for LauncherApp {
             }
         }
 
-        self.tick_launch_progress(ctx);
+        self.tick_launch_progress(ctx, input_frame.launch_held);
         self.tick_running_game_state();
         self.achievements.drain_results();
         self.achievements.drain_icon_results(ctx);
