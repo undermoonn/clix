@@ -120,39 +120,55 @@ fn draw_title_tag(
     title_pos: egui::Pos2,
     title_size: egui::Vec2,
     opacity: f32,
-) {
+    x_offset: f32,
+    fill_color: egui::Color32,
+    text_color: egui::Color32,
+) -> f32 {
     let alpha = (255.0 * opacity.clamp(0.0, 1.0)).round() as u8;
     if alpha == 0 {
-        return;
+        return 0.0;
     }
 
     let tag_font = egui::FontId::new(
         (title_size.y * 0.42).clamp(11.0, 14.0),
         egui::FontFamily::Name("Bold".into()),
     );
-    let text_color = egui::Color32::from_rgba_unmultiplied(18, 18, 18, alpha);
+    let text_color = egui::Color32::from_rgba_unmultiplied(
+        text_color.r(),
+        text_color.g(),
+        text_color.b(),
+        alpha,
+    );
     let galley = painter.layout_no_wrap(text.to_owned(), tag_font, text_color);
     let padding_x = 11.0;
     let padding_y = 4.0;
     let tag_rect = egui::Rect::from_min_size(
-        egui::pos2(title_pos.x + title_size.x + 14.0, title_pos.y + title_size.y * 0.5 - galley.size().y * 0.5 - padding_y),
+        egui::pos2(title_pos.x + title_size.x + 14.0 + x_offset, title_pos.y + title_size.y * 0.5 - galley.size().y * 0.5 - padding_y),
         egui::vec2(galley.size().x + padding_x * 2.0, galley.size().y + padding_y * 2.0),
     );
 
     painter.rect_filled(
         tag_rect,
         egui::Rounding::same((tag_rect.height() * 0.5).min(10.0)),
-        egui::Color32::from_rgba_unmultiplied(228, 228, 220, ((alpha as f32) * 0.72).round() as u8),
+        egui::Color32::from_rgba_unmultiplied(
+            fill_color.r(),
+            fill_color.g(),
+            fill_color.b(),
+            ((alpha as f32) * 0.9).round() as u8,
+        ),
     );
     painter.galley(
         egui::pos2(tag_rect.min.x + padding_x, tag_rect.min.y + padding_y),
         galley,
     );
+
+    tag_rect.width()
 }
 
 pub struct HintIcons {
     pub btn_a: egui::TextureHandle,
     pub btn_b: egui::TextureHandle,
+    pub btn_x: egui::TextureHandle,
     pub dpad_down: egui::TextureHandle,
 }
 
@@ -173,16 +189,18 @@ fn png_bytes_to_texture(
 }
 
 pub fn load_hint_icons(ctx: &egui::Context, brand: ControllerBrand) -> Option<HintIcons> {
-    let (btn_a_bytes, btn_b_bytes, dpad_down_bytes, label_prefix) = match brand {
+    let (btn_a_bytes, btn_b_bytes, btn_x_bytes, dpad_down_bytes, label_prefix) = match brand {
         ControllerBrand::Xbox => (
             include_bytes!("icons/Xbox/T_X_A_White_Alt.png") as &[u8],
             include_bytes!("icons/Xbox/T_X_B_White_Alt.png") as &[u8],
+            include_bytes!("icons/Xbox/T_X_X_White_Alt.png") as &[u8],
             include_bytes!("icons/Xbox/T_X_Dpad_Down_Alt.png") as &[u8],
             "xbox",
         ),
         ControllerBrand::PlayStation => (
             include_bytes!("icons/DualSence/T_P4_Cross.png") as &[u8],
             include_bytes!("icons/DualSence/T_P4_Circle.png") as &[u8],
+            include_bytes!("icons/DualSence/T_P4_Square.png") as &[u8],
             include_bytes!("icons/DualSence/T_P4_Dpad_Down.png") as &[u8],
             "playstation",
         ),
@@ -190,6 +208,7 @@ pub fn load_hint_icons(ctx: &egui::Context, brand: ControllerBrand) -> Option<Hi
 
     let btn_a = png_bytes_to_texture(ctx, btn_a_bytes, &format!("{}_icon_btn_a", label_prefix))?;
     let btn_b = png_bytes_to_texture(ctx, btn_b_bytes, &format!("{}_icon_btn_b", label_prefix))?;
+    let btn_x = png_bytes_to_texture(ctx, btn_x_bytes, &format!("{}_icon_btn_x", label_prefix))?;
     let dpad_down = png_bytes_to_texture(
         ctx,
         dpad_down_bytes,
@@ -198,6 +217,7 @@ pub fn load_hint_icons(ctx: &egui::Context, brand: ControllerBrand) -> Option<Hi
     Some(HintIcons {
         btn_a,
         btn_b,
+        btn_x,
         dpad_down,
     })
 }
@@ -319,6 +339,7 @@ pub fn draw_game_list(
     scroll_offset: f32,
     game_icons: &std::collections::HashMap<u32, egui::TextureHandle>,
     loading_index: Option<usize>,
+    running_indices: &[usize],
     _achievement_panel_active: bool,
     achievement_summary_for_selected: Option<&crate::steam::AchievementSummary>,
     achievement_summary_reveal_for_selected: f32,
@@ -368,6 +389,7 @@ pub fn draw_game_list(
             0.0
         };
         let is_launching = loading_index == Some(i);
+        let is_running = running_indices.contains(&i);
         let font_size = if is_selected {
             base_size + (selected_size - base_size) * selection_t
         } else {
@@ -506,6 +528,20 @@ pub fn draw_game_list(
                 if let Some(ach_g) = achievement_galley {
                     painter.galley(egui::pos2(pt_x, meta_pos.y), ach_g);
                 }
+            }
+
+            let tag_offset = 0.0;
+            if is_selected && is_running {
+                let _ = draw_title_tag(
+                    &painter,
+                    language.running_text(),
+                    normal_title_pos,
+                    galley.size(),
+                    1.0,
+                    tag_offset,
+                    egui::Color32::from_rgb(52, 138, 84),
+                    egui::Color32::from_rgb(240, 255, 244),
+                );
             }
         }
     }
@@ -693,7 +729,16 @@ pub fn draw_achievement_page(
     }
     painter.galley(title_pos, title_galley.clone());
     if let Some(tag_text) = dlss_tag_text(game) {
-        draw_title_tag(&painter, &tag_text, title_pos, title_galley.size(), panel_t);
+        let _ = draw_title_tag(
+            &painter,
+            &tag_text,
+            title_pos,
+            title_galley.size(),
+            panel_t,
+            0.0,
+            egui::Color32::from_rgb(228, 228, 220),
+            egui::Color32::from_rgb(18, 18, 18),
+        );
     }
     if let Some(meta_galley) = meta_galley {
         painter.galley(meta_pos, meta_galley);
@@ -869,7 +914,9 @@ pub fn draw_hint_bar(
     icons: &HintIcons,
     achievement_panel_active: bool,
     can_open_achievement_panel: bool,
+    game_running: bool,
     quit_hold_progress: f32,
+    force_close_hold_progress: f32,
 ) {
     let panel_rect = ui.available_rect_before_wrap();
     let padding = 50.0;
@@ -923,6 +970,7 @@ pub fn draw_hint_bar(
 
     let g_back = painter.layout_no_wrap(language.back_text().to_string(), hint_font.clone(), hint_color);
     let g_quit = painter.layout_no_wrap(language.hold_quit_text().to_string(), hint_font.clone(), hint_color);
+    let g_force_close = painter.layout_no_wrap(language.hold_close_game_text().to_string(), hint_font.clone(), hint_color);
     let b_label_reserve = g_back.size().x.max(g_quit.size().x);
     let b_icon_x = padded_rect.max.x - b_label_reserve - 6.0 - action_icon_h;
     let b_label_x = b_icon_x + action_icon_h + 6.0;
@@ -951,18 +999,47 @@ pub fn draw_hint_bar(
         hint_font.clone(),
         hint_color,
     );
+    let force_close_group_w = if game_running {
+        action_icon_h + 6.0 + g_force_close.size().x
+    } else {
+        0.0
+    };
     let launch_group_w = action_icon_h + 6.0 + g_launch.size().x;
     let launch_x = b_icon_x - 20.0 - launch_group_w;
+    let force_close_x = if game_running {
+        launch_x - 20.0 - force_close_group_w
+    } else {
+        launch_x
+    };
 
     if can_open_achievement_panel {
         let achievements_group_w = icon_h + 6.0 + g_achievements.size().x;
-        let achievements_x = launch_x - 20.0 - achievements_group_w;
+        let achievements_x = force_close_x - 20.0 - achievements_group_w;
         draw_icon(painter, &icons.dpad_down, achievements_x, icon_h);
 
         let gy = hint_y + (row_h - g_achievements.size().y) * 0.5;
         painter.galley(
             egui::pos2(achievements_x + icon_h + 6.0, gy),
             g_achievements,
+        );
+    }
+
+    if game_running {
+        draw_icon(painter, &icons.btn_x, force_close_x, action_icon_h);
+        draw_progress_ring(
+            painter,
+            egui::pos2(
+                force_close_x + action_icon_h * 0.5,
+                hint_y + row_h * 0.5,
+            ),
+            action_icon_h * 0.48,
+            force_close_hold_progress,
+        );
+
+        let gy = hint_y + (row_h - g_force_close.size().y) * 0.5;
+        painter.galley(
+            egui::pos2(force_close_x + action_icon_h + 6.0, gy),
+            g_force_close,
         );
     }
 
@@ -984,8 +1061,6 @@ pub fn draw_hint_bar(
         action_icon_h * 0.48,
         quit_hold_progress,
     );
-
-    // "Quit"
     let gy = hint_y + (row_h - g_quit.size().y) * 0.5;
     painter.galley(egui::pos2(b_label_x, gy), g_quit);
 }

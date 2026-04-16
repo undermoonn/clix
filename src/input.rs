@@ -6,7 +6,7 @@ use gilrs::{Axis, Button, EventType, Gilrs};
 #[cfg(target_os = "windows")]
 use winapi::um::xinput::{
     XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B, XINPUT_GAMEPAD_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_LEFT,
-    XINPUT_GAMEPAD_DPAD_RIGHT, XINPUT_GAMEPAD_DPAD_UP,
+    XINPUT_GAMEPAD_DPAD_RIGHT, XINPUT_GAMEPAD_DPAD_UP, XINPUT_GAMEPAD_X,
 };
 
 #[cfg(target_os = "windows")]
@@ -80,6 +80,7 @@ pub struct NavState {
 pub struct InputFrame {
     pub actions: Vec<ControllerAction>,
     pub quit_held: bool,
+    pub force_close_held: bool,
 }
 
 pub struct InputController {
@@ -188,6 +189,7 @@ impl InputController {
         InputFrame {
             actions,
             quit_held: raw_held.contains("quit"),
+            force_close_held: raw_held.contains("force_close"),
         }
     }
 
@@ -255,6 +257,9 @@ impl InputController {
             }
             if (buttons & XINPUT_GAMEPAD_B) != 0 {
                 raw_held.insert("quit");
+            }
+            if (buttons & XINPUT_GAMEPAD_X) != 0 {
+                raw_held.insert("force_close");
             }
             if *ly > 16000 {
                 raw_held.insert("up");
@@ -388,6 +393,10 @@ impl InputController {
                 raw_held.insert("quit");
                 gamepad_active = true;
             }
+            if gamepad.is_pressed(Button::West) {
+                raw_held.insert("force_close");
+                gamepad_active = true;
+            }
 
             let left_stick_x = gamepad.value(Axis::LeftStickX);
             if left_stick_x <= -GILRS_AXIS_THRESHOLD {
@@ -443,6 +452,9 @@ impl InputController {
             }
             "quit" => {
                 raw_held.insert("quit");
+            }
+            "force_close" => {
+                raw_held.insert("force_close");
             }
             _ => {}
         }

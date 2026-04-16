@@ -2,7 +2,8 @@ use std::time::{Duration, Instant};
 
 use crate::input::FOCUS_COOLDOWN_MS;
 
-pub const QUIT_HOLD_TO_EXIT_MS: f32 = 800.0;
+pub const HOLD_TO_EXIT_APP_MS: f32 = 800.0;
+pub const HOLD_TO_FORCE_CLOSE_GAME_MS: f32 = 2000.0;
 
 pub struct RuntimeState {
     had_focus: bool,
@@ -11,6 +12,9 @@ pub struct RuntimeState {
     quit_hold_started_at: Option<Instant>,
     quit_hold_progress: f32,
     quit_hold_consumed: bool,
+    force_close_hold_started_at: Option<Instant>,
+    force_close_hold_progress: f32,
+    force_close_hold_consumed: bool,
     suppress_quit_hold_until_release: bool,
 }
 
@@ -25,6 +29,11 @@ pub struct QuitHoldUpdate {
     pub should_repaint: bool,
 }
 
+pub struct ForceCloseHoldUpdate {
+    pub trigger_force_close: bool,
+    pub should_repaint: bool,
+}
+
 impl RuntimeState {
     pub fn new() -> Self {
         Self {
@@ -34,6 +43,9 @@ impl RuntimeState {
             quit_hold_started_at: None,
             quit_hold_progress: 0.0,
             quit_hold_consumed: false,
+            force_close_hold_started_at: None,
+            force_close_hold_progress: 0.0,
+            force_close_hold_consumed: false,
             suppress_quit_hold_until_release: false,
         }
     }
@@ -113,7 +125,7 @@ impl RuntimeState {
 
             let started_at = self.quit_hold_started_at.get_or_insert(now);
             let held_ms = now.duration_since(*started_at).as_secs_f32() * 1000.0;
-            self.quit_hold_progress = (held_ms / QUIT_HOLD_TO_EXIT_MS).clamp(0.0, 1.0);
+            self.quit_hold_progress = (held_ms / HOLD_TO_EXIT_APP_MS).clamp(0.0, 1.0);
 
             if self.quit_hold_progress >= 1.0 {
                 self.quit_hold_consumed = true;
@@ -138,11 +150,58 @@ impl RuntimeState {
         }
     }
 
+    pub fn update_force_close_hold(
+        &mut self,
+        process_input: bool,
+        force_close_available: bool,
+        force_close_held: bool,
+        now: Instant,
+    ) -> ForceCloseHoldUpdate {
+        if process_input && force_close_available && force_close_held {
+            if self.force_close_hold_consumed {
+                self.force_close_hold_progress = 1.0;
+                return ForceCloseHoldUpdate {
+                    trigger_force_close: false,
+                    should_repaint: false,
+                };
+            }
+
+            let started_at = self.force_close_hold_started_at.get_or_insert(now);
+            let held_ms = now.duration_since(*started_at).as_secs_f32() * 1000.0;
+            self.force_close_hold_progress = (held_ms / HOLD_TO_FORCE_CLOSE_GAME_MS).clamp(0.0, 1.0);
+
+            if self.force_close_hold_progress >= 1.0 {
+                self.force_close_hold_consumed = true;
+                ForceCloseHoldUpdate {
+                    trigger_force_close: true,
+                    should_repaint: false,
+                }
+            } else {
+                ForceCloseHoldUpdate {
+                    trigger_force_close: false,
+                    should_repaint: true,
+                }
+            }
+        } else {
+            self.force_close_hold_started_at = None;
+            self.force_close_hold_progress = 0.0;
+            self.force_close_hold_consumed = false;
+            ForceCloseHoldUpdate {
+                trigger_force_close: false,
+                should_repaint: false,
+            }
+        }
+    }
+
     pub fn suppress_quit_hold_until_release(&mut self) {
         self.suppress_quit_hold_until_release = true;
     }
 
     pub fn quit_hold_progress(&self) -> f32 {
         self.quit_hold_progress
+    }
+
+    pub fn force_close_hold_progress(&self) -> f32 {
+        self.force_close_hold_progress
     }
 }

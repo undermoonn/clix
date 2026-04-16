@@ -20,6 +20,37 @@ pub struct LaunchState {
     last_keep_foreground_at: Instant,
 }
 
+pub struct RunningGameState {
+    pub game_index: usize,
+    app_id: Option<u32>,
+    game_name: String,
+    #[cfg(target_os = "windows")]
+    target_path: Option<PathBuf>,
+    #[cfg(target_os = "windows")]
+    tracked_pids: HashSet<u32>,
+}
+
+impl RunningGameState {
+    pub fn matches_game(&self, game: &Game) -> bool {
+        if let Some(app_id) = self.app_id {
+            return game.app_id == Some(app_id);
+        }
+
+        game.name == self.game_name
+    }
+
+    pub fn with_game_index(mut self, game_index: usize) -> Self {
+        self.game_index = game_index;
+        self
+    }
+}
+
+pub enum LaunchTickResult {
+    Pending,
+    Ready(RunningGameState),
+    TimedOut,
+}
+
 pub fn begin_launch(game_index: usize, game: &Game, steam_paths: &[PathBuf]) -> Option<LaunchState> {
     let target_path = game.path.clone();
     let game_name = game.name.clone();
@@ -83,7 +114,7 @@ pub fn begin_launch(game_index: usize, game: &Game, steam_paths: &[PathBuf]) -> 
     })
 }
 
-pub fn tick_launch_progress(state: &mut LaunchState) -> bool {
+pub fn tick_launch_progress(state: &mut LaunchState) -> LaunchTickResult {
     #[cfg(target_os = "windows")]
     {
         let now = Instant::now();
@@ -93,7 +124,7 @@ pub fn tick_launch_progress(state: &mut LaunchState) -> bool {
             state.last_keep_foreground_at = now;
         }
 
-        if let Some(hwnd) = detect_launched_window(
+        if let Some((hwnd, pid)) = detect_launched_window(
             &state.baseline_pids,
             &state.baseline_hwnds,
             state.target_path.as_deref(),
@@ -101,15 +132,74 @@ pub fn tick_launch_progress(state: &mut LaunchState) -> bool {
         ) {
             maybe_align_window_top_left(hwnd, state.launch_app_id);
             bring_window_to_foreground(hwnd);
-            return true;
+            return LaunchTickResult::Ready(RunningGameState {
+                game_index: state.game_index,
+                app_id: state.launch_app_id,
+                game_name: state.game_name.clone(),
+                target_path: state.target_path.clone(),
+                tracked_pids: std::iter::once(pid).collect(),
+            });
         }
 
-        now.duration_since(state.started_at) >= Duration::from_secs(25)
+        if now.duration_since(state.started_at) >= Duration::from_secs(25) {
+            LaunchTickResult::TimedOut
+        } else {
+            LaunchTickResult::Pending
+        }
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        Instant::now().duration_since(state.started_at) >= Duration::from_secs(5)
+        if Instant::now().duration_since(state.started_at) >= Duration::from_secs(5) {
+            LaunchTickResult::TimedOut
+        } else {
+            LaunchTickResult::Pending
+        }
+    }
+}
+
+pub fn refresh_running_game(state: &mut RunningGameState) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        let matched = collect_matching_process_ids(
+            state.target_path.as_deref(),
+            &state.game_name,
+            &state.tracked_pids,
+        );
+        state.tracked_pids = matched;
+        !state.tracked_pids.is_empty()
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = state;
+        false
+    }
+}
+
+pub fn close_running_game(state: &mut RunningGameState) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        let matched = collect_matching_process_ids(
+            state.target_path.as_deref(),
+            &state.game_name,
+            &state.tracked_pids,
+        );
+        if matched.is_empty() {
+            state.tracked_pids.clear();
+            return false;
+        }
+
+        request_close_for_pids(&matched);
+        terminate_pids(&matched);
+        state.tracked_pids = matched;
+        true
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = state;
+        false
     }
 }
 
@@ -120,15 +210,16 @@ use winapi::shared::windef::HWND;
 #[cfg(target_os = "windows")]
 use winapi::um::handleapi::CloseHandle;
 #[cfg(target_os = "windows")]
-use winapi::um::processthreadsapi::{GetCurrentProcessId, OpenProcess};
+use winapi::um::processthreadsapi::{GetCurrentProcessId, OpenProcess, TerminateProcess};
 #[cfg(target_os = "windows")]
 use winapi::um::psapi::{EnumProcesses, GetModuleFileNameExW};
 #[cfg(target_os = "windows")]
-use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE, PROCESS_VM_READ};
 #[cfg(target_os = "windows")]
 use winapi::um::winuser::{
     EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
-    SetForegroundWindow, SetWindowPos, ShowWindow, SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE,
+    PostMessageW, SetForegroundWindow, SetWindowPos, ShowWindow, SWP_NOSIZE, SWP_NOZORDER,
+    SW_RESTORE, WM_CLOSE,
 };
 
 #[cfg(target_os = "windows")]
@@ -274,7 +365,7 @@ fn detect_launched_window(
     baseline_hwnds: &HashSet<isize>,
     target_path: Option<&Path>,
     game_name: &str,
-) -> Option<HWND> {
+) -> Option<(HWND, u32)> {
     let target_norm = target_path.map(normalize_windows_path);
     let game_name_lower = game_name.to_ascii_lowercase();
 
@@ -294,23 +385,145 @@ fn detect_launched_window(
             if let Some(exe_path) = process_image_path(pid) {
                 let exe_norm = normalize_windows_path(&exe_path);
                 if exe_norm.starts_with(target_norm) {
-                    return Some(hwnd);
+                    return Some((hwnd, pid));
                 }
             }
             if title_matches {
-                return Some(hwnd);
+                return Some((hwnd, pid));
             }
             if is_new_pid && !title.is_empty() {
-                return Some(hwnd);
+                return Some((hwnd, pid));
             }
         } else {
-            return Some(hwnd);
+            return Some((hwnd, pid));
         }
 
         if is_new_window && title_matches {
-            return Some(hwnd);
+            return Some((hwnd, pid));
         }
     }
 
     None
+}
+
+#[cfg(target_os = "windows")]
+fn collect_matching_process_ids(
+    target_path: Option<&Path>,
+    game_name: &str,
+    tracked_pids: &HashSet<u32>,
+) -> HashSet<u32> {
+    let current_pids = collect_process_ids();
+    let visible_windows = collect_visible_windows();
+    let current_pid = unsafe { GetCurrentProcessId() } as u32;
+    let target_norm = target_path.map(normalize_windows_path);
+    let game_name_lower = game_name.to_ascii_lowercase();
+    let mut matched = HashSet::new();
+
+    for pid in current_pids {
+        if pid == 0 || pid == current_pid {
+            continue;
+        }
+
+        if tracked_pids.contains(&pid) {
+            matched.insert(pid);
+            continue;
+        }
+
+        if let Some(target_norm) = &target_norm {
+            if let Some(exe_path) = process_image_path(pid) {
+                let exe_norm = normalize_windows_path(&exe_path);
+                if exe_norm.starts_with(target_norm) {
+                    matched.insert(pid);
+                    continue;
+                }
+            }
+        }
+
+        if !game_name_lower.is_empty()
+            && visible_windows.iter().any(|(hwnd, window_pid)| {
+                *window_pid == pid
+                    && window_title(*hwnd)
+                        .to_ascii_lowercase()
+                        .contains(&game_name_lower)
+            })
+        {
+            matched.insert(pid);
+        }
+    }
+
+    matched
+}
+
+#[cfg(target_os = "windows")]
+fn request_close_for_pids(pids: &HashSet<u32>) {
+    for (hwnd, pid) in collect_visible_windows() {
+        if pids.contains(&pid) {
+            unsafe {
+                PostMessageW(hwnd, WM_CLOSE, 0, 0);
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn terminate_pids(pids: &HashSet<u32>) {
+    for pid in pids {
+        unsafe {
+            let handle = OpenProcess(PROCESS_TERMINATE, 0, *pid as DWORD);
+            if handle.is_null() {
+                continue;
+            }
+
+            let _ = TerminateProcess(handle, 1);
+            CloseHandle(handle);
+        }
+    }
+}
+
+pub fn focus_running_game(state: &RunningGameState) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        let matched = collect_matching_process_ids(
+            state.target_path.as_deref(),
+            &state.game_name,
+            &state.tracked_pids,
+        );
+        focus_best_window_for_pids(&matched, &state.game_name)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = state;
+        false
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn focus_best_window_for_pids(pids: &HashSet<u32>, game_name: &str) -> bool {
+    if pids.is_empty() {
+        return false;
+    }
+
+    let game_name_lower = game_name.to_ascii_lowercase();
+
+    for (hwnd, pid) in collect_visible_windows() {
+        if pids.contains(&pid)
+            && !game_name_lower.is_empty()
+            && window_title(hwnd)
+                .to_ascii_lowercase()
+                .contains(&game_name_lower)
+        {
+            bring_window_to_foreground(hwnd);
+            return true;
+        }
+    }
+
+    for (hwnd, pid) in collect_visible_windows() {
+        if pids.contains(&pid) {
+            bring_window_to_foreground(hwnd);
+            return true;
+        }
+    }
+
+    false
 }

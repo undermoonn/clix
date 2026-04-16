@@ -1,11 +1,12 @@
 use eframe::egui;
+use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::achievements::AchievementState;
 use crate::artwork::ArtworkState;
 use crate::game_icons::GameIconState;
 use crate::i18n::AppLanguage;
-use crate::input::{ControllerAction, ControllerBrand, InputController};
+use crate::input::{ControllerBrand, InputController};
 use crate::launch::{self, LaunchState};
 use crate::page_state::PageState;
 use crate::runtime_state::RuntimeState;
@@ -24,6 +25,7 @@ pub struct LauncherApp {
     hint_icon_brand: ControllerBrand,
     game_icons: GameIconState,
     launch_state: Option<LaunchState>,
+    running_games: HashMap<usize, launch::RunningGameState>,
     achievements: AchievementState,
     runtime: RuntimeState,
 }
@@ -44,6 +46,7 @@ impl LauncherApp {
             hint_icon_brand: app_settings.controller_brand,
             game_icons: GameIconState::new(),
             launch_state: None,
+            running_games: HashMap::new(),
             achievements: AchievementState::new(),
             runtime: RuntimeState::new(),
         }
@@ -55,19 +58,56 @@ impl LauncherApp {
 
 
     fn launch_selected(&mut self) {
-        if let Some(game) = self.games.get(self.page.selected()) {
+        let selected = self.page.selected();
+        if let Some(state) = self.running_games.get(&selected) {
+            let _ = launch::focus_running_game(state);
+            return;
+        }
+
+        if let Some(game) = self.games.get(selected) {
             self.launch_state =
-                launch::begin_launch(self.page.selected(), game, &self.steam_paths);
+                launch::begin_launch(selected, game, &self.steam_paths);
         }
     }
 
     fn tick_launch_progress(&mut self, ctx: &egui::Context) {
         if let Some(state) = self.launch_state.as_mut() {
             ctx.request_repaint();
-            if launch::tick_launch_progress(state) {
-                self.launch_state = None;
+            match launch::tick_launch_progress(state) {
+                launch::LaunchTickResult::Pending => {}
+                launch::LaunchTickResult::Ready(running_game) => {
+                    self.running_games.insert(running_game.game_index, running_game);
+                    self.launch_state = None;
+                }
+                launch::LaunchTickResult::TimedOut => {
+                    self.launch_state = None;
+                }
             }
         }
+    }
+
+    fn tick_running_game_state(&mut self) {
+        self.running_games
+            .retain(|_, state| launch::refresh_running_game(state));
+    }
+
+    fn refresh_running_game_indices(&mut self) {
+        if self.running_games.is_empty() {
+            return;
+        }
+
+        let previous = std::mem::take(&mut self.running_games);
+        let mut remapped = HashMap::new();
+
+        for (_, state) in previous {
+            let new_index = self.games.iter().position(|game| state.matches_game(game));
+
+            if let Some(index) = new_index {
+                remapped.insert(index, state.with_game_index(index));
+            }
+        }
+
+        self.running_games = remapped;
     }
 
     fn refresh_games_after_resume(&mut self) {
@@ -101,6 +141,7 @@ impl LauncherApp {
 
         self.artwork.reset_selection_tracking();
         self.game_icons.reset();
+        self.refresh_running_game_indices();
     }
 }
 
@@ -125,17 +166,31 @@ impl eframe::App for LauncherApp {
 
         let process_input = has_focus && !focus.in_cooldown && self.launch_state.is_none();
         let input_frame = self.input.poll(process_input, self.page.show_achievement_panel());
-        let mut actions = input_frame.actions;
-        let quit_hold = self.runtime.update_quit_hold(
+        let actions = input_frame.actions;
+        let selected_running = self.running_games.contains_key(&self.page.selected());
+        let app_quit_hold = self.runtime.update_quit_hold(
             process_input,
             self.page.show_achievement_panel(),
             input_frame.quit_held,
             now,
         );
-        if quit_hold.trigger_quit {
-            actions.push(ControllerAction::Quit);
+        let force_close_hold = self.runtime.update_force_close_hold(
+            process_input,
+            selected_running,
+            input_frame.force_close_held,
+            now,
+        );
+        if app_quit_hold.trigger_quit {
+            frame.close();
         }
-        if quit_hold.should_repaint {
+        if force_close_hold.trigger_force_close {
+            if let Some(state) = self.running_games.get_mut(&self.page.selected()) {
+                if launch::close_running_game(state) {
+                    ctx.request_repaint();
+                }
+            }
+        }
+        if app_quit_hold.should_repaint || force_close_hold.should_repaint {
             ctx.request_repaint();
         }
 
@@ -171,6 +226,7 @@ impl eframe::App for LauncherApp {
         }
 
         self.tick_launch_progress(ctx);
+        self.tick_running_game_state();
         self.achievements.drain_results();
         self.achievements.drain_icon_results(ctx);
 
@@ -205,6 +261,7 @@ impl eframe::App for LauncherApp {
         let can_open_achievement_panel = self.can_open_achievement_panel_for_selected();
         let achievement_loading = self.achievements.loading_for_selected(selected_game);
         let achievement_has_no_data = self.achievements.has_no_data_for_selected(selected_game);
+        let running_indices: Vec<usize> = self.running_games.keys().copied().collect();
         let mut visible_achievement_icon_urls = Vec::new();
 
         egui::CentralPanel::default()
@@ -258,6 +315,7 @@ impl eframe::App for LauncherApp {
                         self.page.scroll_offset(),
                         self.game_icons.textures(),
                         self.launch_state.as_ref().map(|state| state.game_index),
+                        &running_indices,
                         self.page.show_achievement_panel(),
                         selected_achievement_summary,
                         selected_achievement_reveal,
@@ -271,7 +329,9 @@ impl eframe::App for LauncherApp {
                         icons,
                         self.page.show_achievement_panel(),
                         can_open_achievement_panel,
+                        selected_running,
                         self.runtime.quit_hold_progress(),
+                        self.runtime.force_close_hold_progress(),
                     );
                 }
             });

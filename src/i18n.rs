@@ -63,6 +63,20 @@ impl AppLanguage {
         }
     }
 
+    pub fn hold_close_game_text(self) -> &'static str {
+        match self {
+            Self::English => "Force Exit",
+            Self::SimplifiedChinese => "强制退出",
+        }
+    }
+
+    pub fn running_text(self) -> &'static str {
+        match self {
+            Self::English => "Running",
+            Self::SimplifiedChinese => "运行中",
+        }
+    }
+
     pub fn scroll_text(self) -> &'static str {
         match self {
             Self::English => "Scroll",
