@@ -9,6 +9,7 @@ pub struct LaunchState {
     pub game_index: usize,
     game_name: String,
     started_at: Instant,
+    launch_app_id: Option<u32>,
     #[cfg(target_os = "windows")]
     baseline_pids: HashSet<u32>,
     #[cfg(target_os = "windows")]
@@ -22,6 +23,7 @@ pub struct LaunchState {
 pub fn begin_launch(game_index: usize, game: &Game, steam_paths: &[PathBuf]) -> Option<LaunchState> {
     let target_path = game.path.clone();
     let game_name = game.name.clone();
+    let launch_app_id = game.app_id;
     #[cfg(target_os = "windows")]
     let baseline_pids = collect_process_ids();
     #[cfg(target_os = "windows")]
@@ -69,6 +71,7 @@ pub fn begin_launch(game_index: usize, game: &Game, steam_paths: &[PathBuf]) -> 
         game_index,
         game_name,
         started_at: Instant::now(),
+        launch_app_id,
         #[cfg(target_os = "windows")]
         baseline_pids,
         #[cfg(target_os = "windows")]
@@ -96,6 +99,7 @@ pub fn tick_launch_progress(state: &mut LaunchState) -> bool {
             state.target_path.as_deref(),
             &state.game_name,
         ) {
+            maybe_align_window_top_left(hwnd, state.launch_app_id);
             bring_window_to_foreground(hwnd);
             return true;
         }
@@ -124,8 +128,11 @@ use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
 #[cfg(target_os = "windows")]
 use winapi::um::winuser::{
     EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
-    SetForegroundWindow, ShowWindow, SW_RESTORE,
+    SetForegroundWindow, SetWindowPos, ShowWindow, SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE,
 };
+
+#[cfg(target_os = "windows")]
+const ALIGN_TOP_LEFT_APP_ID: u32 = 601150;
 
 #[cfg(target_os = "windows")]
 fn normalize_windows_path(path: &Path) -> String {
@@ -236,6 +243,17 @@ fn bring_window_to_foreground(hwnd: HWND) {
     unsafe {
         ShowWindow(hwnd, SW_RESTORE);
         SetForegroundWindow(hwnd);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn maybe_align_window_top_left(hwnd: HWND, app_id: Option<u32>) {
+    if app_id != Some(ALIGN_TOP_LEFT_APP_ID) {
+        return;
+    }
+
+    unsafe {
+        SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
     }
 }
 
