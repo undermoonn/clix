@@ -169,6 +169,10 @@ impl eframe::App for LauncherApp {
         let now = Instant::now();
         let focus = self.runtime.update_focus(has_focus, now);
 
+        if crate::xbox_home::take_wake_request() {
+            self.page.trigger_wake_animation();
+        }
+
         if has_focus {
             ctx.request_repaint();
         }
@@ -300,6 +304,7 @@ impl eframe::App for LauncherApp {
                     self.artwork.fade(),
                     self.page.cover_nav_dir(),
                     self.page.achievement_panel_anim(),
+                    self.page.wake_anim(),
                 );
 
                 ui::draw_game_list(
@@ -316,6 +321,7 @@ impl eframe::App for LauncherApp {
                     self.page.show_achievement_panel(),
                     selected_achievement_summary,
                     selected_achievement_reveal,
+                    self.page.wake_anim(),
                 );
 
                 if self.page.achievement_panel_anim() > 0.001 {
@@ -338,6 +344,7 @@ impl eframe::App for LauncherApp {
                             self.page.select_anim(),
                             self.page.scroll_offset(),
                             self.page.achievement_scroll_offset(),
+                            self.page.wake_anim(),
                             game_icon,
                             self.achievements.icon_cache(),
                             self.achievements.icon_reveal(),
@@ -357,6 +364,7 @@ impl eframe::App for LauncherApp {
                         selected_running,
                         self.runtime.quit_hold_progress(),
                         self.runtime.force_close_hold_progress(),
+                        self.page.wake_anim(),
                     );
                 }
             });

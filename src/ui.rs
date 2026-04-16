@@ -43,6 +43,21 @@ fn lerp_f32(start: f32, end: f32, t: f32) -> f32 {
     start + (end - start) * t
 }
 
+fn scale_alpha(alpha: u8, scale: f32) -> u8 {
+    ((alpha as f32) * scale.clamp(0.0, 1.0))
+        .round()
+        .clamp(0.0, 255.0) as u8
+}
+
+fn color_with_scaled_alpha(color: egui::Color32, scale: f32) -> egui::Color32 {
+    egui::Color32::from_rgba_unmultiplied(
+        color.r(),
+        color.g(),
+        color.b(),
+        scale_alpha(color.a(), scale),
+    )
+}
+
 fn launch_press_t(elapsed_seconds: f32) -> f32 {
     let press_in_duration = 0.06;
     let release_duration = 0.1;
@@ -260,8 +275,14 @@ fn draw_selected_game_header(
     content: &SelectedGameHeaderContent,
     game_name: &str,
     title_pos: egui::Pos2,
+    alpha_scale: f32,
 ) {
-    let outline_color = egui::Color32::from_rgba_unmultiplied(0, 0, 0, 200);
+    let outline_alpha = scale_alpha(200, alpha_scale);
+    if outline_alpha == 0 {
+        return;
+    }
+
+    let outline_color = egui::Color32::from_rgba_unmultiplied(0, 0, 0, outline_alpha);
     let outline_galley = painter.layout_no_wrap(
         game_name.to_owned(),
         content.title_font.clone(),
@@ -362,6 +383,7 @@ pub fn draw_background(
     cover_fade: f32,
     cover_nav_dir: f32,
     achievement_panel_anim: f32,
+    wake_anim: f32,
 ) {
     let screen = ctx.screen_rect();
     let bg_painter = ctx.layer_painter(egui::LayerId::background());
@@ -369,7 +391,12 @@ pub fn draw_background(
     let base_alpha: f32 = 60.0;
     let hero_ratio = 1240.0 / 3840.0;
     let page_scroll_t = smoothstep01(achievement_panel_anim);
+    let wake_t = smoothstep01(wake_anim);
+    let wake_inv = 1.0 - wake_t;
     let page_offset_y = -screen.height() * page_scroll_t;
+    let wake_expand = egui::vec2(screen.width() * 0.02 * wake_inv, 22.0 * wake_inv);
+    let wake_shift_y = -16.0 * wake_inv;
+    let wake_alpha_scale = lerp_f32(0.72, 1.0, wake_t);
 
     // Solid dark background
     bg_painter.rect_filled(screen, egui::Rounding::ZERO, egui::Color32::from_rgb(18, 18, 18));
@@ -383,6 +410,8 @@ pub fn draw_background(
             egui::pos2(screen.min.x + dx, screen.min.y + page_offset_y),
             egui::vec2(screen.width(), img_h),
         )
+        .expand2(wake_expand)
+        .translate(egui::vec2(0.0, wake_shift_y))
     };
 
     let fallback_hero_rect = |dx: f32| -> egui::Rect {
@@ -390,6 +419,8 @@ pub fn draw_background(
             egui::pos2(screen.min.x + dx, screen.min.y + page_offset_y),
             egui::vec2(screen.width(), screen.width() * hero_ratio),
         )
+        .expand2(wake_expand)
+        .translate(egui::vec2(0.0, wake_shift_y))
     };
 
     let draw_logo = |texture: &egui::TextureHandle,
@@ -427,7 +458,7 @@ pub fn draw_background(
     if cover_fade < 1.0 {
         if let Some((_id, tex)) = cover_prev {
             let hero_rect = top_rect(tex, 0.0);
-            let alpha = (base_alpha * (1.0 - cover_fade)) as u8;
+            let alpha = (base_alpha * (1.0 - cover_fade) * wake_alpha_scale) as u8;
             let tint = egui::Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
             bg_painter.image(tex.id(), hero_rect, uv, tint);
         }
@@ -437,7 +468,7 @@ pub fn draw_background(
     let current_dx = cover_nav_dir * slide_distance * (1.0 - ease_t);
     if let Some((_id, tex)) = cover {
         let hero_rect = top_rect(tex, current_dx);
-        let alpha = (base_alpha * cover_fade) as u8;
+        let alpha = (base_alpha * cover_fade * wake_alpha_scale) as u8;
         let tint = egui::Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
         bg_painter.image(tex.id(), hero_rect, uv, tint);
     }
@@ -461,6 +492,15 @@ pub fn draw_background(
         };
         draw_logo(tex, hero_rect, cover_fade);
     }
+
+    let wake_overlay_alpha = scale_alpha(120, wake_inv);
+    if wake_overlay_alpha > 0 {
+        bg_painter.rect_filled(
+            screen,
+            egui::Rounding::ZERO,
+            egui::Color32::from_rgba_unmultiplied(8, 10, 14, wake_overlay_alpha),
+        );
+    }
 }
 
 pub fn draw_game_list(
@@ -477,6 +517,7 @@ pub fn draw_game_list(
     _achievement_panel_active: bool,
     achievement_summary_for_selected: Option<&crate::steam::AchievementSummary>,
     achievement_summary_reveal_for_selected: f32,
+    wake_anim: f32,
 ) {
     let base_icon_size: f32 = 122.0;
     let selected_icon_size: f32 = 256.0;
@@ -487,6 +528,8 @@ pub fn draw_game_list(
     let padded_rect = panel_rect.shrink(padding);
     let page_scroll_t = smoothstep01(achievement_panel_anim);
     let page_offset_y = -panel_rect.height() * page_scroll_t;
+    let wake_t = smoothstep01(wake_anim);
+    let wake_offset_y = lerp_f32(42.0, 0.0, wake_t);
 
     let selected_size = 30.0;
     let base_size = 18.0;
@@ -494,7 +537,7 @@ pub fn draw_game_list(
 
     let hero_ratio = 1240.0 / 3840.0;
     let img_bottom = panel_rect.min.y + panel_rect.width() * hero_ratio;
-    let content_top = img_bottom + 32.0 + page_offset_y;
+    let content_top = img_bottom + 32.0 + page_offset_y + wake_offset_y;
     let anchor_x = padded_rect.min.x + 24.0;
     let painter = ui.painter().with_clip_rect(panel_rect);
 
@@ -543,9 +586,15 @@ pub fn draw_game_list(
 
         let text_alpha = if is_selected { 255 } else { 220 };
         let text_color = if is_selected {
-            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 255)
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 255),
+                wake_t,
+            )
         } else {
-            egui::Color32::from_rgba_unmultiplied(200, 200, 210, text_alpha)
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(200, 200, 210, text_alpha),
+                wake_t,
+            )
         };
 
         let icon_slot_size = base_icon_size + selected_icon_extra * icon_focus_t;
@@ -569,8 +618,7 @@ pub fn draw_game_list(
 
         if let Some(app_id) = g.app_id {
             if let Some(icon_tex) = game_icons.get(&app_id) {
-                let icon_alpha = 255;
-                let icon_tint = egui::Color32::from_rgba_unmultiplied(255, 255, 255, icon_alpha);
+                let icon_tint = color_with_scaled_alpha(egui::Color32::WHITE, wake_t);
                 let icon_rect = egui::Rect::from_min_size(
                     egui::pos2(
                         item_left + (icon_slot_size - icon_size) * 0.5,
@@ -580,7 +628,7 @@ pub fn draw_game_list(
                 );
                 draw_game_icon(&painter, icon_tex, icon_rect, icon_tint);
 
-                if show_running_status {
+                if show_running_status && wake_t > 0.12 {
                     draw_running_status_dot(&painter, icon_rect);
                 }
             }
@@ -606,6 +654,7 @@ pub fn draw_game_list(
                 &header,
                 &g.name,
                 normal_title_pos,
+                wake_t,
             );
 
         }
@@ -708,6 +757,7 @@ pub fn draw_achievement_page(
     game_select_anim: f32,
     _game_scroll_offset: f32,
     scroll_offset: f32,
+    wake_anim: f32,
     _game_icon: Option<&egui::TextureHandle>,
     achievement_icon_cache: &std::collections::HashMap<String, egui::TextureHandle>,
     achievement_icon_reveal: &std::collections::HashMap<String, f32>,
@@ -718,7 +768,9 @@ pub fn draw_achievement_page(
     let padded_rect = panel_rect.shrink(padding);
     let painter = ui.painter().with_clip_rect(panel_rect);
     let panel_t = smoothstep01(achievement_panel_anim);
-    let page_enter_offset_y = lerp_f32(panel_rect.height() + 28.0, 0.0, panel_t);
+    let wake_t = smoothstep01(wake_anim);
+    let page_enter_offset_y = lerp_f32(panel_rect.height() + 28.0, 0.0, panel_t)
+        + lerp_f32(30.0, 0.0, wake_t);
     let content_top = padded_rect.min.y + 18.0;
     let title_font_size = 18.0 + (30.0 - 18.0) * smoothstep01(game_select_anim);
     let title_font = egui::FontId::new(title_font_size, egui::FontFamily::Name("Bold".into()));
@@ -751,14 +803,14 @@ pub fn draw_achievement_page(
     let content_offset = egui::vec2(0.0, page_enter_offset_y);
     let list_rect = list_base_rect.translate(content_offset);
     let title_pos = title_base_pos + content_offset;
-    draw_selected_game_header(&painter, &header, &game.name, title_pos);
+    draw_selected_game_header(&painter, &header, &game.name, title_pos, wake_t);
     if let Some(tag_text) = dlss_tag_text(game) {
         let _ = draw_title_tag(
             &painter,
             &tag_text,
             title_pos,
             header.title_galley.size(),
-            panel_t,
+            panel_t * wake_t,
             0.0,
             egui::Color32::from_rgb(228, 228, 220),
             egui::Color32::from_rgb(18, 18, 18),
@@ -768,7 +820,7 @@ pub fn draw_achievement_page(
     painter.rect_filled(
         list_rect,
         egui::Rounding::same(8.0),
-        egui::Color32::from_rgb(14, 14, 14),
+        color_with_scaled_alpha(egui::Color32::from_rgb(14, 14, 14), wake_t),
     );
 
     let Some(summary) = summary else {
@@ -818,7 +870,11 @@ pub fn draw_achievement_page(
         } else {
             egui::Color32::from_rgb(24, 24, 24)
         };
-        list_painter.rect_filled(row_rect, egui::Rounding::same(6.0), bg_color);
+        list_painter.rect_filled(
+            row_rect,
+            egui::Rounding::same(6.0),
+            color_with_scaled_alpha(bg_color, wake_t),
+        );
 
         let icon_column_width = if is_selected { 52.0 } else { 44.0 };
         let text_x = row_rect.min.x + 16.0 + icon_column_width + 16.0;
@@ -827,7 +883,10 @@ pub fn draw_achievement_page(
             painter.layout_no_wrap(
                 text.clone(),
                 egui::FontId::proportional(14.0),
-                egui::Color32::from_rgba_unmultiplied(186, 190, 198, 220),
+                color_with_scaled_alpha(
+                    egui::Color32::from_rgba_unmultiplied(186, 190, 198, 220),
+                    wake_t,
+                ),
             )
         });
         let unlock_time_text = format_achievement_status(item.unlocked, item.unlock_time);
@@ -835,7 +894,10 @@ pub fn draw_achievement_page(
             painter.layout_no_wrap(
                 text.clone(),
                 egui::FontId::proportional(12.0),
-                egui::Color32::from_rgba_unmultiplied(150, 154, 162, 220),
+                color_with_scaled_alpha(
+                    egui::Color32::from_rgba_unmultiplied(150, 154, 162, 220),
+                    wake_t,
+                ),
             )
         });
         let right_galley_width = unlock_time_galley
@@ -853,7 +915,15 @@ pub fn draw_achievement_page(
             } else {
                 egui::FontId::proportional(17.0)
             },
-            egui::Color32::from_rgba_unmultiplied(222, 224, 228, if is_selected { 255 } else { 228 }),
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(
+                    222,
+                    224,
+                    228,
+                    if is_selected { 255 } else { 228 },
+                ),
+                wake_t,
+            ),
             text_width,
         );
         let description_text = item
@@ -866,7 +936,10 @@ pub fn draw_achievement_page(
             ui,
             description_text.to_string(),
             egui::FontId::proportional(13.0),
-            egui::Color32::from_rgba_unmultiplied(148, 152, 160, 220),
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(148, 152, 160, 220),
+                wake_t,
+            ),
             text_width,
         );
         let text_block_height = title_galley.size().y + 6.0 + description_galley.size().y;
@@ -890,14 +963,24 @@ pub fn draw_achievement_page(
             let reveal = icon_key
                 .and_then(|key| achievement_icon_reveal.get(key).copied())
                 .unwrap_or(1.0);
-            draw_achievement_icon(&list_painter, tex, icon_rect, egui::Color32::WHITE, reveal);
+            draw_achievement_icon(
+                &list_painter,
+                tex,
+                icon_rect,
+                color_with_scaled_alpha(egui::Color32::WHITE, wake_t),
+                reveal,
+            );
         } else {
             let fill = match item.unlocked {
                 Some(true) => egui::Color32::from_rgb(86, 172, 132),
                 Some(false) => egui::Color32::from_rgb(108, 112, 122),
                 None => egui::Color32::from_rgb(82, 88, 102),
             };
-            list_painter.rect_filled(icon_rect, egui::Rounding::same(4.0), fill);
+            list_painter.rect_filled(
+                icon_rect,
+                egui::Rounding::same(4.0),
+                color_with_scaled_alpha(fill, wake_t),
+            );
         }
 
         let text_top = content_top;
@@ -938,16 +1021,21 @@ pub fn draw_hint_bar(
     game_running: bool,
     quit_hold_progress: f32,
     force_close_hold_progress: f32,
+    wake_anim: f32,
 ) {
     let panel_rect = ui.available_rect_before_wrap();
     let padding = 50.0;
     let padded_rect = panel_rect.shrink(padding);
+    let wake_t = smoothstep01(wake_anim);
     let hint_font = egui::FontId::proportional(20.0);
-    let hint_color = egui::Color32::from_rgba_unmultiplied(200, 200, 210, 160);
+    let hint_color = color_with_scaled_alpha(
+        egui::Color32::from_rgba_unmultiplied(200, 200, 210, 160),
+        wake_t,
+    );
     let icon_h = 32.0_f32;
     let action_icon_h = icon_h + 8.0;
     let row_h = action_icon_h;
-    let hint_y = padded_rect.max.y - 10.0;
+    let hint_y = padded_rect.max.y - 10.0 + lerp_f32(24.0, 0.0, wake_t);
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
 
     let painter = ui.painter();
@@ -959,7 +1047,7 @@ pub fn draw_hint_bar(
                 egui::vec2(size, size),
             ),
             uv,
-            egui::Color32::WHITE,
+            color_with_scaled_alpha(egui::Color32::WHITE, wake_t),
         );
     };
     let draw_progress_ring = |painter: &egui::Painter,
@@ -971,8 +1059,17 @@ pub fn draw_hint_bar(
         }
 
         let clamped = progress.clamp(0.0, 1.0);
-        let bg_stroke = egui::Stroke::new(2.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 40));
-        let fg_stroke = egui::Stroke::new(2.5, egui::Color32::from_rgb(255, 255, 255));
+        let bg_stroke = egui::Stroke::new(
+            2.0,
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 40),
+                wake_t,
+            ),
+        );
+        let fg_stroke = egui::Stroke::new(
+            2.5,
+            color_with_scaled_alpha(egui::Color32::from_rgb(255, 255, 255), wake_t),
+        );
         painter.circle_stroke(center, radius, bg_stroke);
 
         let start_angle = -std::f32::consts::FRAC_PI_2;

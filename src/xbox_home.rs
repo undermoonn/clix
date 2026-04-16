@@ -11,6 +11,8 @@ use std::ptr::{null, null_mut};
 #[cfg(target_os = "windows")]
 use std::slice;
 #[cfg(target_os = "windows")]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_os = "windows")]
 use std::sync::Once;
 
 #[cfg(target_os = "windows")]
@@ -46,6 +48,8 @@ const XBOX_VENDOR_ID_TOKEN: &str = "VID_045E";
 const XBOX_PRODUCT_ID_TOKEN: &str = "PID_0B12";
 #[cfg(target_os = "windows")]
 const GUIDE_REPORT_BIT: u8 = 0x04;
+#[cfg(target_os = "windows")]
+static HOME_WAKE_PENDING: AtomicBool = AtomicBool::new(false);
 
 #[cfg(target_os = "windows")]
 pub fn start(ctx: egui::Context) {
@@ -60,6 +64,16 @@ pub fn start(ctx: egui::Context) {
 
 #[cfg(not(target_os = "windows"))]
 pub fn start(_ctx: eframe::egui::Context) {}
+
+#[cfg(target_os = "windows")]
+pub fn take_wake_request() -> bool {
+    HOME_WAKE_PENDING.swap(false, Ordering::AcqRel)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn take_wake_request() -> bool {
+    false
+}
 
 #[cfg(target_os = "windows")]
 struct XboxHomeWatcher {
@@ -227,7 +241,9 @@ unsafe fn process_raw_input(watcher: &mut XboxHomeWatcher, hrawinput: HRAWINPUT)
         let pressed = guide_pressed(report);
         let was_pressed = watcher.guide_pressed.insert(device_key, pressed).unwrap_or(false);
         if pressed && !was_pressed {
-            let _ = crate::launch::focus_current_app_window();
+            if crate::launch::focus_current_app_window() {
+                HOME_WAKE_PENDING.store(true, Ordering::Release);
+            }
             watcher.ctx.request_repaint();
         }
     }

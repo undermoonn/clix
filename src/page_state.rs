@@ -15,6 +15,7 @@ pub struct PageState {
     cover_nav_dir: f32,
     select_anim: f32,
     select_anim_target: Option<usize>,
+    wake_anim: f32,
     scroll_offset: f32,
     show_achievement_panel: bool,
     achievement_panel_anim: f32,
@@ -31,6 +32,7 @@ impl PageState {
             cover_nav_dir: 0.0,
             select_anim: 0.0,
             select_anim_target: None,
+            wake_anim: 1.0,
             scroll_offset: 0.0,
             show_achievement_panel: false,
             achievement_panel_anim: 0.0,
@@ -61,6 +63,10 @@ impl PageState {
         self.scroll_offset
     }
 
+    pub fn wake_anim(&self) -> f32 {
+        self.wake_anim
+    }
+
     pub fn achievement_panel_anim(&self) -> f32 {
         self.achievement_panel_anim
     }
@@ -84,6 +90,10 @@ impl PageState {
         self.select_anim = 1.0;
         self.cover_nav_dir = 0.0;
         self.reset_achievement_selection();
+    }
+
+    pub fn trigger_wake_animation(&mut self) {
+        self.wake_anim = 0.0;
     }
 
     pub fn handle_action(
@@ -160,6 +170,11 @@ impl PageState {
     }
 
     pub fn tick_animations(&mut self, ctx: &egui::Context, dt: f32) {
+        self.wake_anim = 1.0 - (1.0 - self.wake_anim) * (-8.0 * dt).exp();
+        if self.wake_anim < 0.999 {
+            ctx.request_repaint();
+        }
+
         if self.select_anim_target != Some(self.selected) {
             self.select_anim_target = Some(self.selected);
             self.select_anim = 0.0;

@@ -308,7 +308,8 @@ use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE, PROCESS_VM
 #[cfg(target_os = "windows")]
 use winapi::um::winuser::{
     EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
-    GetWindowLongW, PostMessageW, SetForegroundWindow, SetLayeredWindowAttributes,
+    GetForegroundWindow, GetWindowLongW, PostMessageW, SetForegroundWindow,
+    SetLayeredWindowAttributes,
     SetWindowLongW, SetWindowPos, ShowWindow, GWL_EXSTYLE, LWA_ALPHA, SWP_NOSIZE,
     SWP_NOZORDER, SW_RESTORE, WM_CLOSE, WS_EX_LAYERED,
 };
@@ -560,8 +561,9 @@ fn bring_current_app_to_foreground() {
 #[cfg(target_os = "windows")]
 pub fn focus_current_app_window() -> bool {
     if let Some(hwnd) = find_current_app_window() {
+        let was_background = unsafe { GetForegroundWindow() != hwnd };
         bring_window_to_foreground(hwnd);
-        true
+        was_background
     } else {
         false
     }
