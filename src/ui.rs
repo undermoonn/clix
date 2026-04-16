@@ -1,5 +1,6 @@
 use eframe::egui;
 
+use crate::i18n::AppLanguage;
 use crate::input::ControllerBrand;
 
 fn format_achievement_status(unlocked: Option<bool>, unlock_time: Option<u64>) -> Option<String> {
@@ -310,6 +311,7 @@ pub fn draw_background(
 
 pub fn draw_game_list(
     ui: &mut egui::Ui,
+    language: AppLanguage,
     games: &[crate::steam::Game],
     selected: usize,
     select_anim: f32,
@@ -397,16 +399,7 @@ pub fn draw_game_list(
         };
 
         // Playtime and achievement progress
-        let playtime_str = if g.playtime_minutes >= 60 {
-            let hours = g.playtime_minutes as f32 / 60.0;
-            let s = format!("{:.1}", hours);
-            let s = s.trim_end_matches(".0");
-            format!("{} hrs", s)
-        } else if g.playtime_minutes > 0 {
-            format!("{} min", g.playtime_minutes)
-        } else {
-            String::new()
-        };
+        let playtime_str = language.format_playtime(g.playtime_minutes);
 
         let has_playtime_meta = !playtime_str.is_empty();
         let mut achievement_meta_text: Option<String> = None;
@@ -414,11 +407,7 @@ pub fn draw_game_list(
         if is_selected {
             if let Some(summary) = achievement_summary_for_selected {
                 if summary.total > 0 {
-                    let ach_text = if let Some(u) = summary.unlocked {
-                        format!("{}/{} achievements", u, summary.total)
-                    } else {
-                        format!("--/{} achievements", summary.total)
-                    };
+                    let ach_text = language.format_achievement_progress(summary.unlocked, summary.total);
                     achievement_meta_text = Some(ach_text);
                     has_achievement_meta = true;
                 }
@@ -588,9 +577,13 @@ fn draw_centered_achievement_loading(ui: &egui::Ui, rect: egui::Rect) {
     ui.ctx().request_repaint();
 }
 
-fn draw_centered_achievement_empty(painter: &egui::Painter, rect: egui::Rect) {
+fn draw_centered_achievement_empty(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    language: AppLanguage,
+) {
     let empty_galley = painter.layout_no_wrap(
-        "No Achievement".to_string(),
+        language.achievement_empty_text().to_string(),
         egui::FontId::proportional(18.0),
         egui::Color32::from_rgba_unmultiplied(255, 255, 255, 10),
     );
@@ -605,6 +598,7 @@ fn draw_centered_achievement_empty(painter: &egui::Painter, rect: egui::Rect) {
 
 pub fn draw_achievement_page(
     ui: &mut egui::Ui,
+    language: AppLanguage,
     game: &crate::steam::Game,
     summary: Option<&crate::steam::AchievementSummary>,
     is_loading: bool,
@@ -632,27 +626,14 @@ pub fn draw_achievement_page(
     let title_font_size = 18.0 + (30.0 - 18.0) * smoothstep01(game_select_anim);
     let title_font = egui::FontId::new(title_font_size, egui::FontFamily::Name("Bold".into()));
     let title_galley = painter.layout_no_wrap(game.name.clone(), title_font.clone(), egui::Color32::WHITE);
-    let playtime_str = if game.playtime_minutes >= 60 {
-        let hours = game.playtime_minutes as f32 / 60.0;
-        let s = format!("{:.1}", hours);
-        let s = s.trim_end_matches(".0");
-        format!("{} hrs", s)
-    } else if game.playtime_minutes > 0 {
-        format!("{} min", game.playtime_minutes)
-    } else {
-        String::new()
-    };
+    let playtime_str = language.format_playtime(game.playtime_minutes);
     let mut meta_parts: Vec<String> = Vec::new();
     if !playtime_str.is_empty() {
         meta_parts.push(playtime_str);
     }
     if let Some(summary) = summary {
         if summary.total > 0 {
-            let ach_text = if let Some(unlocked) = summary.unlocked {
-                format!("{}/{} achievements", unlocked, summary.total)
-            } else {
-                format!("--/{} achievements", summary.total)
-            };
+            let ach_text = language.format_achievement_progress(summary.unlocked, summary.total);
             meta_parts.push(ach_text);
         }
     }
@@ -732,7 +713,7 @@ pub fn draw_achievement_page(
         if is_loading && !has_no_data {
             draw_centered_achievement_loading(ui, list_rect);
         } else {
-            draw_centered_achievement_empty(&painter, list_rect);
+            draw_centered_achievement_empty(&painter, list_rect, language);
         }
         return visible_icon_urls;
     };
@@ -741,7 +722,7 @@ pub fn draw_achievement_page(
         if is_loading && !has_no_data {
             draw_centered_achievement_loading(ui, list_rect);
         } else {
-            draw_centered_achievement_empty(&painter, list_rect);
+            draw_centered_achievement_empty(&painter, list_rect, language);
         }
         return visible_icon_urls;
     }
@@ -818,7 +799,7 @@ pub fn draw_achievement_page(
             .as_deref()
             .map(str::trim)
             .filter(|text| !text.is_empty())
-            .unwrap_or("No description");
+            .unwrap_or(language.no_description_text());
         let description_galley = build_wrapped_galley(
             ui,
             description_text.to_string(),
@@ -888,6 +869,7 @@ pub fn draw_achievement_page(
 
 pub fn draw_hint_bar(
     ui: &mut egui::Ui,
+    language: AppLanguage,
     icons: &HintIcons,
     achievement_panel_active: bool,
     can_open_achievement_panel: bool,
@@ -943,14 +925,14 @@ pub fn draw_hint_bar(
         painter.add(egui::Shape::line(points, fg_stroke));
     };
 
-    let g_back = painter.layout_no_wrap("Back".to_string(), hint_font.clone(), hint_color);
-    let g_quit = painter.layout_no_wrap("Hold Quit".to_string(), hint_font.clone(), hint_color);
+    let g_back = painter.layout_no_wrap(language.back_text().to_string(), hint_font.clone(), hint_color);
+    let g_quit = painter.layout_no_wrap(language.hold_quit_text().to_string(), hint_font.clone(), hint_color);
     let b_label_reserve = g_back.size().x.max(g_quit.size().x);
     let b_icon_x = padded_rect.max.x - b_label_reserve - 6.0 - action_icon_h;
     let b_label_x = b_icon_x + action_icon_h + 6.0;
 
     if achievement_panel_active {
-        let g_scroll = painter.layout_no_wrap("Scroll".to_string(), hint_font.clone(), hint_color);
+        let g_scroll = painter.layout_no_wrap(language.scroll_text().to_string(), hint_font.clone(), hint_color);
         let scroll_group_w = icon_h + 6.0 + g_scroll.size().x;
         let hx = b_icon_x - 20.0 - scroll_group_w;
 
@@ -967,9 +949,9 @@ pub fn draw_hint_bar(
         return;
     }
 
-    let g_launch = painter.layout_no_wrap("Start".to_string(), hint_font.clone(), hint_color);
+    let g_launch = painter.layout_no_wrap(language.start_text().to_string(), hint_font.clone(), hint_color);
     let g_achievements = painter.layout_no_wrap(
-        "Achievements".to_string(),
+        language.achievements_text().to_string(),
         hint_font.clone(),
         hint_color,
     );

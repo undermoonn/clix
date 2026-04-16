@@ -4,6 +4,7 @@ mod artwork;
 mod cover;
 mod dlss;
 mod game_icons;
+mod i18n;
 mod input;
 mod launch;
 mod runtime_state;
@@ -62,16 +63,17 @@ fn configure_fonts(ctx: &egui::Context) {
 fn configure_fonts(_ctx: &egui::Context) {}
 
 fn main() {
+    let language = i18n::AppLanguage::detect_system();
     let options = eframe::NativeOptions {
         fullscreen: true,
         ..Default::default()
     };
     let _ = eframe::run_native(
-        "Clix Launcher Prototype",
+        language.window_title(),
         options,
-        Box::new(|cc| {
+        Box::new(move |cc| {
             configure_fonts(&cc.egui_ctx);
-            Box::new(app::LauncherApp::new())
+            Box::new(app::LauncherApp::new(language))
         }),
     );
 }

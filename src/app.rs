@@ -4,6 +4,7 @@ use std::time::Instant;
 use crate::achievements::AchievementState;
 use crate::artwork::ArtworkState;
 use crate::game_icons::GameIconState;
+use crate::i18n::AppLanguage;
 use crate::input::{ControllerAction, ControllerBrand, InputController};
 use crate::launch::{self, LaunchState};
 use crate::page_state::PageState;
@@ -13,6 +14,7 @@ use crate::steam::{self, Game};
 use crate::ui;
 
 pub struct LauncherApp {
+    language: AppLanguage,
     games: Vec<Game>,
     input: InputController,
     steam_paths: Vec<std::path::PathBuf>,
@@ -27,11 +29,12 @@ pub struct LauncherApp {
 }
 
 impl LauncherApp {
-    pub fn new() -> Self {
+    pub fn new(language: AppLanguage) -> Self {
         let app_settings = settings::load_settings();
         let steam_paths = steam::find_steam_paths();
         let games = steam::scan_games_with_paths(&steam_paths);
         LauncherApp {
+            language,
             games,
             input: InputController::new(app_settings.controller_brand),
             steam_paths,
@@ -152,6 +155,7 @@ impl eframe::App for LauncherApp {
                 self.achievements.refresh_for_selected(
                     self.games.get(self.page.selected()),
                     &self.steam_paths,
+                    self.language,
                     ctx,
                 );
             }
@@ -177,7 +181,7 @@ impl eframe::App for LauncherApp {
             .tick_selection(self.page.selected(), selected_app_id, &self.steam_paths, ctx)
         {
             self.achievements
-                .refresh_for_selected(selected_game, &self.steam_paths, ctx);
+                .refresh_for_selected(selected_game, &self.steam_paths, self.language, ctx);
         }
         self.artwork.drain_pending(selected_app_id, ctx);
 
@@ -223,6 +227,7 @@ impl eframe::App for LauncherApp {
                             .and_then(|app_id| self.game_icons.get(app_id));
                         ui::draw_achievement_page(
                             ui,
+                            self.language,
                             game,
                             selected_achievement_summary,
                             achievement_loading,
@@ -245,6 +250,7 @@ impl eframe::App for LauncherApp {
                 } else {
                     ui::draw_game_list(
                         ui,
+                        self.language,
                         &self.games,
                         self.page.selected(),
                         self.page.select_anim(),
@@ -261,6 +267,7 @@ impl eframe::App for LauncherApp {
                 if let Some(icons) = &self.hint_icons {
                     ui::draw_hint_bar(
                         ui,
+                        self.language,
                         icons,
                         self.page.show_achievement_panel(),
                         can_open_achievement_panel,

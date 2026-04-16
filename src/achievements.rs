@@ -3,9 +3,11 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use crate::cover;
+use crate::i18n::AppLanguage;
 use crate::steam::{self, AchievementSummary, Game};
 
 pub struct AchievementState {
+    language: AppLanguage,
     cache: HashMap<u32, AchievementSummary>,
     pending: Arc<Mutex<Vec<(u32, Option<AchievementSummary>)>>>,
     loading: HashSet<u32>,
@@ -21,6 +23,7 @@ pub struct AchievementState {
 impl AchievementState {
     pub fn new() -> Self {
         Self {
+            language: AppLanguage::English,
             cache: HashMap::new(),
             pending: Arc::new(Mutex::new(Vec::new())),
             loading: HashSet::new(),
@@ -42,6 +45,7 @@ impl AchievementState {
         &mut self,
         selected_game: Option<&Game>,
         steam_paths: &[std::path::PathBuf],
+        language: AppLanguage,
         ctx: &egui::Context,
     ) {
         let Some(app_id) = selected_game.and_then(|game| game.app_id) else {
@@ -49,13 +53,14 @@ impl AchievementState {
             return;
         };
 
-        if self.checked_for == Some(app_id) {
+        if self.checked_for == Some(app_id) && self.language == language {
             return;
         }
 
+        self.language = language;
         self.checked_for = Some(app_id);
 
-        if let Some(summary) = steam::load_cached_achievement_summary(app_id) {
+        if let Some(summary) = steam::load_cached_achievement_summary(app_id, language) {
             self.no_data.remove(&app_id);
             self.cache.insert(app_id, summary);
             self.text_reveal.insert(app_id, 1.0);
@@ -73,7 +78,7 @@ impl AchievementState {
         let ctx_clone = ctx.clone();
 
         std::thread::spawn(move || {
-            let data = steam::load_achievement_summary(app_id, &paths);
+            let data = steam::load_achievement_summary(app_id, &paths, language);
             if let Ok(mut lock) = pending.lock() {
                 lock.push((app_id, data));
             }
@@ -91,7 +96,7 @@ impl AchievementState {
             match summary {
                 Some(summary) => {
                     let had_summary = self.cache.contains_key(&app_id);
-                    steam::store_cached_achievement_summary(app_id, &summary);
+                    steam::store_cached_achievement_summary(app_id, &summary, self.language);
                     self.no_data.remove(&app_id);
                     self.cache.insert(app_id, summary);
                     if !had_summary {

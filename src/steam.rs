@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use crate::i18n::AppLanguage;
 use serde::{Deserialize, Serialize};
 
 pub struct Game {
@@ -36,23 +37,27 @@ struct CachedAchievementSummary {
     summary: AchievementSummary,
 }
 
-fn achievement_cache_dir() -> PathBuf {
+fn achievement_cache_dir(language: AppLanguage) -> PathBuf {
     let mut dir = std::env::current_exe()
         .unwrap_or_else(|_| PathBuf::from("."))
         .parent()
         .unwrap_or_else(|| std::path::Path::new("."))
         .to_path_buf();
     dir.push("achievement_cache");
+    dir.push(language.steam_language_key());
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
 
-fn achievement_cache_path(app_id: u32) -> PathBuf {
-    achievement_cache_dir().join(format!("{}.json", app_id))
+fn achievement_cache_path(app_id: u32, language: AppLanguage) -> PathBuf {
+    achievement_cache_dir(language).join(format!("{}.json", app_id))
 }
 
-pub fn load_cached_achievement_summary(app_id: u32) -> Option<AchievementSummary> {
-    let bytes = std::fs::read(achievement_cache_path(app_id)).ok()?;
+pub fn load_cached_achievement_summary(
+    app_id: u32,
+    language: AppLanguage,
+) -> Option<AchievementSummary> {
+    let bytes = std::fs::read(achievement_cache_path(app_id, language)).ok()?;
     let cached = serde_json::from_slice::<CachedAchievementSummary>(&bytes).ok()?;
     if cached.summary.items.is_empty() {
         return None;
@@ -60,12 +65,16 @@ pub fn load_cached_achievement_summary(app_id: u32) -> Option<AchievementSummary
     Some(cached.summary)
 }
 
-pub fn store_cached_achievement_summary(app_id: u32, summary: &AchievementSummary) {
+pub fn store_cached_achievement_summary(
+    app_id: u32,
+    summary: &AchievementSummary,
+    language: AppLanguage,
+) {
     if summary.items.is_empty() {
         return;
     }
 
-    let cache_path = achievement_cache_path(app_id);
+    let cache_path = achievement_cache_path(app_id, language);
     let payload = CachedAchievementSummary {
         summary: summary.clone(),
     };
@@ -458,7 +467,11 @@ fn ach_map_unlocks(root: &HashMap<String, BvdfVal>) -> Option<HashMap<String, (b
     None
 }
 
-fn load_local_unlock_status(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<String, (bool, Option<u64>)> {
+fn load_local_unlock_status(
+    app_id: u32,
+    steam_paths: &[PathBuf],
+    language: AppLanguage,
+) -> HashMap<String, (bool, Option<u64>)> {
     let Some(account_id) = find_most_recent_steam_id(steam_paths)
         .as_deref()
         .and_then(steamid64_to_accountid) else {
@@ -486,7 +499,7 @@ fn load_local_unlock_status(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<Str
     }
 
     // Fallback: try appcache/stats/UserGameStats_<accountid>_<appid>.bin (bitmask format)
-    load_appcache_unlock_status(app_id, &account_id, steam_paths)
+    load_appcache_unlock_status(app_id, &account_id, steam_paths, language)
 }
 
 /// Parsed achievement info from the schema: api_name and optional display_name.
@@ -501,7 +514,11 @@ struct SchemaAchInfo {
 
 /// Parse the schema file to extract achievement bit-index-to-info mappings.
 /// Returns a map of section_id -> Vec<(bit_index, SchemaAchInfo)>.
-fn load_schema_achievement_bits(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<String, Vec<(u32, SchemaAchInfo)>> {
+fn load_schema_achievement_bits(
+    app_id: u32,
+    steam_paths: &[PathBuf],
+    language: AppLanguage,
+) -> HashMap<String, Vec<(u32, SchemaAchInfo)>> {
     for steam_root in steam_paths {
         let schema_path = steam_root
             .join("appcache")
@@ -514,7 +531,7 @@ fn load_schema_achievement_bits(app_id: u32, steam_paths: &[PathBuf]) -> HashMap
             let mut pos = start;
             let root = bvdf_node(&data, &mut pos);
             let mut result: HashMap<String, Vec<(u32, SchemaAchInfo)>> = HashMap::new();
-            collect_achievement_bits(&root, &mut result, 0);
+            collect_achievement_bits(&root, &mut result, 0, language);
             if !result.is_empty() {
                 return result;
             }
@@ -523,7 +540,11 @@ fn load_schema_achievement_bits(app_id: u32, steam_paths: &[PathBuf]) -> HashMap
     HashMap::new()
 }
 
-fn load_schema_achievement_metadata(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<String, SchemaAchInfo> {
+fn load_schema_achievement_metadata(
+    app_id: u32,
+    steam_paths: &[PathBuf],
+    language: AppLanguage,
+) -> HashMap<String, SchemaAchInfo> {
     for steam_root in steam_paths {
         let schema_path = steam_root
             .join("appcache")
@@ -536,7 +557,7 @@ fn load_schema_achievement_metadata(app_id: u32, steam_paths: &[PathBuf]) -> Has
             let mut pos = start;
             let root = bvdf_node(&data, &mut pos);
             let mut map: HashMap<String, SchemaAchInfo> = HashMap::new();
-            collect_schema_achievement_metadata(&root, &mut map, 0);
+            collect_schema_achievement_metadata(&root, &mut map, 0, language);
             if !map.is_empty() {
                 return map;
             }
@@ -549,6 +570,7 @@ fn collect_schema_achievement_metadata(
     node: &HashMap<String, BvdfVal>,
     out: &mut HashMap<String, SchemaAchInfo>,
     depth: u32,
+    language: AppLanguage,
 ) {
     if depth > 8 {
         return;
@@ -562,8 +584,8 @@ fn collect_schema_achievement_metadata(
                 .and_then(|(_, v)| if let BvdfVal::Str(s) = v { Some(s.clone()) } else { None });
 
             if let Some(api_name) = api_name {
-                let display_name = extract_display_name(inner);
-                let description = extract_description(inner);
+                let display_name = extract_display_name(inner, language);
+                let description = extract_description(inner, language);
                 let (icon_url, icon_gray_url) = extract_icon_urls(inner);
                 if display_name.is_some() || description.is_some() || icon_url.is_some() || icon_gray_url.is_some() {
                     let e = out.entry(api_name.clone()).or_insert_with(|| SchemaAchInfo {
@@ -588,7 +610,7 @@ fn collect_schema_achievement_metadata(
                 }
             }
 
-            collect_schema_achievement_metadata(inner, out, depth + 1);
+            collect_schema_achievement_metadata(inner, out, depth + 1, language);
         }
     }
 }
@@ -597,6 +619,7 @@ fn collect_achievement_bits(
     node: &HashMap<String, BvdfVal>,
     result: &mut HashMap<String, Vec<(u32, SchemaAchInfo)>>,
     depth: u32,
+    language: AppLanguage,
 ) {
     if depth > 6 { return; }
     for (key, val) in node {
@@ -614,8 +637,8 @@ fn collect_achievement_bits(
                             .map(|(_, v)| v)
                         {
                             if !api_name.is_empty() {
-                                let display_name = extract_display_name(fields);
-                                let description = extract_description(fields);
+                                let display_name = extract_display_name(fields, language);
+                                let description = extract_description(fields, language);
                                 let (icon_url, icon_gray_url) = extract_icon_urls(fields);
                                 entries.push((bit_idx, SchemaAchInfo {
                                     api_name: api_name.clone(),
@@ -633,14 +656,44 @@ fn collect_achievement_bits(
                     result.insert(key.clone(), entries);
                 }
             }
-            collect_achievement_bits(inner, result, depth + 1);
+            collect_achievement_bits(inner, result, depth + 1, language);
         }
     }
 }
 
+fn extract_localized_nested_string(
+    node: &HashMap<String, BvdfVal>,
+    language: AppLanguage,
+) -> Option<String> {
+    let preferred = language.steam_language_key();
+
+    if let Some(BvdfVal::Str(value)) = node
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case(preferred))
+        .map(|(_, value)| value)
+    {
+        if !value.is_empty() {
+            return Some(value.clone());
+        }
+    }
+
+    if !preferred.eq_ignore_ascii_case("english") {
+        if let Some(BvdfVal::Str(value)) = node
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case("english"))
+            .map(|(_, value)| value)
+        {
+            if !value.is_empty() {
+                return Some(value.clone());
+            }
+        }
+    }
+
+    None
+}
+
 /// Extract a localized display name from a bit entry's "display" -> "name" node.
-/// Prefers schinese, falls back to english.
-fn extract_display_name(fields: &HashMap<String, BvdfVal>) -> Option<String> {
+fn extract_display_name(fields: &HashMap<String, BvdfVal>, language: AppLanguage) -> Option<String> {
     let display = fields.iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("display"))
         .and_then(|(_, v)| if let BvdfVal::Nested(d) = v { Some(d) } else { None })?;
@@ -648,24 +701,10 @@ fn extract_display_name(fields: &HashMap<String, BvdfVal>) -> Option<String> {
         .find(|(k, _)| k.eq_ignore_ascii_case("name"))
         .and_then(|(_, v)| if let BvdfVal::Nested(n) = v { Some(n) } else { None })?;
 
-    // Prefer schinese
-    if let Some(BvdfVal::Str(s)) = name_node.iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("schinese"))
-        .map(|(_, v)| v)
-    {
-        if !s.is_empty() { return Some(s.clone()); }
-    }
-    // Fall back to english
-    if let Some(BvdfVal::Str(s)) = name_node.iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("english"))
-        .map(|(_, v)| v)
-    {
-        if !s.is_empty() { return Some(s.clone()); }
-    }
-    None
+    extract_localized_nested_string(name_node, language)
 }
 
-fn extract_description(fields: &HashMap<String, BvdfVal>) -> Option<String> {
+fn extract_description(fields: &HashMap<String, BvdfVal>, language: AppLanguage) -> Option<String> {
     let display = fields.iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("display"))
         .and_then(|(_, v)| if let BvdfVal::Nested(d) = v { Some(d) } else { None })?;
@@ -674,23 +713,7 @@ fn extract_description(fields: &HashMap<String, BvdfVal>) -> Option<String> {
         .find(|(k, _)| k.eq_ignore_ascii_case("desc") || k.eq_ignore_ascii_case("description"))
         .and_then(|(_, v)| if let BvdfVal::Nested(n) = v { Some(n) } else { None })?;
 
-    if let Some(BvdfVal::Str(s)) = desc_node.iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("schinese"))
-        .map(|(_, v)| v)
-    {
-        if !s.is_empty() {
-            return Some(s.clone());
-        }
-    }
-    if let Some(BvdfVal::Str(s)) = desc_node.iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("english"))
-        .map(|(_, v)| v)
-    {
-        if !s.is_empty() {
-            return Some(s.clone());
-        }
-    }
-    None
+    extract_localized_nested_string(desc_node, language)
 }
 
 fn normalize_schema_icon_value(app_id: u32, raw: &str) -> Option<String> {
@@ -755,9 +778,13 @@ fn extract_icon_urls(fields: &HashMap<String, BvdfVal>) -> (Option<String>, Opti
 }
 
 /// Build a map from api_name -> display_name from the schema.
-fn load_schema_display_names(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<String, String> {
-    let bits = load_schema_achievement_bits(app_id, steam_paths);
-    let metadata = load_schema_achievement_metadata(app_id, steam_paths);
+fn load_schema_display_names(
+    app_id: u32,
+    steam_paths: &[PathBuf],
+    language: AppLanguage,
+) -> HashMap<String, String> {
+    let bits = load_schema_achievement_bits(app_id, steam_paths, language);
+    let metadata = load_schema_achievement_metadata(app_id, steam_paths, language);
     let mut map = HashMap::new();
     for (_, entries) in &bits {
         for (_, info) in entries {
@@ -774,9 +801,13 @@ fn load_schema_display_names(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<St
     map
 }
 
-fn load_schema_descriptions(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<String, String> {
-    let bits = load_schema_achievement_bits(app_id, steam_paths);
-    let metadata = load_schema_achievement_metadata(app_id, steam_paths);
+fn load_schema_descriptions(
+    app_id: u32,
+    steam_paths: &[PathBuf],
+    language: AppLanguage,
+) -> HashMap<String, String> {
+    let bits = load_schema_achievement_bits(app_id, steam_paths, language);
+    let metadata = load_schema_achievement_metadata(app_id, steam_paths, language);
     let mut map = HashMap::new();
     for (_, entries) in &bits {
         for (_, info) in entries {
@@ -793,9 +824,13 @@ fn load_schema_descriptions(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<Str
     map
 }
 
-fn load_schema_icon_urls(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<String, (String, String)> {
-    let bits = load_schema_achievement_bits(app_id, steam_paths);
-    let metadata = load_schema_achievement_metadata(app_id, steam_paths);
+fn load_schema_icon_urls(
+    app_id: u32,
+    steam_paths: &[PathBuf],
+    language: AppLanguage,
+) -> HashMap<String, (String, String)> {
+    let bits = load_schema_achievement_bits(app_id, steam_paths, language);
+    let metadata = load_schema_achievement_metadata(app_id, steam_paths, language);
     let mut map = HashMap::new();
     for (_, entries) in &bits {
         for (_, info) in entries {
@@ -853,8 +888,9 @@ fn load_appcache_unlock_status(
     app_id: u32,
     account_id: &str,
     steam_paths: &[PathBuf],
+    language: AppLanguage,
 ) -> HashMap<String, (bool, Option<u64>)> {
-    let bit_mapping = load_schema_achievement_bits(app_id, steam_paths);
+    let bit_mapping = load_schema_achievement_bits(app_id, steam_paths, language);
     if bit_mapping.is_empty() {
         return HashMap::new();
     }
@@ -923,7 +959,11 @@ fn extract_bitmask_unlocks(
     }
 }
 
-fn load_local_schema_achievement_names(app_id: u32, steam_paths: &[PathBuf]) -> Vec<String> {
+fn load_local_schema_achievement_names(
+    app_id: u32,
+    steam_paths: &[PathBuf],
+    language: AppLanguage,
+) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
     let is_language_key = |s: &str| {
         matches!(
@@ -1055,7 +1095,12 @@ fn load_local_schema_achievement_names(app_id: u32, steam_paths: &[PathBuf]) -> 
                 }
             }
 
-            if let Some(n) = zh_name.or(en_name).or(internal_name) {
+            let localized_name = match language {
+                AppLanguage::SimplifiedChinese => zh_name.or(en_name),
+                AppLanguage::English => en_name,
+            };
+
+            if let Some(n) = localized_name.or(internal_name) {
                 if !names.contains(&n) {
                     names.push(n);
                 }
@@ -1070,9 +1115,13 @@ fn load_local_schema_achievement_names(app_id: u32, steam_paths: &[PathBuf]) -> 
     names
 }
 
-fn load_local_schema_items(app_id: u32, steam_paths: &[PathBuf]) -> HashMap<String, AchievementItem> {
-    let bits = load_schema_achievement_bits(app_id, steam_paths);
-    let metadata = load_schema_achievement_metadata(app_id, steam_paths);
+fn load_local_schema_items(
+    app_id: u32,
+    steam_paths: &[PathBuf],
+    language: AppLanguage,
+) -> HashMap<String, AchievementItem> {
+    let bits = load_schema_achievement_bits(app_id, steam_paths, language);
+    let metadata = load_schema_achievement_metadata(app_id, steam_paths, language);
     let mut items_map = HashMap::new();
 
     for entries in bits.values() {
@@ -1161,12 +1210,16 @@ fn achievement_percent_sort_value(global_percent: Option<f32>) -> f32 {
     }
 }
 
-pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<AchievementSummary> {
+pub fn load_achievement_summary(
+    app_id: u32,
+    steam_paths: &[PathBuf],
+    language: AppLanguage,
+) -> Option<AchievementSummary> {
     // Phase 1 — local Binary VDF unlock state
-    let local_unlocks = load_local_unlock_status(app_id, steam_paths);
+    let local_unlocks = load_local_unlock_status(app_id, steam_paths, language);
 
     // Phase 2 — local schema defines the full achievement list and metadata.
-    let mut items_map = load_local_schema_items(app_id, steam_paths);
+    let mut items_map = load_local_schema_items(app_id, steam_paths, language);
 
     // Phase 3 — merge local unlock flags into items_map
     let mut unlocked_count: Option<u32> = None;
@@ -1192,7 +1245,7 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
 
     // Phase 4 — fallback token scan for schema variants that do not parse via Binary VDF.
     if items_map.is_empty() {
-        let names = load_local_schema_achievement_names(app_id, steam_paths);
+        let names = load_local_schema_achievement_names(app_id, steam_paths, language);
         for name in names {
             items_map.insert(
                 name.clone(),
@@ -1215,9 +1268,9 @@ pub fn load_achievement_summary(app_id: u32, steam_paths: &[PathBuf]) -> Option<
     }
 
     // Phase 5 — apply any remaining metadata from local schema helpers.
-    let display_names = load_schema_display_names(app_id, steam_paths);
-    let descriptions = load_schema_descriptions(app_id, steam_paths);
-    let schema_icons = load_schema_icon_urls(app_id, steam_paths);
+    let display_names = load_schema_display_names(app_id, steam_paths, language);
+    let descriptions = load_schema_descriptions(app_id, steam_paths, language);
+    let schema_icons = load_schema_icon_urls(app_id, steam_paths, language);
     for item in items_map.values_mut() {
         if item.display_name.is_none() {
             if let Some(dn) = display_names.get(&item.api_name) {
