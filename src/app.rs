@@ -56,6 +56,13 @@ impl LauncherApp {
         self.games.get(self.page.selected()).is_some()
     }
 
+    fn selected_launch_pending(&self) -> bool {
+        self.launch_state
+            .as_ref()
+            .map(|state| state.game_index == self.page.selected())
+            .unwrap_or(false)
+    }
+
 
     fn launch_selected(&mut self) {
         let selected = self.page.selected();
@@ -169,7 +176,7 @@ impl eframe::App for LauncherApp {
         }
         self.input.tick();
 
-        let process_input = has_focus && !focus.in_cooldown && self.launch_state.is_none();
+        let process_input = has_focus && !focus.in_cooldown;
         let input_frame = self.input.poll(process_input, self.page.show_achievement_panel());
         let actions = input_frame.actions;
         let selected_running = self.running_games.contains_key(&self.page.selected());
@@ -222,7 +229,7 @@ impl eframe::App for LauncherApp {
             if result.selected_changed {
                 self.input.pulse_selection_change();
             }
-            if result.launch_selected {
+            if result.launch_selected && !self.selected_launch_pending() {
                 self.launch_selected();
             }
             if result.close_frame {
@@ -270,6 +277,10 @@ impl eframe::App for LauncherApp {
         let achievement_loading = self.achievements.loading_for_selected(selected_game);
         let achievement_has_no_data = self.achievements.has_no_data_for_selected(selected_game);
         let running_indices: Vec<usize> = self.running_games.keys().copied().collect();
+        let launch_feedback = self
+            .launch_state
+            .as_ref()
+            .map(|state| (state.game_index, state.elapsed_seconds()));
         let mut visible_achievement_icon_urls = Vec::new();
 
         egui::CentralPanel::default()
@@ -295,7 +306,7 @@ impl eframe::App for LauncherApp {
                     self.page.achievement_panel_anim(),
                     self.page.scroll_offset(),
                     self.game_icons.textures(),
-                    self.launch_state.as_ref().map(|state| state.game_index),
+                    launch_feedback,
                     &running_indices,
                     self.page.show_achievement_panel(),
                     selected_achievement_summary,

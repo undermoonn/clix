@@ -43,47 +43,26 @@ fn lerp_f32(start: f32, end: f32, t: f32) -> f32 {
     start + (end - start) * t
 }
 
-fn launch_title_wave_offset(time_seconds: f32, char_index: usize) -> f32 {
-    let phase = time_seconds * 7.2 - char_index as f32 * 0.55;
-    -(phase.sin().max(0.0) * 11.0)
+fn launch_press_t(elapsed_seconds: f32) -> f32 {
+    let press_in_duration = 0.06;
+    let release_duration = 0.1;
+
+    if elapsed_seconds <= press_in_duration {
+        smoothstep01(elapsed_seconds / press_in_duration)
+    } else {
+        let release_t = smoothstep01((elapsed_seconds - press_in_duration) / release_duration);
+        1.0 - release_t
+    }
 }
 
-fn draw_launching_title(
-    painter: &egui::Painter,
-    text: &str,
-    pos: egui::Pos2,
-    font_id: &egui::FontId,
-    text_color: egui::Color32,
-    time_seconds: f32,
-) {
-    let outline_color = egui::Color32::from_rgba_unmultiplied(0, 0, 0, 200);
-    let d = 0.8_f32;
-    let mut cursor_x = pos.x;
+fn launch_icon_scale(elapsed_seconds: f32) -> f32 {
+    let press_t = launch_press_t(elapsed_seconds);
+    lerp_f32(1.0, 0.94, press_t)
+}
 
-    for (char_index, ch) in text.chars().enumerate() {
-        let glyph = ch.to_string();
-        let galley = painter.layout_no_wrap(glyph.clone(), font_id.clone(), text_color);
-        let outline_galley = painter.layout_no_wrap(glyph.clone(), font_id.clone(), outline_color);
-        let char_pos = egui::pos2(
-            cursor_x,
-            pos.y + launch_title_wave_offset(time_seconds, char_index),
-        );
-
-        for off in [
-            egui::vec2(d, 0.0),
-            egui::vec2(-d, 0.0),
-            egui::vec2(0.0, d),
-            egui::vec2(0.0, -d),
-            egui::vec2(d, d),
-            egui::vec2(-d, d),
-            egui::vec2(d, -d),
-            egui::vec2(-d, -d),
-        ] {
-            painter.galley(char_pos + off, outline_galley.clone());
-        }
-        painter.galley(char_pos, galley.clone());
-        cursor_x += galley.size().x;
-    }
+fn launch_icon_offset_y(elapsed_seconds: f32) -> f32 {
+    let press_t = launch_press_t(elapsed_seconds);
+    lerp_f32(0.0, 4.0, press_t)
 }
 
 fn draw_game_icon(
@@ -101,6 +80,29 @@ fn draw_game_icon(
         fill_texture_id: texture.id(),
         uv,
     }));
+}
+
+fn draw_running_status_dot(painter: &egui::Painter, icon_rect: egui::Rect) {
+    let radius = (icon_rect.width().min(icon_rect.height()) * 0.055).clamp(4.0, 7.0);
+    let inset = (radius * 0.9).clamp(6.0, 10.0);
+    let center = egui::pos2(icon_rect.max.x - inset - radius, icon_rect.min.y + inset + radius);
+    let time = painter.ctx().input(|input| input.time) as f32;
+    let pulse = smoothstep01((time * 3.1).sin() * 0.5 + 0.5);
+    let flash = pulse * pulse;
+    let fill_alpha = (110.0 + flash * 145.0).round() as u8;
+    let halo_alpha = (28.0 + flash * 140.0).round() as u8;
+    let halo_radius = radius + 2.0 + flash * 2.6;
+
+    painter.circle_filled(
+        center,
+        halo_radius,
+        egui::Color32::from_rgba_unmultiplied(12, 20, 14, halo_alpha),
+    );
+    painter.circle_filled(
+        center,
+        radius,
+        egui::Color32::from_rgba_unmultiplied(78, 201, 108, fill_alpha),
+    );
 }
 
 fn dlss_tag_text(game: &crate::steam::Game) -> Option<String> {
@@ -170,7 +172,6 @@ struct SelectedGameHeaderContent {
     playtime_galley: Option<std::sync::Arc<egui::Galley>>,
     achievement_galley: Option<std::sync::Arc<egui::Galley>>,
     title_font: egui::FontId,
-    title_color: egui::Color32,
 }
 
 impl SelectedGameHeaderContent {
@@ -251,7 +252,6 @@ fn build_selected_game_header(
         playtime_galley,
         achievement_galley,
         title_font,
-        title_color,
     }
 }
 
@@ -260,40 +260,28 @@ fn draw_selected_game_header(
     content: &SelectedGameHeaderContent,
     game_name: &str,
     title_pos: egui::Pos2,
-    launching_time_seconds: Option<f32>,
 ) {
-    if let Some(time_seconds) = launching_time_seconds {
-        draw_launching_title(
-            painter,
-            game_name,
-            title_pos,
-            &content.title_font,
-            content.title_color,
-            time_seconds,
-        );
-    } else {
-        let outline_color = egui::Color32::from_rgba_unmultiplied(0, 0, 0, 200);
-        let outline_galley = painter.layout_no_wrap(
-            game_name.to_owned(),
-            content.title_font.clone(),
-            outline_color,
-        );
-        let d = 0.8_f32;
-        for off in [
-            egui::vec2(d, 0.0),
-            egui::vec2(-d, 0.0),
-            egui::vec2(0.0, d),
-            egui::vec2(0.0, -d),
-            egui::vec2(d, d),
-            egui::vec2(-d, d),
-            egui::vec2(d, -d),
-            egui::vec2(-d, -d),
-        ] {
-            painter.galley(title_pos + off, outline_galley.clone());
-        }
-
-        painter.galley(title_pos, content.title_galley.clone());
+    let outline_color = egui::Color32::from_rgba_unmultiplied(0, 0, 0, 200);
+    let outline_galley = painter.layout_no_wrap(
+        game_name.to_owned(),
+        content.title_font.clone(),
+        outline_color,
+    );
+    let d = 0.8_f32;
+    for off in [
+        egui::vec2(d, 0.0),
+        egui::vec2(-d, 0.0),
+        egui::vec2(0.0, d),
+        egui::vec2(0.0, -d),
+        egui::vec2(d, d),
+        egui::vec2(-d, d),
+        egui::vec2(d, -d),
+        egui::vec2(-d, -d),
+    ] {
+        painter.galley(title_pos + off, outline_galley.clone());
     }
+
+    painter.galley(title_pos, content.title_galley.clone());
 
     if content.playtime_galley.is_some() || content.achievement_galley.is_some() {
         let meta_pos = egui::pos2(title_pos.x, title_pos.y + content.title_galley.size().y + 2.0);
@@ -484,7 +472,7 @@ pub fn draw_game_list(
     achievement_panel_anim: f32,
     scroll_offset: f32,
     game_icons: &std::collections::HashMap<u32, egui::TextureHandle>,
-    loading_index: Option<usize>,
+    launch_feedback: Option<(usize, f32)>,
     running_indices: &[usize],
     _achievement_panel_active: bool,
     achievement_summary_for_selected: Option<&crate::steam::AchievementSummary>,
@@ -493,7 +481,6 @@ pub fn draw_game_list(
     let base_icon_size: f32 = 122.0;
     let selected_icon_size: f32 = 256.0;
     let selected_icon_extra = selected_icon_size - base_icon_size;
-    let time_seconds = ui.ctx().input(|input| input.time) as f32;
 
     let panel_rect = ui.available_rect_before_wrap();
     let padding = 50.0;
@@ -510,6 +497,10 @@ pub fn draw_game_list(
     let content_top = img_bottom + 32.0 + page_offset_y;
     let anchor_x = padded_rect.min.x + 24.0;
     let painter = ui.painter().with_clip_rect(panel_rect);
+
+    if !running_indices.is_empty() || launch_feedback.is_some() {
+        ui.ctx().request_repaint();
+    }
 
     for (i, g) in games.iter().enumerate() {
         let offset_f = i as f32 - scroll_offset;
@@ -536,8 +527,14 @@ pub fn draw_game_list(
         } else {
             0.0
         };
-        let is_launching = loading_index == Some(i);
+        let launch_elapsed_seconds = launch_feedback
+            .filter(|(launch_index, _)| *launch_index == i)
+            .map(|(_, elapsed_seconds)| elapsed_seconds);
         let is_running = running_indices.contains(&i);
+        let show_running_status = is_running
+            || launch_feedback
+                .map(|(launch_index, _)| launch_index == i)
+                .unwrap_or(false);
         let font_size = if is_selected {
             base_size + (selected_size - base_size) * selection_t
         } else {
@@ -551,8 +548,15 @@ pub fn draw_game_list(
             egui::Color32::from_rgba_unmultiplied(200, 200, 210, text_alpha)
         };
 
-        let icon_size = base_icon_size + selected_icon_extra * icon_focus_t;
-        let meta_text_width = (icon_size + 58.0).max(160.0);
+        let icon_slot_size = base_icon_size + selected_icon_extra * icon_focus_t;
+        let icon_scale = launch_elapsed_seconds
+            .map(launch_icon_scale)
+            .unwrap_or(1.0);
+        let icon_size = icon_slot_size * icon_scale;
+        let icon_offset_y = launch_elapsed_seconds
+            .map(launch_icon_offset_y)
+            .unwrap_or(0.0);
+        let meta_text_width = (icon_slot_size + 58.0).max(160.0);
         let item_left = x_pos;
         let text_x = item_left;
 
@@ -561,17 +565,24 @@ pub fn draw_game_list(
         } else {
             egui::FontId::proportional(font_size)
         };
-        let text_y = content_top + icon_size + 20.0;
+        let text_y = content_top + icon_slot_size + 20.0;
 
         if let Some(app_id) = g.app_id {
             if let Some(icon_tex) = game_icons.get(&app_id) {
                 let icon_alpha = 255;
                 let icon_tint = egui::Color32::from_rgba_unmultiplied(255, 255, 255, icon_alpha);
                 let icon_rect = egui::Rect::from_min_size(
-                    egui::pos2(item_left, content_top),
+                    egui::pos2(
+                        item_left + (icon_slot_size - icon_size) * 0.5,
+                        content_top + (icon_slot_size - icon_size) + icon_offset_y,
+                    ),
                     egui::vec2(icon_size, icon_size),
                 );
                 draw_game_icon(&painter, icon_tex, icon_rect, icon_tint);
+
+                if show_running_status {
+                    draw_running_status_dot(&painter, icon_rect);
+                }
             }
         }
 
@@ -595,22 +606,8 @@ pub fn draw_game_list(
                 &header,
                 &g.name,
                 normal_title_pos,
-                is_launching.then_some(time_seconds),
             );
 
-            let tag_offset = 0.0;
-            if is_selected && is_running {
-                let _ = draw_title_tag(
-                    &painter,
-                    language.running_text(),
-                    normal_title_pos,
-                    header.title_galley.size(),
-                    1.0,
-                    tag_offset,
-                    egui::Color32::from_rgb(52, 138, 84),
-                    egui::Color32::from_rgb(240, 255, 244),
-                );
-            }
         }
     }
 }
@@ -754,7 +751,7 @@ pub fn draw_achievement_page(
     let content_offset = egui::vec2(0.0, page_enter_offset_y);
     let list_rect = list_base_rect.translate(content_offset);
     let title_pos = title_base_pos + content_offset;
-    draw_selected_game_header(&painter, &header, &game.name, title_pos, None);
+    draw_selected_game_header(&painter, &header, &game.name, title_pos);
     if let Some(tag_text) = dlss_tag_text(game) {
         let _ = draw_title_tag(
             &painter,

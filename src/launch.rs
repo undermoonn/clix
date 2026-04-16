@@ -37,6 +37,12 @@ pub struct RunningGameState {
     tracked_pids: HashSet<u32>,
 }
 
+impl LaunchState {
+    pub fn elapsed_seconds(&self) -> f32 {
+        self.started_at.elapsed().as_secs_f32()
+    }
+}
+
 impl RunningGameState {
     pub fn matches_game(&self, game: &Game) -> bool {
         if let Some(app_id) = self.app_id {

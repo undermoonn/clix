@@ -70,13 +70,6 @@ impl AppLanguage {
         }
     }
 
-    pub fn running_text(self) -> &'static str {
-        match self {
-            Self::English => "Running",
-            Self::SimplifiedChinese => "运行中",
-        }
-    }
-
     pub fn scroll_text(self) -> &'static str {
         match self {
             Self::English => "Scroll",
