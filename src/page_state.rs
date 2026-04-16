@@ -168,7 +168,7 @@ impl PageState {
         let panel_target = if self.show_achievement_panel { 1.0 } else { 0.0 };
         let panel_diff = panel_target - self.achievement_panel_anim;
         if panel_diff.abs() > 0.001 {
-            self.achievement_panel_anim += panel_diff * (1.0 - (-12.0 * dt).exp());
+            self.achievement_panel_anim += panel_diff * (1.0 - (-5.4 * dt).exp());
             ctx.request_repaint();
         } else {
             self.achievement_panel_anim = panel_target;

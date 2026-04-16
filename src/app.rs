@@ -275,9 +275,26 @@ impl eframe::App for LauncherApp {
                     self.artwork.logo_prev(),
                     self.artwork.fade(),
                     self.page.cover_nav_dir(),
+                    self.page.achievement_panel_anim(),
                 );
 
-                if self.page.show_achievement_panel() {
+                ui::draw_game_list(
+                    ui,
+                    self.language,
+                    &self.games,
+                    self.page.selected(),
+                    self.page.select_anim(),
+                    self.page.achievement_panel_anim(),
+                    self.page.scroll_offset(),
+                    self.game_icons.textures(),
+                    self.launch_state.as_ref().map(|state| state.game_index),
+                    &running_indices,
+                    self.page.show_achievement_panel(),
+                    selected_achievement_summary,
+                    selected_achievement_reveal,
+                );
+
+                if self.page.achievement_panel_anim() > 0.001 {
                     if let Some(game) = self.games.get(self.page.selected()) {
                         let game_icon = game
                             .app_id
@@ -304,22 +321,6 @@ impl eframe::App for LauncherApp {
                         .into_iter()
                         .for_each(|url| visible_achievement_icon_urls.push(url));
                     }
-                } else {
-                    ui::draw_game_list(
-                        ui,
-                        self.language,
-                        &self.games,
-                        self.page.selected(),
-                        self.page.select_anim(),
-                        self.page.achievement_panel_anim(),
-                        self.page.scroll_offset(),
-                        self.game_icons.textures(),
-                        self.launch_state.as_ref().map(|state| state.game_index),
-                        &running_indices,
-                        self.page.show_achievement_panel(),
-                        selected_achievement_summary,
-                        selected_achievement_reveal,
-                    );
                 }
 
                 if let Some(icons) = &self.hint_icons {
