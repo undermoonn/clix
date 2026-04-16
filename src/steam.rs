@@ -117,10 +117,127 @@ pub fn find_steam_paths() -> Vec<PathBuf> {
     steam_paths
 }
 
+fn load_appinfo_bytes(steam_paths: &[PathBuf]) -> Option<Vec<u8>> {
+    for steam_root in steam_paths {
+        let appinfo_path = steam_root.join("appcache").join("appinfo.vdf");
+        let Ok(bytes) = std::fs::read(&appinfo_path) else {
+            continue;
+        };
+        if !bytes.is_empty() {
+            return Some(bytes);
+        }
+    }
+    None
+}
+
+fn parse_app_type_token(window: &[u8]) -> Option<&'static str> {
+    let mut start: Option<usize> = None;
+
+    for (index, byte) in window.iter().copied().enumerate() {
+        let is_printable = (0x20..=0x7e).contains(&byte);
+        if is_printable {
+            if start.is_none() {
+                start = Some(index);
+            }
+            continue;
+        }
+
+        if let Some(token_start) = start.take() {
+            let token = std::str::from_utf8(&window[token_start..index]).ok()?;
+            if token.eq_ignore_ascii_case("game") {
+                return Some("game");
+            }
+            if token.eq_ignore_ascii_case("application") {
+                return Some("application");
+            }
+            if token.eq_ignore_ascii_case("tool") {
+                return Some("tool");
+            }
+            if token.eq_ignore_ascii_case("demo") {
+                return Some("demo");
+            }
+            if token.eq_ignore_ascii_case("dlc") {
+                return Some("dlc");
+            }
+            if token.eq_ignore_ascii_case("video") {
+                return Some("video");
+            }
+            if token.eq_ignore_ascii_case("music") {
+                return Some("music");
+            }
+        }
+    }
+
+    if let Some(token_start) = start {
+        let token = std::str::from_utf8(&window[token_start..]).ok()?;
+        if token.eq_ignore_ascii_case("game") {
+            return Some("game");
+        }
+        if token.eq_ignore_ascii_case("application") {
+            return Some("application");
+        }
+        if token.eq_ignore_ascii_case("tool") {
+            return Some("tool");
+        }
+        if token.eq_ignore_ascii_case("demo") {
+            return Some("demo");
+        }
+        if token.eq_ignore_ascii_case("dlc") {
+            return Some("dlc");
+        }
+        if token.eq_ignore_ascii_case("video") {
+            return Some("video");
+        }
+        if token.eq_ignore_ascii_case("music") {
+            return Some("music");
+        }
+    }
+
+    None
+}
+
+fn window_contains_app_name(window: &[u8], expected_name: &str) -> bool {
+    if expected_name.is_empty() {
+        return false;
+    }
+
+    let haystack = String::from_utf8_lossy(window);
+    haystack.contains(expected_name)
+}
+
+fn is_game_app_id(appinfo_bytes: Option<&[u8]>, app_id: u32, expected_name: &str) -> bool {
+    const WINDOW_SIZE: usize = 4096;
+
+    let Some(appinfo_bytes) = appinfo_bytes else {
+        return false;
+    };
+
+    let needle = app_id.to_le_bytes();
+    let mut index = 0usize;
+
+    while index + needle.len() <= appinfo_bytes.len() {
+        if appinfo_bytes[index..index + needle.len()] == needle {
+            let window_end = (index + WINDOW_SIZE).min(appinfo_bytes.len());
+            let window = &appinfo_bytes[index..window_end];
+            if !window_contains_app_name(window, expected_name) {
+                index += 1;
+                continue;
+            }
+            if let Some(app_type) = parse_app_type_token(window) {
+                return app_type == "game";
+            }
+        }
+        index += 1;
+    }
+
+    false
+}
+
 pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
     use regex::Regex;
     let mut games: Vec<Game> = Vec::new();
     let mut seen_app_ids: HashSet<u32> = HashSet::new();
+    let appinfo_bytes = load_appinfo_bytes(steam_paths);
 
     // Step 1: Collect all Steam library folders from libraryfolders.vdf
     let vdf_re = Regex::new(r#"[\"]([A-Za-z]:\\[^\"]+)[\"]"#).unwrap();
@@ -173,6 +290,9 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                         continue;
                     }
                     if let Some(id) = app_id {
+                        if !is_game_app_id(appinfo_bytes.as_deref(), id, &name) {
+                            continue;
+                        }
                         if !seen_app_ids.insert(id) {
                             continue;
                         }
@@ -219,7 +339,9 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                                 subkey.get_value("DisplayName").unwrap_or_default();
                             let install_location: String =
                                 subkey.get_value("InstallLocation").unwrap_or_default();
-                            if display_name.is_empty() {
+                            if display_name.is_empty()
+                                || !is_game_app_id(appinfo_bytes.as_deref(), app_id, &display_name)
+                            {
                                 continue;
                             }
                             let install_path = PathBuf::from(install_location);
@@ -1315,7 +1437,8 @@ pub fn load_achievement_summary(
 #[cfg(test)]
 mod tests {
     use super::{
-        achievement_percent_sort_value, achievement_unlock_sort_rank, AchievementItem,
+        achievement_percent_sort_value, achievement_unlock_sort_rank, parse_app_type_token,
+        window_contains_app_name, AchievementItem,
     };
 
     #[test]
@@ -1353,6 +1476,28 @@ mod tests {
 
         let names: Vec<_> = items.into_iter().map(|item| item.api_name).collect();
         assert_eq!(names, vec!["locked", "unknown", "unlocked"]);
+    }
+
+    #[test]
+    fn app_type_parser_accepts_exact_game_token() {
+        let window = b"The Callisto Protocol\0Game\0windows\0released\0";
+        assert_eq!(parse_app_type_token(window), Some("game"));
+    }
+
+    #[test]
+    fn app_type_parser_rejects_partial_game_words() {
+        let window = b"Steampipe Beta\0gameinstall\0windows\0";
+        assert_eq!(parse_app_type_token(window), None);
+    }
+
+    #[test]
+    fn app_name_match_requires_exact_entry_name_in_window() {
+        let window = b"Steampipe Beta\0gameinstall\0windows\0";
+        assert!(!window_contains_app_name(window, "Steamworks Common Redistributables"));
+        assert!(window_contains_app_name(
+            b"Steamworks Common Redistributables\0Tool\0windows\0",
+            "Steamworks Common Redistributables"
+        ));
     }
 }
 
