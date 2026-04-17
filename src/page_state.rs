@@ -21,6 +21,7 @@ pub struct PageState {
     show_home_menu: bool,
     home_menu_anim: f32,
     home_menu_selected: usize,
+    home_menu_scroll_offset: f32,
     show_achievement_panel: bool,
     achievement_panel_anim: f32,
     achievement_selected: usize,
@@ -42,6 +43,7 @@ impl PageState {
             show_home_menu: false,
             home_menu_anim: 0.0,
             home_menu_selected: 0,
+            home_menu_scroll_offset: 0.0,
             show_achievement_panel: false,
             achievement_panel_anim: 0.0,
             achievement_selected: 0,
@@ -83,8 +85,8 @@ impl PageState {
         self.home_menu_anim
     }
 
-    pub fn home_menu_selected(&self) -> usize {
-        self.home_menu_selected
+    pub fn home_menu_scroll_offset(&self) -> f32 {
+        self.home_menu_scroll_offset
     }
 
     pub fn achievement_panel_anim(&self) -> f32 {
@@ -115,6 +117,7 @@ impl PageState {
     pub fn open_home_menu(&mut self) {
         self.home_menu_anim = 0.0;
         self.home_menu_selected = 0;
+        self.home_menu_scroll_offset = 0.0;
         self.show_home_menu = true;
     }
 
@@ -135,12 +138,12 @@ impl PageState {
 
         if self.show_home_menu {
             match action {
-                ControllerAction::Up => {
+                ControllerAction::Left => {
                     if self.home_menu_selected > 0 {
                         self.home_menu_selected -= 1;
                     }
                 }
-                ControllerAction::Down => {
+                ControllerAction::Right => {
                     if self.home_menu_selected < 1 {
                         self.home_menu_selected += 1;
                     }
@@ -250,13 +253,24 @@ impl PageState {
         if self.show_home_menu {
             let home_menu_diff = 1.0 - self.home_menu_anim;
             if home_menu_diff.abs() > 0.001 {
-                self.home_menu_anim += home_menu_diff * (1.0 - (-12.0 * dt).exp());
+                self.home_menu_anim += home_menu_diff * (1.0 - (-7.5 * dt).exp());
                 ctx.request_repaint();
             } else {
                 self.home_menu_anim = 1.0;
             }
+
+            let home_menu_scroll_target = self.home_menu_selected as f32;
+            let home_menu_scroll_diff = home_menu_scroll_target - self.home_menu_scroll_offset;
+            if home_menu_scroll_diff.abs() > 0.001 {
+                self.home_menu_scroll_offset +=
+                    home_menu_scroll_diff * (1.0 - (-16.0 * dt).exp());
+                ctx.request_repaint();
+            } else {
+                self.home_menu_scroll_offset = home_menu_scroll_target;
+            }
         } else {
             self.home_menu_anim = 0.0;
+            self.home_menu_scroll_offset = self.home_menu_selected as f32;
         }
 
         let scroll_target = self.selected as f32;
@@ -304,6 +318,7 @@ impl PageState {
         self.show_home_menu = false;
         self.home_menu_anim = 0.0;
         self.home_menu_selected = 0;
+        self.home_menu_scroll_offset = 0.0;
     }
 }
 
@@ -350,26 +365,37 @@ mod tests {
     }
 
     #[test]
-    fn home_menu_navigates_to_close_app_option() {
+    fn home_menu_navigates_to_close_app_option_with_right() {
         let mut page = PageState::new();
         page.open_home_menu();
 
-        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
 
-        assert_eq!(page.home_menu_selected(), 1);
+        assert_eq!(page.home_menu_selected, 1);
     }
 
     #[test]
     fn launch_on_close_app_option_closes_frame() {
         let mut page = PageState::new();
         page.open_home_menu();
-        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
 
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
 
         assert!(!result.send_app_to_background);
         assert!(result.close_frame);
         assert!(!page.show_home_menu());
+    }
+
+    #[test]
+    fn up_down_do_not_change_home_menu_selection() {
+        let mut page = PageState::new();
+        page.open_home_menu();
+
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Up, 3, true, 4);
+
+        assert_eq!(page.home_menu_selected, 0);
     }
 
     #[test]

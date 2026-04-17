@@ -1171,7 +1171,7 @@ pub fn draw_home_menu(
     language: AppLanguage,
     icons: Option<&HintIcons>,
     menu_anim: f32,
-    selected_option: usize,
+    selected_option_t: f32,
     wake_anim: f32,
 ) {
     let wake_t = smoothstep01(wake_anim);
@@ -1180,6 +1180,17 @@ pub fn draw_home_menu(
         return;
     }
 
+    let phase_t = |start: f32, end: f32| -> f32 {
+        if end <= start {
+            return 1.0;
+        }
+        smoothstep01(((menu_t - start) / (end - start)).clamp(0.0, 1.0))
+    };
+
+    let overlay_t = phase_t(0.0, 0.55);
+    let sheet_t = phase_t(0.06, 0.68);
+    let highlight_t = phase_t(0.22, 1.0);
+
     let panel_rect = ui.available_rect_before_wrap();
     let painter = ui.painter();
     painter.rect_filled(
@@ -1187,37 +1198,21 @@ pub fn draw_home_menu(
         egui::Rounding::ZERO,
         color_with_scaled_alpha(
             egui::Color32::from_rgba_unmultiplied(6, 8, 12, 178),
-            menu_t,
+            overlay_t,
         ),
     );
 
-    let card_scale = lerp_f32(0.93, 1.0, menu_t);
-    let card_padding = 12.0;
-    let option_height = 64.0;
-    let option_gap = 10.0;
-    let card_size = egui::vec2(
-        (panel_rect.width() * 0.30).clamp(260.0, 360.0),
-        option_height * 2.0 + option_gap + card_padding * 2.0,
-    ) * card_scale;
-    let card_rect = egui::Rect::from_center_size(panel_rect.center(), card_size);
+    let option_height = 100.0;
+    let option_gap = 22.0;
+    let content_padding = 28.0;
+    let content_height = option_height;
+    let sheet_height = (panel_rect.height() * 0.34)
+        .clamp(content_height + content_padding * 2.0, 360.0);
+    let sheet_rect = egui::Rect::from_center_size(panel_rect.center(), egui::vec2(panel_rect.width(), sheet_height));
     painter.rect_filled(
-        card_rect,
-        egui::Rounding::same(10.0),
-        color_with_scaled_alpha(
-            egui::Color32::from_rgba_unmultiplied(22, 22, 24, 242),
-            menu_t,
-        ),
-    );
-    painter.rect_stroke(
-        card_rect,
-        egui::Rounding::same(10.0),
-        egui::Stroke::new(
-            1.0,
-            color_with_scaled_alpha(
-                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 44),
-                menu_t,
-            ),
-        ),
+        sheet_rect,
+        egui::Rounding::ZERO,
+        color_with_scaled_alpha(egui::Color32::from_rgb(18, 19, 22), sheet_t),
     );
 
     let option_labels = [
@@ -1225,66 +1220,98 @@ pub fn draw_home_menu(
         language.close_app_text(),
     ];
     let option_font = egui::FontId::new(22.0, egui::FontFamily::Name("Bold".into()));
-    let option_width = card_rect.width() - card_padding * 2.0;
-    let first_option_y = card_rect.min.y + card_padding;
+    let content_width = (sheet_rect.width() * 0.50).clamp(420.0, 760.0);
+    let content_rect = egui::Rect::from_center_size(
+        sheet_rect.center(),
+        egui::vec2(content_width, content_height),
+    );
+    let option_width = (content_rect.width() - option_gap) * 0.5;
+    let option_inner_padding = 24.0;
+    let selected_expand = egui::vec2(10.0, 10.0);
+    let selected_slide_t = selected_option_t.clamp(0.0, (option_labels.len() - 1) as f32);
+    let option_rects: Vec<_> = option_labels
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            let option_t = phase_t(0.14 + index as f32 * 0.08, 0.74 + index as f32 * 0.08);
+            let option_offset = egui::vec2(0.0, lerp_f32(12.0, 0.0, option_t));
+            egui::Rect::from_min_size(
+                egui::pos2(
+                    content_rect.min.x + index as f32 * (option_width + option_gap),
+                    content_rect.min.y,
+                ),
+                egui::vec2(option_width, option_height),
+            )
+            .translate(option_offset)
+        })
+        .collect();
+    let highlight_offset = egui::vec2(0.0, lerp_f32(8.0, 0.0, highlight_t));
+    let highlight_scale = lerp_f32(0.965, 1.0, highlight_t);
+    let selected_rect = egui::Rect::from_center_size(
+        egui::pos2(
+            content_rect.min.x
+                + option_width * 0.5
+                + selected_slide_t * (option_width + option_gap),
+            content_rect.center().y,
+        ),
+        egui::vec2(
+            (option_width + selected_expand.x) * highlight_scale,
+            (option_height + selected_expand.y) * highlight_scale,
+        ),
+    )
+    .translate(highlight_offset);
 
-    for (index, label) in option_labels.iter().enumerate() {
-        let option_rect = egui::Rect::from_min_size(
-            egui::pos2(card_rect.min.x + card_padding, first_option_y + index as f32 * (option_height + option_gap)),
-            egui::vec2(option_width, option_height),
-        );
-        let is_selected = selected_option == index;
-        let fill = if is_selected {
-            egui::Color32::from_rgba_unmultiplied(56, 56, 60, 214)
-        } else {
-            egui::Color32::from_rgba_unmultiplied(34, 34, 38, 188)
-        };
-        let stroke = if is_selected {
-            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 48)
-        } else {
-            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 18)
-        };
-
+    for (index, option_rect) in option_rects.iter().enumerate() {
+        let option_t = phase_t(0.14 + index as f32 * 0.08, 0.74 + index as f32 * 0.08);
         painter.rect_filled(
-            option_rect,
-            egui::Rounding::same(8.0),
-            color_with_scaled_alpha(fill, menu_t),
+            *option_rect,
+            egui::Rounding::same(12.0),
+            color_with_scaled_alpha(egui::Color32::from_rgb(28, 30, 34), option_t),
         );
-        painter.rect_stroke(
-            option_rect,
-            egui::Rounding::same(8.0),
-            egui::Stroke::new(1.0, color_with_scaled_alpha(stroke, menu_t)),
-        );
+    }
 
-        let text_color = if is_selected {
-            egui::Color32::from_rgb(244, 246, 250)
-        } else {
-            egui::Color32::from_rgb(214, 218, 226)
-        };
+    painter.rect_filled(
+        selected_rect,
+        egui::Rounding::same(14.0),
+        color_with_scaled_alpha(egui::Color32::from_rgb(86, 90, 100), highlight_t),
+    );
+
+    for (index, (label, option_rect)) in option_labels.iter().zip(option_rects.iter()).enumerate() {
+        let option_t = phase_t(0.14 + index as f32 * 0.08, 0.74 + index as f32 * 0.08);
+        let selectedness = smoothstep01(1.0 - (selected_slide_t - index as f32).abs().clamp(0.0, 1.0));
+        let text_color = egui::Color32::from_rgb(
+            lerp_f32(214.0, 248.0, selectedness).round() as u8,
+            lerp_f32(218.0, 249.0, selectedness).round() as u8,
+            lerp_f32(226.0, 252.0, selectedness).round() as u8,
+        );
         let option_text = painter.layout_no_wrap(
             (*label).to_string(),
             option_font.clone(),
-            color_with_scaled_alpha(text_color, menu_t),
+            color_with_scaled_alpha(text_color, option_t),
         );
         painter.galley(
-            egui::pos2(option_rect.min.x + 18.0, option_rect.center().y - option_text.size().y * 0.5),
+            egui::pos2(
+                option_rect.min.x + option_inner_padding,
+                option_rect.center().y - option_text.size().y * 0.5,
+            ),
             option_text,
         );
+    }
 
-        if let Some(icons) = icons {
-            if is_selected {
-                let icon_rect = egui::Rect::from_min_size(
-                    egui::pos2(option_rect.max.x - card_padding - 36.0, option_rect.center().y - 18.0),
-                    egui::vec2(36.0, 36.0),
-                );
-                let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-                painter.image(
-                    icons.btn_a.id(),
-                    icon_rect,
-                    uv,
-                    color_with_scaled_alpha(egui::Color32::WHITE, menu_t),
-                );
-            }
-        }
+    if let Some(icons) = icons {
+        let icon_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                selected_rect.max.x - option_inner_padding - 36.0,
+                selected_rect.center().y - 18.0,
+            ),
+            egui::vec2(36.0, 36.0),
+        );
+        let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+        painter.image(
+            icons.btn_a.id(),
+            icon_rect,
+            uv,
+            color_with_scaled_alpha(egui::Color32::WHITE, highlight_t),
+        );
     }
 }

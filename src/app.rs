@@ -354,7 +354,7 @@ impl eframe::App for LauncherApp {
                     self.language,
                     self.hint_icons.as_ref(),
                     self.page.home_menu_anim(),
-                    self.page.home_menu_selected(),
+                    self.page.home_menu_scroll_offset(),
                     self.page.wake_anim(),
                 );
             });
