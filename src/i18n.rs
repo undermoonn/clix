@@ -93,8 +93,8 @@ impl AppLanguage {
 
     pub fn window_title(self) -> &'static str {
         match self {
-            Self::English => "Clix Launcher Prototype",
-            Self::SimplifiedChinese => "Clix 启动器原型",
+            Self::English => "Clix",
+            Self::SimplifiedChinese => "Clix",
         }
     }
 
