@@ -9,6 +9,7 @@ use crate::i18n::AppLanguage;
 use crate::input::InputController;
 use crate::launch::{self, LaunchState};
 use crate::page_state::PageState;
+use crate::playtime::PlaytimeState;
 use crate::runtime_state::RuntimeState;
 use crate::steam::{self, Game};
 use crate::ui;
@@ -25,6 +26,7 @@ pub struct LauncherApp {
     launch_state: Option<LaunchState>,
     running_games: HashMap<usize, launch::RunningGameState>,
     achievements: AchievementState,
+    playtime: PlaytimeState,
     runtime: RuntimeState,
     wake_focus_pending: bool,
     pending_send_to_background: bool,
@@ -51,6 +53,7 @@ impl LauncherApp {
             launch_state: None,
             running_games: HashMap::new(),
             achievements: AchievementState::new(),
+            playtime: PlaytimeState::new(),
             runtime: RuntimeState::new(),
             wake_focus_pending: false,
             pending_send_to_background: false,
@@ -106,6 +109,14 @@ impl LauncherApp {
         self.running_games
             .retain(|_, state| launch::refresh_running_game(state));
     }
+
+    fn refresh_selected_playtime(&mut self, ctx: &egui::Context) {
+        self.playtime.refresh_for_selected(
+            self.games.get(self.page.selected()),
+            &self.steam_paths,
+            ctx,
+        );
+    }
 }
 
 impl eframe::App for LauncherApp {
@@ -122,6 +133,10 @@ impl eframe::App for LauncherApp {
         let has_focus = ctx.input(|input| input.focused);
         let now = Instant::now();
         let focus = self.runtime.update_focus(has_focus, now);
+
+        if focus.did_gain_focus {
+            self.refresh_selected_playtime(ctx);
+        }
 
         if crate::xbox_home::take_wake_request() {
             self.page.prepare_wake_animation();
@@ -206,6 +221,7 @@ impl eframe::App for LauncherApp {
             }
             if result.selected_changed {
                 self.input.pulse_selection_change();
+                self.refresh_selected_playtime(ctx);
             }
             if result.launch_selected && !self.selected_launch_pending() {
                 self.launch_selected();
@@ -224,6 +240,7 @@ impl eframe::App for LauncherApp {
         self.tick_running_game_state();
         self.achievements.drain_results();
         self.achievements.drain_icon_results(ctx);
+        self.playtime.drain_results(&mut self.games);
 
         let selected_game = self.games.get(self.page.selected());
         let selected_app_id = selected_game.and_then(|game| game.app_id);

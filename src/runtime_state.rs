@@ -19,6 +19,7 @@ pub struct RuntimeState {
 pub struct FocusUpdate {
     pub should_clear_input: bool,
     pub in_cooldown: bool,
+    pub did_gain_focus: bool,
 }
 
 pub struct HomeHoldUpdate {
@@ -46,6 +47,7 @@ impl RuntimeState {
 
     pub fn update_focus(&mut self, has_focus: bool, now: Instant) -> FocusUpdate {
         let mut should_clear_input = false;
+        let did_gain_focus = has_focus && !self.had_focus;
 
         if has_focus {
             if !self.had_focus {
@@ -73,6 +75,7 @@ impl RuntimeState {
         FocusUpdate {
             should_clear_input,
             in_cooldown,
+            did_gain_focus,
         }
     }
 

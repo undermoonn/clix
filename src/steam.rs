@@ -380,6 +380,18 @@ fn parse_acf_values(content: &str) -> HashMap<String, String> {
 }
 
 fn parse_userdata(steam_paths: &[PathBuf]) -> (HashMap<u32, u64>, HashMap<u32, u32>) {
+    parse_userdata_filtered(steam_paths, None)
+}
+
+pub fn load_game_playtime_minutes(app_id: u32, steam_paths: &[PathBuf]) -> Option<u32> {
+    let (_, playtime) = parse_userdata_filtered(steam_paths, Some(app_id));
+    playtime.get(&app_id).copied()
+}
+
+fn parse_userdata_filtered(
+    steam_paths: &[PathBuf],
+    target_app_id: Option<u32>,
+) -> (HashMap<u32, u64>, HashMap<u32, u32>) {
     use regex::Regex;
     let mut last_played: HashMap<u32, u64> = HashMap::new();
     let mut playtime: HashMap<u32, u32> = HashMap::new();
@@ -448,6 +460,13 @@ fn parse_userdata(steam_paths: &[PathBuf]) -> (HashMap<u32, u64>, HashMap<u32, u
                 } else if depth == 1 {
                     // Inside app block at top level, extract key-value pairs
                     if let (Some(app_id), Some(cap)) = (current_app_id, kv_re.captures(trimmed)) {
+                        if target_app_id
+                            .map(|target| target != app_id)
+                            .unwrap_or(false)
+                        {
+                            continue;
+                        }
+
                         let key = cap.get(1).map(|m| m.as_str()).unwrap_or("");
                         let val = cap.get(2).map(|m| m.as_str()).unwrap_or("");
                         match key {
