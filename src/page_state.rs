@@ -114,6 +114,8 @@ impl PageState {
                 ControllerAction::Up => {
                     if self.achievement_selected > 0 {
                         self.achievement_selected -= 1;
+                    } else {
+                        self.close_achievement_panel();
                     }
                 }
                 ControllerAction::Down => {
@@ -122,8 +124,7 @@ impl PageState {
                     }
                 }
                 ControllerAction::Quit => {
-                    self.show_achievement_panel = false;
-                    self.reset_achievement_selection();
+                    self.close_achievement_panel();
                     result.suppress_quit_hold_until_release = true;
                 }
                 _ => {}
@@ -230,5 +231,33 @@ impl PageState {
         self.achievement_select_anim = 0.0;
         self.achievement_select_anim_target = None;
         self.achievement_scroll_offset = 0.0;
+    }
+
+    fn close_achievement_panel(&mut self) {
+        self.show_achievement_panel = false;
+        self.reset_achievement_selection();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PageState;
+    use crate::input::ControllerAction;
+
+    #[test]
+    fn up_on_first_achievement_returns_to_game_list() {
+        let mut page = PageState::new();
+
+        let open_result = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        assert!(open_result.open_achievement_panel);
+        assert!(page.show_achievement_panel());
+        assert_eq!(page.achievement_selected(), 0);
+
+        let up_result = page.handle_action(&ControllerAction::Up, 3, true, 4);
+        assert!(!up_result.open_achievement_panel);
+        assert!(!up_result.selected_changed);
+        assert!(!up_result.suppress_quit_hold_until_release);
+        assert!(!page.show_achievement_panel());
+        assert_eq!(page.achievement_selected(), 0);
     }
 }
