@@ -241,10 +241,10 @@ unsafe fn process_raw_input(watcher: &mut XboxHomeWatcher, hrawinput: HRAWINPUT)
         let pressed = guide_pressed(report);
         let was_pressed = watcher.guide_pressed.insert(device_key, pressed).unwrap_or(false);
         if pressed && !was_pressed {
-            if crate::launch::focus_current_app_window() {
+            if crate::launch::current_app_window_is_background() {
                 HOME_WAKE_PENDING.store(true, Ordering::Release);
+                watcher.ctx.request_repaint();
             }
-            watcher.ctx.request_repaint();
         }
     }
 }

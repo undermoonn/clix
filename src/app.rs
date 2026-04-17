@@ -28,6 +28,7 @@ pub struct LauncherApp {
     running_games: HashMap<usize, launch::RunningGameState>,
     achievements: AchievementState,
     runtime: RuntimeState,
+    wake_focus_pending: bool,
 }
 
 impl LauncherApp {
@@ -54,6 +55,7 @@ impl LauncherApp {
             running_games: HashMap::new(),
             achievements: AchievementState::new(),
             runtime: RuntimeState::new(),
+            wake_focus_pending: false,
         }
     }
 
@@ -165,12 +167,21 @@ impl eframe::App for LauncherApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         ctx.output_mut(|output| output.cursor_icon = egui::CursorIcon::None);
 
+        if self.wake_focus_pending {
+            self.wake_focus_pending = false;
+            let _ = crate::launch::focus_current_app_window();
+            self.page.start_wake_animation();
+            ctx.request_repaint();
+        }
+
         let has_focus = ctx.input(|input| input.focused);
         let now = Instant::now();
         let focus = self.runtime.update_focus(has_focus, now);
 
         if crate::xbox_home::take_wake_request() {
-            self.page.trigger_wake_animation();
+            self.page.prepare_wake_animation();
+            self.wake_focus_pending = true;
+            ctx.request_repaint();
         }
 
         if has_focus {

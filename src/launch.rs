@@ -559,6 +559,20 @@ fn bring_current_app_to_foreground() {
 }
 
 #[cfg(target_os = "windows")]
+pub fn current_app_window_is_background() -> bool {
+    if let Some(hwnd) = find_current_app_window() {
+        unsafe { GetForegroundWindow() != hwnd }
+    } else {
+        false
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn current_app_window_is_background() -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
 pub fn focus_current_app_window() -> bool {
     if let Some(hwnd) = find_current_app_window() {
         let was_background = unsafe { GetForegroundWindow() != hwnd };
