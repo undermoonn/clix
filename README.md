@@ -1,4 +1,4 @@
-# Clix - Prototype
+# Clix
 
 This is a minimal prototype that demonstrates a controller-only game launcher for Windows built with Rust and eframe (egui).
 
@@ -11,9 +11,10 @@ Controller input currently supports XInput devices only.
 
 Examples of the current UI are shown below:
 
-![Clix Launcher Prototype Screenshot 1](./Clix%20Launcher%20Prototype%204_16_2026%2012_32_44%20PM.png)
+![Clix Screenshot 1](./screenshots/Clix%202026_4_17%2019_25_45.png)
 
-![Clix Launcher Prototype Screenshot 2](./Clix%20Launcher%20Prototype%204_16_2026%2012_32_54%20PM.png)
+![Clix Screenshot 2](./screenshots/Clix%202026_4_17%2019_25_02.png)
+
 
 ## License
 
