@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::input::FOCUS_COOLDOWN_MS;
 
@@ -7,7 +7,6 @@ pub const HOLD_TO_FORCE_CLOSE_GAME_MS: f32 = 2000.0;
 
 pub struct RuntimeState {
     had_focus: bool,
-    lost_focus_at: Option<Instant>,
     focus_cooldown_until: Option<Instant>,
     quit_hold_started_at: Option<Instant>,
     quit_hold_progress: f32,
@@ -19,7 +18,6 @@ pub struct RuntimeState {
 }
 
 pub struct FocusUpdate {
-    pub should_refresh_games: bool,
     pub should_clear_input: bool,
     pub in_cooldown: bool,
 }
@@ -38,7 +36,6 @@ impl RuntimeState {
     pub fn new() -> Self {
         Self {
             had_focus: true,
-            lost_focus_at: None,
             focus_cooldown_until: None,
             quit_hold_started_at: None,
             quit_hold_progress: 0.0,
@@ -51,23 +48,14 @@ impl RuntimeState {
     }
 
     pub fn update_focus(&mut self, has_focus: bool, now: Instant) -> FocusUpdate {
-        let mut should_refresh_games = false;
         let mut should_clear_input = false;
 
         if has_focus {
             if !self.had_focus {
-                should_refresh_games = self
-                    .lost_focus_at
-                    .take()
-                    .map(|lost_at| now.duration_since(lost_at) >= Duration::from_secs(5))
-                    .unwrap_or(false);
                 self.focus_cooldown_until = Some(now);
                 should_clear_input = true;
             }
         } else {
-            if self.had_focus {
-                self.lost_focus_at = Some(now);
-            }
             should_clear_input = true;
         }
 
@@ -86,7 +74,6 @@ impl RuntimeState {
         };
 
         FocusUpdate {
-            should_refresh_games,
             should_clear_input,
             in_cooldown,
         }

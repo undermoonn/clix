@@ -44,18 +44,6 @@ impl LaunchState {
 }
 
 impl RunningGameState {
-    pub fn matches_game(&self, game: &Game) -> bool {
-        if let Some(app_id) = self.app_id {
-            return game.app_id == Some(app_id);
-        }
-
-        game.name == self.game_name
-    }
-
-    pub fn with_game_index(mut self, game_index: usize) -> Self {
-        self.game_index = game_index;
-        self
-    }
 }
 
 pub enum LaunchTickResult {

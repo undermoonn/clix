@@ -108,59 +108,6 @@ impl LauncherApp {
         self.running_games
             .retain(|_, state| launch::refresh_running_game(state));
     }
-
-    fn refresh_running_game_indices(&mut self) {
-        if self.running_games.is_empty() {
-            return;
-        }
-
-        let previous = std::mem::take(&mut self.running_games);
-        let mut remapped = HashMap::new();
-
-        for (_, state) in previous {
-            let new_index = self.games.iter().position(|game| state.matches_game(game));
-
-            if let Some(index) = new_index {
-                remapped.insert(index, state.with_game_index(index));
-            }
-        }
-
-        self.running_games = remapped;
-    }
-
-    fn refresh_games_after_resume(&mut self) {
-        let selected_key = self
-            .games
-            .get(self.page.selected())
-            .map(|g| (g.app_id, g.name.clone()));
-
-        self.games = steam::scan_games_with_paths(&self.steam_paths);
-
-        if self.games.is_empty() {
-            self.page.reset_after_resume(0);
-        } else if let Some((app_id, name)) = selected_key {
-            let mut new_selected = None;
-
-            if let Some(id) = app_id {
-                new_selected = self.games.iter().position(|g| g.app_id == Some(id));
-            }
-
-            if new_selected.is_none() {
-                new_selected = self.games.iter().position(|g| g.name == name);
-            }
-
-            let selected = new_selected.unwrap_or_else(|| self.page.selected().min(self.games.len() - 1));
-            self.page.reset_after_resume(selected);
-        } else {
-            self.page
-                .reset_after_resume(self.page.selected().min(self.games.len() - 1));
-        }
-        self.achievements.reset_selected_tracking();
-
-        self.artwork.reset_selection_tracking();
-        self.game_icons.reset();
-        self.refresh_running_game_indices();
-    }
 }
 
 impl eframe::App for LauncherApp {
@@ -188,9 +135,6 @@ impl eframe::App for LauncherApp {
             ctx.request_repaint();
         }
 
-        if focus.should_refresh_games {
-            self.refresh_games_after_resume();
-        }
         if focus.should_clear_input {
             self.input.clear_held();
         }

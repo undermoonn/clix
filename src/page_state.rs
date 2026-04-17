@@ -85,15 +85,6 @@ impl PageState {
         self.achievement_scroll_offset
     }
 
-    pub fn reset_after_resume(&mut self, selected: usize) {
-        self.selected = selected;
-        self.scroll_offset = selected as f32;
-        self.select_anim_target = Some(selected);
-        self.select_anim = 1.0;
-        self.cover_nav_dir = 0.0;
-        self.reset_achievement_selection();
-    }
-
     pub fn prepare_wake_animation(&mut self) {
         self.wake_anim = 0.0;
         self.wake_anim_running = false;

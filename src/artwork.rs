@@ -40,12 +40,6 @@ impl ArtworkState {
         }
     }
 
-    pub fn reset_selection_tracking(&mut self) {
-        self.loaded_for = None;
-        self.debounce_for = None;
-        self.debounce_until = None;
-    }
-
     pub fn tick_selection(
         &mut self,
         selected: usize,

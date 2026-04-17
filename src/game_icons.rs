@@ -19,11 +19,6 @@ impl GameIconState {
         }
     }
 
-    pub fn reset(&mut self) {
-        self.textures.clear();
-        self.loaded = false;
-    }
-
     pub fn ensure_loaded(
         &mut self,
         ctx: &egui::Context,

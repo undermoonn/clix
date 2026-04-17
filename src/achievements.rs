@@ -37,10 +37,6 @@ impl AchievementState {
         }
     }
 
-    pub fn reset_selected_tracking(&mut self) {
-        self.checked_for = None;
-    }
-
     pub fn refresh_for_selected(
         &mut self,
         selected_game: Option<&Game>,
