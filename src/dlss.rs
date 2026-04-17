@@ -1,16 +1,11 @@
 use std::path::{Path, PathBuf};
 
+use crate::cache;
+
 use walkdir::WalkDir;
 
 fn cache_dir() -> PathBuf {
-    let mut dir = std::env::current_exe()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .to_path_buf();
-    dir.push("dlss_cache");
-    let _ = std::fs::create_dir_all(&dir);
-    dir
+    cache::cache_subdir("dlss_cache")
 }
 
 fn cache_path(app_id: u32) -> PathBuf {

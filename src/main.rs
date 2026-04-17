@@ -3,6 +3,7 @@
 mod app;
 mod achievements;
 mod artwork;
+mod cache;
 mod cover;
 mod dlss;
 mod game_icons;

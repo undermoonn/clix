@@ -3,6 +3,8 @@ use image::ImageEncoder;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::cache;
+
 #[cfg(target_os = "windows")]
 use walkdir::WalkDir;
 
@@ -60,14 +62,7 @@ fn png_bytes_from_rgba(width: u32, height: u32, rgba: &[u8]) -> Option<Vec<u8>> 
 }
 
 pub fn hd_cache_dir() -> PathBuf {
-    let mut dir = std::env::current_exe()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
-        .to_path_buf();
-    dir.push("cover_cache");
-    let _ = std::fs::create_dir_all(&dir);
-    dir
+    cache::cache_subdir("cover_cache")
 }
 
 fn hero_logo_cache_path(app_id: u32) -> PathBuf {
@@ -80,14 +75,7 @@ fn is_png_bytes(bytes: &[u8]) -> bool {
 }
 
 fn achievement_icon_cache_dir() -> PathBuf {
-    let mut dir = std::env::current_exe()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
-        .to_path_buf();
-    dir.push("achievement_icon_cache");
-    let _ = std::fs::create_dir_all(&dir);
-    dir
+    cache::cache_subdir("achievement_icon_cache")
 }
 
 fn achievement_icon_cache_path(url: &str) -> PathBuf {

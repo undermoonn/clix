@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use crate::cache;
 use crate::i18n::AppLanguage;
 use serde::{Deserialize, Serialize};
 
@@ -38,12 +39,7 @@ struct CachedAchievementSummary {
 }
 
 fn achievement_cache_dir(language: AppLanguage) -> PathBuf {
-    let mut dir = std::env::current_exe()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
-        .to_path_buf();
-    dir.push("achievement_cache");
+    let mut dir = cache::cache_subdir("achievement_cache");
     dir.push(language.steam_language_key());
     let _ = std::fs::create_dir_all(&dir);
     dir
