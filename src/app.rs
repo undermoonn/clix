@@ -6,11 +6,10 @@ use crate::achievements::AchievementState;
 use crate::artwork::ArtworkState;
 use crate::game_icons::GameIconState;
 use crate::i18n::AppLanguage;
-use crate::input::{ControllerBrand, InputController};
+use crate::input::InputController;
 use crate::launch::{self, LaunchState};
 use crate::page_state::PageState;
 use crate::runtime_state::RuntimeState;
-use crate::settings;
 use crate::steam::{self, Game};
 use crate::ui;
 
@@ -22,7 +21,6 @@ pub struct LauncherApp {
     artwork: ArtworkState,
     page: PageState,
     hint_icons: Option<ui::HintIcons>,
-    hint_icon_brand: ControllerBrand,
     game_icons: GameIconState,
     launch_state: Option<LaunchState>,
     running_games: HashMap<usize, launch::RunningGameState>,
@@ -38,18 +36,16 @@ impl LauncherApp {
         #[cfg(not(target_os = "windows"))]
         let _ = ctx;
 
-        let app_settings = settings::load_settings();
         let steam_paths = steam::find_steam_paths();
         let games = steam::scan_games_with_paths(&steam_paths);
         LauncherApp {
             language,
             games,
-            input: InputController::new(app_settings.controller_brand),
+            input: InputController::new(),
             steam_paths,
             artwork: ArtworkState::new(),
             page: PageState::new(),
-            hint_icons: None,
-            hint_icon_brand: app_settings.controller_brand,
+            hint_icons: ui::load_hint_icons(ctx),
             game_icons: GameIconState::new(),
             launch_state: None,
             running_games: HashMap::new(),
@@ -224,13 +220,6 @@ impl eframe::App for LauncherApp {
         self.artwork.tick_fade(ctx, dt);
         self.page.tick_animations(ctx, dt);
         self.achievements.animate_reveals(ctx, dt);
-
-        let controller_brand = self.input.controller_brand();
-        if self.hint_icons.is_none() || self.hint_icon_brand != controller_brand {
-            self.hint_icons = ui::load_hint_icons(ctx, controller_brand);
-            self.hint_icon_brand = controller_brand;
-            settings::save_controller_brand(controller_brand);
-        }
 
         self.game_icons
             .ensure_loaded(ctx, &self.steam_paths, &self.games);

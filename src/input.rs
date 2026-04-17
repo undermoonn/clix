@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use gilrs::{Axis, Button, EventType, Gilrs};
-
 #[cfg(target_os = "windows")]
 use winapi::um::xinput::{
     XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B, XINPUT_GAMEPAD_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_LEFT,
@@ -23,38 +21,12 @@ pub const NAV_REPEAT_ACCEL_STAGE2_AFTER_MS: u128 = 1300;
 pub const NAV_REPEAT_INTERVAL_STAGE1_MS: u128 = 80;
 pub const NAV_REPEAT_INTERVAL_STAGE2_MS: u128 = 45;
 pub const FOCUS_COOLDOWN_MS: u128 = 500;
-const GILRS_AXIS_THRESHOLD: f32 = 0.45;
 #[cfg(target_os = "windows")]
 const XINPUT_SELECTION_RUMBLE_DURATION_MS: u128 = 40;
 #[cfg(target_os = "windows")]
 const XINPUT_SELECTION_RUMBLE_LEFT_STRENGTH: u16 = 0;
 #[cfg(target_os = "windows")]
 const XINPUT_SELECTION_RUMBLE_RIGHT_STRENGTH: u16 = 10_000;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ControllerBrand {
-    Xbox,
-    PlayStation,
-}
-
-impl ControllerBrand {
-    pub fn as_ini_value(self) -> &'static str {
-        match self {
-            ControllerBrand::Xbox => "xbox",
-            ControllerBrand::PlayStation => "playstation",
-        }
-    }
-
-    pub fn from_ini_value(value: &str) -> Option<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "xbox" => Some(ControllerBrand::Xbox),
-            "playstation" | "ps" | "ps5" | "dualsense" | "dualsence" => {
-                Some(ControllerBrand::PlayStation)
-            }
-            _ => None,
-        }
-    }
-}
 
 pub enum ControllerAction {
     Up,
@@ -93,7 +65,6 @@ pub struct InputFrame {
 }
 
 pub struct InputController {
-    gilrs: Option<Gilrs>,
     #[cfg(target_os = "windows")]
     xinput: Option<XInput>,
     #[cfg(target_os = "windows")]
@@ -101,7 +72,6 @@ pub struct InputController {
     mapping: Mapping,
     remap_target: Option<String>,
     nav_held: HashMap<&'static str, NavState>,
-    controller_brand: ControllerBrand,
 }
 
 #[cfg(target_os = "windows")]
@@ -121,9 +91,8 @@ struct RumbleSettings {
 }
 
 impl InputController {
-    pub fn new(controller_brand: ControllerBrand) -> Self {
+    pub fn new() -> Self {
         Self {
-            gilrs: Gilrs::new().ok(),
             #[cfg(target_os = "windows")]
             xinput: XInput::new().ok(),
             #[cfg(target_os = "windows")]
@@ -131,12 +100,7 @@ impl InputController {
             mapping: Mapping::default(),
             remap_target: None,
             nav_held: HashMap::new(),
-            controller_brand,
         }
-    }
-
-    pub fn controller_brand(&self) -> ControllerBrand {
-        self.controller_brand
     }
 
     pub fn clear_held(&mut self) {
@@ -232,14 +196,9 @@ impl InputController {
     }
 
     fn collect_raw_held(&mut self, raw_held: &mut std::collections::HashSet<&'static str>) {
-        #[cfg(not(target_os = "windows"))]
-        let xinput_active = false;
-
         #[cfg(target_os = "windows")]
-        let xinput_active = self.collect_xinput(raw_held);
-
-        if !xinput_active {
-            self.collect_gilrs(raw_held);
+        {
+            let _ = self.collect_xinput(raw_held);
         }
     }
 
@@ -320,8 +279,6 @@ impl InputController {
             return false;
         }
 
-        self.controller_brand = ControllerBrand::Xbox;
-
         if let Some(target) = self.remap_target.clone() {
             for (_, buttons, ly, _) in &states {
                 if *buttons != 0 {
@@ -401,137 +358,6 @@ impl InputController {
         }
 
         true
-    }
-
-    fn collect_gilrs(&mut self, raw_held: &mut std::collections::HashSet<&'static str>) {
-        let Some(gilrs) = &mut self.gilrs else {
-            return;
-        };
-
-        while let Some(event) = gilrs.next_event() {
-            if let Some(target) = self.remap_target.clone() {
-                match event.event {
-                    EventType::ButtonPressed(button, _) => {
-                        self.mapping
-                            .map
-                            .insert(target, InputToken::GilrsButton(button as u8));
-                        self.remap_target = None;
-                    }
-                    EventType::AxisChanged(axis, value, _) => {
-                        let axis_name = format!("{:?}", axis);
-                        let dir = if value < 0.0 { -1 } else { 1 };
-                        self.mapping
-                            .map
-                            .insert(target, InputToken::GilrsAxis(axis_name, dir));
-                        self.remap_target = None;
-                    }
-                    _ => {}
-                }
-                continue;
-            }
-
-            match event.event {
-                EventType::ButtonPressed(button, _) => {
-                    let button_id = button as u8;
-                    for (key, token) in &self.mapping.map {
-                        if let InputToken::GilrsButton(mapped_button) = token {
-                            if *mapped_button == button_id {
-                                Self::insert_mapped_action(raw_held, key);
-                            }
-                        }
-                    }
-                }
-                EventType::AxisChanged(axis, value, _) => {
-                    let axis_name = format!("{:?}", axis);
-                    for (key, token) in &self.mapping.map {
-                        if let InputToken::GilrsAxis(mapped_axis, dir) = token {
-                            if mapped_axis == &axis_name {
-                                if *dir < 0 && value < -0.7 {
-                                    Self::insert_mapped_vertical_action(raw_held, key);
-                                }
-                                if *dir > 0 && value > 0.7 {
-                                    Self::insert_mapped_vertical_action(raw_held, key);
-                                }
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        let mut active_brand = None;
-        let mut single_connected_brand = None;
-        let mut connected_count = 0;
-
-        for (_, gamepad) in gilrs.gamepads() {
-            connected_count += 1;
-            let brand = infer_controller_brand(&gamepad);
-            if connected_count == 1 {
-                single_connected_brand = Some(brand);
-            }
-
-            let mut gamepad_active = false;
-
-            if gamepad.is_pressed(Button::DPadUp) {
-                raw_held.insert("up");
-                gamepad_active = true;
-            }
-            if gamepad.is_pressed(Button::DPadDown) {
-                raw_held.insert("down");
-                gamepad_active = true;
-            }
-            if gamepad.is_pressed(Button::DPadLeft) {
-                raw_held.insert("left");
-                gamepad_active = true;
-            }
-            if gamepad.is_pressed(Button::DPadRight) {
-                raw_held.insert("right");
-                gamepad_active = true;
-            }
-            if gamepad.is_pressed(Button::South) {
-                raw_held.insert("launch");
-                gamepad_active = true;
-            }
-            if gamepad.is_pressed(Button::East) {
-                raw_held.insert("quit");
-                gamepad_active = true;
-            }
-            if gamepad.is_pressed(Button::West) {
-                raw_held.insert("force_close");
-                gamepad_active = true;
-            }
-
-            let left_stick_x = gamepad.value(Axis::LeftStickX);
-            if left_stick_x <= -GILRS_AXIS_THRESHOLD {
-                raw_held.insert("left");
-                gamepad_active = true;
-            } else if left_stick_x >= GILRS_AXIS_THRESHOLD {
-                raw_held.insert("right");
-                gamepad_active = true;
-            }
-
-            let left_stick_y = gamepad.value(Axis::LeftStickY);
-            if left_stick_y <= -GILRS_AXIS_THRESHOLD {
-                raw_held.insert("down");
-                gamepad_active = true;
-            } else if left_stick_y >= GILRS_AXIS_THRESHOLD {
-                raw_held.insert("up");
-                gamepad_active = true;
-            }
-
-            if gamepad_active {
-                active_brand = Some(brand);
-            }
-        }
-
-        if let Some(brand) = active_brand.or(if connected_count == 1 {
-            single_connected_brand
-        } else {
-            None
-        }) {
-            self.controller_brand = brand;
-        }
     }
 
     fn insert_mapped_action(
@@ -676,29 +502,11 @@ pub enum InputToken {
     None,
     XButton(u16),
     XAxis(i8),
-    GilrsButton(u8),
-    GilrsAxis(String, i8),
 }
 
 #[derive(Debug, Default)]
 pub struct Mapping {
     pub map: HashMap<String, InputToken>,
-}
-
-fn infer_controller_brand(gamepad: &gilrs::Gamepad<'_>) -> ControllerBrand {
-    let name = gamepad.name().to_ascii_lowercase();
-    let is_playstation = gamepad.vendor_id() == Some(0x054c)
-        || name.contains("dualsense")
-        || name.contains("dualsence")
-        || name.contains("wireless controller")
-        || name.contains("playstation")
-        || name.contains("ps5");
-
-    if is_playstation {
-        ControllerBrand::PlayStation
-    } else {
-        ControllerBrand::Xbox
-    }
 }
 
 #[cfg(target_os = "windows")]

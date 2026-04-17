@@ -1,7 +1,6 @@
 use eframe::egui;
 
 use crate::i18n::AppLanguage;
-use crate::input::ControllerBrand;
 
 fn format_achievement_status(unlocked: Option<bool>, unlock_time: Option<u64>) -> Option<String> {
     match unlocked {
@@ -340,23 +339,12 @@ fn png_bytes_to_texture(
     Some(ctx.load_texture(label, image, egui::TextureOptions::LINEAR))
 }
 
-pub fn load_hint_icons(ctx: &egui::Context, brand: ControllerBrand) -> Option<HintIcons> {
-    let (btn_a_bytes, btn_b_bytes, btn_x_bytes, dpad_down_bytes, label_prefix) = match brand {
-        ControllerBrand::Xbox => (
-            include_bytes!("icons/Xbox/T_X_A_White_Alt.png") as &[u8],
-            include_bytes!("icons/Xbox/T_X_B_White_Alt.png") as &[u8],
-            include_bytes!("icons/Xbox/T_X_X_White_Alt.png") as &[u8],
-            include_bytes!("icons/Xbox/T_X_Dpad_Down_Alt.png") as &[u8],
-            "xbox",
-        ),
-        ControllerBrand::PlayStation => (
-            include_bytes!("icons/DualSence/T_P4_Cross.png") as &[u8],
-            include_bytes!("icons/DualSence/T_P4_Circle.png") as &[u8],
-            include_bytes!("icons/DualSence/T_P4_Square.png") as &[u8],
-            include_bytes!("icons/DualSence/T_P4_Dpad_Down.png") as &[u8],
-            "playstation",
-        ),
-    };
+pub fn load_hint_icons(ctx: &egui::Context) -> Option<HintIcons> {
+    let btn_a_bytes = include_bytes!("icons/Xbox/T_X_A_White_Alt.png") as &[u8];
+    let btn_b_bytes = include_bytes!("icons/Xbox/T_X_B_White_Alt.png") as &[u8];
+    let btn_x_bytes = include_bytes!("icons/Xbox/T_X_X_White_Alt.png") as &[u8];
+    let dpad_down_bytes = include_bytes!("icons/Xbox/T_X_Dpad_Down_Alt.png") as &[u8];
+    let label_prefix = "xbox";
 
     let btn_a = png_bytes_to_texture(ctx, btn_a_bytes, &format!("{}_icon_btn_a", label_prefix))?;
     let btn_b = png_bytes_to_texture(ctx, btn_b_bytes, &format!("{}_icon_btn_b", label_prefix))?;

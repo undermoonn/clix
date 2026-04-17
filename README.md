@@ -5,6 +5,7 @@ This is a minimal prototype that demonstrates a controller-only game launcher fo
 ## Features (Prototype)
 
 Detects locally installed Steam games and supports displaying achievement lists.
+Controller input currently supports XInput devices only.
 
 ## Screenshots
 
