@@ -50,6 +50,8 @@ const XBOX_PRODUCT_ID_TOKEN: &str = "PID_0B12";
 const GUIDE_REPORT_BIT: u8 = 0x04;
 #[cfg(target_os = "windows")]
 static HOME_WAKE_PENDING: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "windows")]
+static HOME_GUIDE_HELD: AtomicBool = AtomicBool::new(false);
 
 #[cfg(target_os = "windows")]
 pub fn start(ctx: egui::Context) {
@@ -72,6 +74,16 @@ pub fn take_wake_request() -> bool {
 
 #[cfg(not(target_os = "windows"))]
 pub fn take_wake_request() -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
+pub fn guide_held() -> bool {
+    HOME_GUIDE_HELD.load(Ordering::Acquire)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn guide_held() -> bool {
     false
 }
 
@@ -167,11 +179,13 @@ unsafe extern "system" fn raw_input_wndproc(
                     let device_key = lparam as isize;
                     watcher.supported_devices.remove(&device_key);
                     watcher.guide_pressed.remove(&device_key);
+                    sync_guide_held_state(watcher);
                 }
             }
             0
         }
         WM_DESTROY => {
+            HOME_GUIDE_HELD.store(false, Ordering::Release);
             let watcher_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut XboxHomeWatcher;
             if !watcher_ptr.is_null() {
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
@@ -240,6 +254,7 @@ unsafe fn process_raw_input(watcher: &mut XboxHomeWatcher, hrawinput: HRAWINPUT)
         let report = slice::from_raw_parts(report_data.add(index * report_size), report_size);
         let pressed = guide_pressed(report);
         let was_pressed = watcher.guide_pressed.insert(device_key, pressed).unwrap_or(false);
+        sync_guide_held_state(watcher);
         if pressed && !was_pressed {
             if crate::launch::current_app_window_is_background() {
                 HOME_WAKE_PENDING.store(true, Ordering::Release);
@@ -322,6 +337,12 @@ fn register_raw_input(hwnd: HWND) -> bool {
 #[cfg(target_os = "windows")]
 fn guide_pressed(report: &[u8]) -> bool {
     guide_bit_set(report)
+}
+
+#[cfg(target_os = "windows")]
+fn sync_guide_held_state(watcher: &XboxHomeWatcher) {
+    let any_pressed = watcher.guide_pressed.values().copied().any(|pressed| pressed);
+    HOME_GUIDE_HELD.store(any_pressed, Ordering::Release);
 }
 
 #[cfg(target_os = "windows")]

@@ -56,10 +56,17 @@ impl AppLanguage {
         }
     }
 
-    pub fn hold_quit_text(self) -> &'static str {
+    pub fn close_app_text(self) -> &'static str {
         match self {
-            Self::English => "Hold Quit",
-            Self::SimplifiedChinese => "长按退出",
+            Self::English => "Close App",
+            Self::SimplifiedChinese => "关闭应用",
+        }
+    }
+
+    pub fn minimize_app_text(self) -> &'static str {
+        match self {
+            Self::English => "Minimize",
+            Self::SimplifiedChinese => "最小化",
         }
     }
 

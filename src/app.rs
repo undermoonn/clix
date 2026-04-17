@@ -27,6 +27,7 @@ pub struct LauncherApp {
     achievements: AchievementState,
     runtime: RuntimeState,
     wake_focus_pending: bool,
+    pending_send_to_background: bool,
 }
 
 impl LauncherApp {
@@ -52,6 +53,7 @@ impl LauncherApp {
             achievements: AchievementState::new(),
             runtime: RuntimeState::new(),
             wake_focus_pending: false,
+            pending_send_to_background: false,
         }
     }
 
@@ -124,6 +126,7 @@ impl eframe::App for LauncherApp {
         if crate::xbox_home::take_wake_request() {
             self.page.prepare_wake_animation();
             self.wake_focus_pending = true;
+            self.runtime.suppress_home_hold_until_release();
             ctx.request_repaint();
         }
 
@@ -136,14 +139,28 @@ impl eframe::App for LauncherApp {
         }
         self.input.tick();
 
-        let process_input = has_focus && !focus.in_cooldown;
-        let input_frame = self.input.poll(process_input, self.page.show_achievement_panel());
+        let process_input = has_focus && !focus.in_cooldown && !self.pending_send_to_background;
+        let input_frame = self.input.poll(
+            process_input,
+            self.page.show_achievement_panel() || self.page.show_home_menu(),
+        );
+
+        if self.pending_send_to_background {
+            if input_frame.launch_held {
+                ctx.request_repaint();
+            } else {
+                self.pending_send_to_background = false;
+                self.input.clear_held();
+                let _ = launch::send_current_app_to_background();
+            }
+        }
+
         let actions = input_frame.actions;
         let selected_running = self.running_games.contains_key(&self.page.selected());
-        let app_quit_hold = self.runtime.update_quit_hold(
+        let home_hold = self.runtime.update_home_hold(
             process_input,
-            self.page.show_achievement_panel(),
-            input_frame.quit_held,
+            self.page.show_home_menu(),
+            crate::xbox_home::guide_held(),
             now,
         );
         let force_close_hold = self.runtime.update_force_close_hold(
@@ -152,8 +169,9 @@ impl eframe::App for LauncherApp {
             input_frame.force_close_held,
             now,
         );
-        if app_quit_hold.trigger_quit {
-            frame.close();
+        if home_hold.trigger_menu {
+            self.page.open_home_menu();
+            ctx.request_repaint();
         }
         if force_close_hold.trigger_force_close {
             if let Some(state) = self.running_games.get_mut(&self.page.selected()) {
@@ -162,7 +180,7 @@ impl eframe::App for LauncherApp {
                 }
             }
         }
-        if app_quit_hold.should_repaint || force_close_hold.should_repaint {
+        if force_close_hold.should_repaint {
             ctx.request_repaint();
         }
 
@@ -192,11 +210,13 @@ impl eframe::App for LauncherApp {
             if result.launch_selected && !self.selected_launch_pending() {
                 self.launch_selected();
             }
+            if result.send_app_to_background {
+                self.pending_send_to_background = true;
+                self.input.clear_held();
+                ctx.request_repaint();
+            }
             if result.close_frame {
                 frame.close();
-            }
-            if result.suppress_quit_hold_until_release {
-                self.runtime.suppress_quit_hold_until_release();
             }
         }
 
@@ -304,13 +324,22 @@ impl eframe::App for LauncherApp {
                         self.language,
                         icons,
                         self.page.show_achievement_panel(),
+                        self.page.show_home_menu(),
                         can_open_achievement_panel,
                         selected_running,
-                        self.runtime.quit_hold_progress(),
                         self.runtime.force_close_hold_progress(),
                         self.page.wake_anim(),
                     );
                 }
+
+                ui::draw_home_menu(
+                    ui,
+                    self.language,
+                    self.hint_icons.as_ref(),
+                    self.page.home_menu_anim(),
+                    self.page.home_menu_selected(),
+                    self.page.wake_anim(),
+                );
             });
 
         if !visible_achievement_icon_urls.is_empty() {

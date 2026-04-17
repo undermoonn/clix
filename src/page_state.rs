@@ -7,7 +7,7 @@ pub struct PageActionResult {
     pub launch_selected: bool,
     pub selected_changed: bool,
     pub close_frame: bool,
-    pub suppress_quit_hold_until_release: bool,
+    pub send_app_to_background: bool,
 }
 
 pub struct PageState {
@@ -18,6 +18,9 @@ pub struct PageState {
     wake_anim: f32,
     wake_anim_running: bool,
     scroll_offset: f32,
+    show_home_menu: bool,
+    home_menu_anim: f32,
+    home_menu_selected: usize,
     show_achievement_panel: bool,
     achievement_panel_anim: f32,
     achievement_selected: usize,
@@ -36,6 +39,9 @@ impl PageState {
             wake_anim: 1.0,
             wake_anim_running: false,
             scroll_offset: 0.0,
+            show_home_menu: false,
+            home_menu_anim: 0.0,
+            home_menu_selected: 0,
             show_achievement_panel: false,
             achievement_panel_anim: 0.0,
             achievement_selected: 0,
@@ -53,6 +59,10 @@ impl PageState {
         self.show_achievement_panel
     }
 
+    pub fn show_home_menu(&self) -> bool {
+        self.show_home_menu
+    }
+
     pub fn cover_nav_dir(&self) -> f32 {
         self.cover_nav_dir
     }
@@ -67,6 +77,14 @@ impl PageState {
 
     pub fn wake_anim(&self) -> f32 {
         self.wake_anim
+    }
+
+    pub fn home_menu_anim(&self) -> f32 {
+        self.home_menu_anim
+    }
+
+    pub fn home_menu_selected(&self) -> usize {
+        self.home_menu_selected
     }
 
     pub fn achievement_panel_anim(&self) -> f32 {
@@ -94,6 +112,12 @@ impl PageState {
         self.wake_anim_running = true;
     }
 
+    pub fn open_home_menu(&mut self) {
+        self.home_menu_anim = 0.0;
+        self.home_menu_selected = 0;
+        self.show_home_menu = true;
+    }
+
     pub fn handle_action(
         &mut self,
         action: &ControllerAction,
@@ -106,8 +130,37 @@ impl PageState {
             launch_selected: false,
             selected_changed: false,
             close_frame: false,
-            suppress_quit_hold_until_release: false,
+            send_app_to_background: false,
         };
+
+        if self.show_home_menu {
+            match action {
+                ControllerAction::Up => {
+                    if self.home_menu_selected > 0 {
+                        self.home_menu_selected -= 1;
+                    }
+                }
+                ControllerAction::Down => {
+                    if self.home_menu_selected < 1 {
+                        self.home_menu_selected += 1;
+                    }
+                }
+                ControllerAction::Launch => {
+                    let selected_option = self.home_menu_selected;
+                    self.close_home_menu();
+                    if selected_option == 0 {
+                        result.send_app_to_background = true;
+                    } else {
+                        result.close_frame = true;
+                    }
+                }
+                ControllerAction::Quit => {
+                    self.close_home_menu();
+                }
+                _ => {}
+            }
+            return result;
+        }
 
         if self.show_achievement_panel {
             match action {
@@ -125,7 +178,6 @@ impl PageState {
                 }
                 ControllerAction::Quit => {
                     self.close_achievement_panel();
-                    result.suppress_quit_hold_until_release = true;
                 }
                 _ => {}
             }
@@ -159,9 +211,7 @@ impl PageState {
             ControllerAction::Launch => {
                 result.launch_selected = true;
             }
-            ControllerAction::Quit => {
-                result.close_frame = true;
-            }
+            ControllerAction::Quit => {}
             ControllerAction::Up => {}
         }
 
@@ -195,6 +245,18 @@ impl PageState {
             ctx.request_repaint();
         } else {
             self.achievement_panel_anim = panel_target;
+        }
+
+        if self.show_home_menu {
+            let home_menu_diff = 1.0 - self.home_menu_anim;
+            if home_menu_diff.abs() > 0.001 {
+                self.home_menu_anim += home_menu_diff * (1.0 - (-12.0 * dt).exp());
+                ctx.request_repaint();
+            } else {
+                self.home_menu_anim = 1.0;
+            }
+        } else {
+            self.home_menu_anim = 0.0;
         }
 
         let scroll_target = self.selected as f32;
@@ -237,6 +299,12 @@ impl PageState {
         self.show_achievement_panel = false;
         self.reset_achievement_selection();
     }
+
+    fn close_home_menu(&mut self) {
+        self.show_home_menu = false;
+        self.home_menu_anim = 0.0;
+        self.home_menu_selected = 0;
+    }
 }
 
 #[cfg(test)]
@@ -256,8 +324,63 @@ mod tests {
         let up_result = page.handle_action(&ControllerAction::Up, 3, true, 4);
         assert!(!up_result.open_achievement_panel);
         assert!(!up_result.selected_changed);
-        assert!(!up_result.suppress_quit_hold_until_release);
         assert!(!page.show_achievement_panel());
         assert_eq!(page.achievement_selected(), 0);
+    }
+
+    #[test]
+    fn quit_on_main_page_does_not_close_frame() {
+        let mut page = PageState::new();
+
+        let result = page.handle_action(&ControllerAction::Quit, 3, true, 4);
+
+        assert!(!result.close_frame);
+        assert!(!page.show_home_menu());
+    }
+
+    #[test]
+    fn quit_on_home_menu_closes_immediately_without_animation() {
+        let mut page = PageState::new();
+        page.open_home_menu();
+
+        let _ = page.handle_action(&ControllerAction::Quit, 3, true, 4);
+
+        assert!(!page.show_home_menu());
+        assert_eq!(page.home_menu_anim(), 0.0);
+    }
+
+    #[test]
+    fn home_menu_navigates_to_close_app_option() {
+        let mut page = PageState::new();
+        page.open_home_menu();
+
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+
+        assert_eq!(page.home_menu_selected(), 1);
+    }
+
+    #[test]
+    fn launch_on_close_app_option_closes_frame() {
+        let mut page = PageState::new();
+        page.open_home_menu();
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert!(!result.send_app_to_background);
+        assert!(result.close_frame);
+        assert!(!page.show_home_menu());
+    }
+
+    #[test]
+    fn launch_on_default_home_menu_option_sends_app_to_background() {
+        let mut page = PageState::new();
+        page.open_home_menu();
+
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert!(result.send_app_to_background);
+        assert!(!result.close_frame);
+        assert!(!page.show_home_menu());
     }
 }

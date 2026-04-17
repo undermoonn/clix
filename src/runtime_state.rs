@@ -2,19 +2,18 @@ use std::time::Instant;
 
 use crate::input::FOCUS_COOLDOWN_MS;
 
-pub const HOLD_TO_EXIT_APP_MS: f32 = 800.0;
+pub const HOLD_TO_OPEN_HOME_MENU_MS: f32 = 500.0;
 pub const HOLD_TO_FORCE_CLOSE_GAME_MS: f32 = 2000.0;
 
 pub struct RuntimeState {
     had_focus: bool,
     focus_cooldown_until: Option<Instant>,
-    quit_hold_started_at: Option<Instant>,
-    quit_hold_progress: f32,
-    quit_hold_consumed: bool,
+    home_hold_started_at: Option<Instant>,
+    home_hold_consumed: bool,
     force_close_hold_started_at: Option<Instant>,
     force_close_hold_progress: f32,
     force_close_hold_consumed: bool,
-    suppress_quit_hold_until_release: bool,
+    suppress_home_hold_until_release: bool,
 }
 
 pub struct FocusUpdate {
@@ -22,9 +21,8 @@ pub struct FocusUpdate {
     pub in_cooldown: bool,
 }
 
-pub struct QuitHoldUpdate {
-    pub trigger_quit: bool,
-    pub should_repaint: bool,
+pub struct HomeHoldUpdate {
+    pub trigger_menu: bool,
 }
 
 pub struct ForceCloseHoldUpdate {
@@ -37,13 +35,12 @@ impl RuntimeState {
         Self {
             had_focus: true,
             focus_cooldown_until: None,
-            quit_hold_started_at: None,
-            quit_hold_progress: 0.0,
-            quit_hold_consumed: false,
+            home_hold_started_at: None,
+            home_hold_consumed: false,
             force_close_hold_started_at: None,
             force_close_hold_progress: 0.0,
             force_close_hold_consumed: false,
-            suppress_quit_hold_until_release: false,
+            suppress_home_hold_until_release: false,
         }
     }
 
@@ -79,61 +76,43 @@ impl RuntimeState {
         }
     }
 
-    pub fn update_quit_hold(
+    pub fn update_home_hold(
         &mut self,
         process_input: bool,
-        achievement_panel_open: bool,
-        quit_held: bool,
+        home_menu_open: bool,
+        guide_held: bool,
         now: Instant,
-    ) -> QuitHoldUpdate {
-        if self.suppress_quit_hold_until_release {
-            if quit_held {
-                self.quit_hold_started_at = None;
-                self.quit_hold_progress = 0.0;
-                self.quit_hold_consumed = false;
+    ) -> HomeHoldUpdate {
+        if self.suppress_home_hold_until_release {
+            if guide_held {
+                self.home_hold_started_at = None;
+                self.home_hold_consumed = false;
             } else {
-                self.suppress_quit_hold_until_release = false;
+                self.suppress_home_hold_until_release = false;
             }
 
-            return QuitHoldUpdate {
-                trigger_quit: false,
-                should_repaint: false,
-            };
+            return HomeHoldUpdate { trigger_menu: false };
         }
 
-        if process_input && !achievement_panel_open && quit_held {
-            if self.quit_hold_consumed {
-                self.quit_hold_progress = 1.0;
-                return QuitHoldUpdate {
-                    trigger_quit: false,
-                    should_repaint: false,
-                };
+        if process_input && !home_menu_open && guide_held {
+            if self.home_hold_consumed {
+                return HomeHoldUpdate { trigger_menu: false };
             }
 
-            let started_at = self.quit_hold_started_at.get_or_insert(now);
+            let started_at = self.home_hold_started_at.get_or_insert(now);
             let held_ms = now.duration_since(*started_at).as_secs_f32() * 1000.0;
-            self.quit_hold_progress = (held_ms / HOLD_TO_EXIT_APP_MS).clamp(0.0, 1.0);
 
-            if self.quit_hold_progress >= 1.0 {
-                self.quit_hold_consumed = true;
-                QuitHoldUpdate {
-                    trigger_quit: true,
-                    should_repaint: false,
-                }
+            if held_ms >= HOLD_TO_OPEN_HOME_MENU_MS {
+                self.home_hold_consumed = true;
+                self.suppress_home_hold_until_release = true;
+                HomeHoldUpdate { trigger_menu: true }
             } else {
-                QuitHoldUpdate {
-                    trigger_quit: false,
-                    should_repaint: true,
-                }
+                HomeHoldUpdate { trigger_menu: false }
             }
         } else {
-            self.quit_hold_started_at = None;
-            self.quit_hold_progress = 0.0;
-            self.quit_hold_consumed = false;
-            QuitHoldUpdate {
-                trigger_quit: false,
-                should_repaint: false,
-            }
+            self.home_hold_started_at = None;
+            self.home_hold_consumed = false;
+            HomeHoldUpdate { trigger_menu: false }
         }
     }
 
@@ -180,12 +159,8 @@ impl RuntimeState {
         }
     }
 
-    pub fn suppress_quit_hold_until_release(&mut self) {
-        self.suppress_quit_hold_until_release = true;
-    }
-
-    pub fn quit_hold_progress(&self) -> f32 {
-        self.quit_hold_progress
+    pub fn suppress_home_hold_until_release(&mut self) {
+        self.suppress_home_hold_until_release = true;
     }
 
     pub fn force_close_hold_progress(&self) -> f32 {

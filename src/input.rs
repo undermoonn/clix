@@ -60,7 +60,6 @@ pub struct NavState {
 pub struct InputFrame {
     pub actions: Vec<ControllerAction>,
     pub launch_held: bool,
-    pub quit_held: bool,
     pub force_close_held: bool,
 }
 
@@ -190,7 +189,6 @@ impl InputController {
         InputFrame {
             actions,
             launch_held: raw_held.contains("launch"),
-            quit_held: raw_held.contains("quit"),
             force_close_held: raw_held.contains("force_close"),
         }
     }

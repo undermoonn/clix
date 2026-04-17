@@ -321,6 +321,7 @@ pub struct HintIcons {
     pub btn_b: egui::TextureHandle,
     pub btn_x: egui::TextureHandle,
     pub dpad_down: egui::TextureHandle,
+    pub guide: egui::TextureHandle,
 }
 
 fn png_bytes_to_texture(
@@ -340,11 +341,12 @@ fn png_bytes_to_texture(
 }
 
 pub fn load_hint_icons(ctx: &egui::Context) -> Option<HintIcons> {
-    let btn_a_bytes = include_bytes!("icons/Xbox/T_X_A_White_Alt.png") as &[u8];
-    let btn_b_bytes = include_bytes!("icons/Xbox/T_X_B_White_Alt.png") as &[u8];
-    let btn_x_bytes = include_bytes!("icons/Xbox/T_X_X_White_Alt.png") as &[u8];
-    let dpad_down_bytes = include_bytes!("icons/Xbox/T_X_Dpad_Down_Alt.png") as &[u8];
-    let label_prefix = "xbox";
+    let btn_a_bytes = include_bytes!("icons/Xbox Series/xbox_button_a_outline.png") as &[u8];
+    let btn_b_bytes = include_bytes!("icons/Xbox Series/xbox_button_b_outline.png") as &[u8];
+    let btn_x_bytes = include_bytes!("icons/Xbox Series/xbox_button_x_outline.png") as &[u8];
+    let dpad_down_bytes = include_bytes!("icons/Xbox Series/xbox_dpad_down_outline.png") as &[u8];
+    let guide_bytes = include_bytes!("icons/Xbox Series/xbox_guide_outline.png") as &[u8];
+    let label_prefix = "xbox_series";
 
     let btn_a = png_bytes_to_texture(ctx, btn_a_bytes, &format!("{}_icon_btn_a", label_prefix))?;
     let btn_b = png_bytes_to_texture(ctx, btn_b_bytes, &format!("{}_icon_btn_b", label_prefix))?;
@@ -354,11 +356,13 @@ pub fn load_hint_icons(ctx: &egui::Context) -> Option<HintIcons> {
         dpad_down_bytes,
         &format!("{}_icon_dpad_down", label_prefix),
     )?;
+    let guide = png_bytes_to_texture(ctx, guide_bytes, &format!("{}_icon_guide", label_prefix))?;
     Some(HintIcons {
         btn_a,
         btn_b,
         btn_x,
         dpad_down,
+        guide,
     })
 }
 
@@ -1005,9 +1009,9 @@ pub fn draw_hint_bar(
     language: AppLanguage,
     icons: &HintIcons,
     achievement_panel_active: bool,
+    _home_menu_active: bool,
     can_open_achievement_panel: bool,
     game_running: bool,
-    quit_hold_progress: f32,
     force_close_hold_progress: f32,
     wake_anim: f32,
 ) {
@@ -1020,8 +1024,7 @@ pub fn draw_hint_bar(
         egui::Color32::from_rgba_unmultiplied(200, 200, 210, 160),
         wake_t,
     );
-    let icon_h = 32.0_f32;
-    let action_icon_h = icon_h + 8.0;
+    let action_icon_h = 40.0_f32;
     let row_h = action_icon_h;
     let hint_y = padded_rect.max.y - 10.0 + lerp_f32(24.0, 0.0, wake_t);
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
@@ -1075,19 +1078,20 @@ pub fn draw_hint_bar(
     };
 
     let g_back = painter.layout_no_wrap(language.back_text().to_string(), hint_font.clone(), hint_color);
-    let g_quit = painter.layout_no_wrap(language.hold_quit_text().to_string(), hint_font.clone(), hint_color);
     let g_force_close = painter.layout_no_wrap(language.hold_close_game_text().to_string(), hint_font.clone(), hint_color);
-    let b_label_reserve = g_back.size().x.max(g_quit.size().x);
-    let b_icon_x = padded_rect.max.x - b_label_reserve - 6.0 - action_icon_h;
+    let home_menu_group_w = action_icon_h;
+    let home_menu_x = padded_rect.max.x - home_menu_group_w;
+    let b_label_reserve = g_back.size().x;
+    let b_icon_x = home_menu_x - 20.0 - b_label_reserve - 6.0 - action_icon_h;
     let b_label_x = b_icon_x + action_icon_h + 6.0;
 
     if achievement_panel_active {
         let g_scroll = painter.layout_no_wrap(language.scroll_text().to_string(), hint_font.clone(), hint_color);
-        let scroll_group_w = icon_h + 6.0 + g_scroll.size().x;
+        let scroll_group_w = action_icon_h + 6.0 + g_scroll.size().x;
         let hx = b_icon_x - 20.0 - scroll_group_w;
 
-        draw_icon(painter, &icons.dpad_down, hx, icon_h);
-        let text_x = hx + icon_h + 6.0;
+        draw_icon(painter, &icons.dpad_down, hx, action_icon_h);
+        let text_x = hx + action_icon_h + 6.0;
 
         let gy = hint_y + (row_h - g_scroll.size().y) * 0.5;
         painter.galley(egui::pos2(text_x, gy), g_scroll);
@@ -1096,6 +1100,8 @@ pub fn draw_hint_bar(
 
         let gy = hint_y + (row_h - g_back.size().y) * 0.5;
         painter.galley(egui::pos2(b_label_x, gy), g_back);
+
+        draw_icon(painter, &icons.guide, home_menu_x, action_icon_h);
         return;
     }
 
@@ -1111,7 +1117,7 @@ pub fn draw_hint_bar(
         0.0
     };
     let launch_group_w = action_icon_h + 6.0 + g_launch.size().x;
-    let launch_x = b_icon_x - 20.0 - launch_group_w;
+    let launch_x = home_menu_x - 20.0 - launch_group_w;
     let force_close_x = if game_running {
         launch_x - 20.0 - force_close_group_w
     } else {
@@ -1119,13 +1125,13 @@ pub fn draw_hint_bar(
     };
 
     if can_open_achievement_panel {
-        let achievements_group_w = icon_h + 6.0 + g_achievements.size().x;
+        let achievements_group_w = action_icon_h + 6.0 + g_achievements.size().x;
         let achievements_x = force_close_x - 20.0 - achievements_group_w;
-        draw_icon(painter, &icons.dpad_down, achievements_x, icon_h);
+        draw_icon(painter, &icons.dpad_down, achievements_x, action_icon_h);
 
         let gy = hint_y + (row_h - g_achievements.size().y) * 0.5;
         painter.galley(
-            egui::pos2(achievements_x + icon_h + 6.0, gy),
+            egui::pos2(achievements_x + action_icon_h + 6.0, gy),
             g_achievements,
         );
     }
@@ -1157,16 +1163,128 @@ pub fn draw_hint_bar(
         g_launch,
     );
 
-    draw_icon(painter, &icons.btn_b, b_icon_x, action_icon_h);
-    draw_progress_ring(
-        painter,
-        egui::pos2(
-            b_icon_x + action_icon_h * 0.5,
-            hint_y + row_h * 0.5,
+    draw_icon(painter, &icons.guide, home_menu_x, action_icon_h);
+}
+
+pub fn draw_home_menu(
+    ui: &mut egui::Ui,
+    language: AppLanguage,
+    icons: Option<&HintIcons>,
+    menu_anim: f32,
+    selected_option: usize,
+    wake_anim: f32,
+) {
+    let wake_t = smoothstep01(wake_anim);
+    let menu_t = smoothstep01(menu_anim) * wake_t;
+    if menu_t <= 0.001 {
+        return;
+    }
+
+    let panel_rect = ui.available_rect_before_wrap();
+    let painter = ui.painter();
+    painter.rect_filled(
+        panel_rect,
+        egui::Rounding::ZERO,
+        color_with_scaled_alpha(
+            egui::Color32::from_rgba_unmultiplied(6, 8, 12, 178),
+            menu_t,
         ),
-        action_icon_h * 0.48,
-        quit_hold_progress,
     );
-    let gy = hint_y + (row_h - g_quit.size().y) * 0.5;
-    painter.galley(egui::pos2(b_label_x, gy), g_quit);
+
+    let card_scale = lerp_f32(0.93, 1.0, menu_t);
+    let card_padding = 12.0;
+    let option_height = 64.0;
+    let option_gap = 10.0;
+    let card_size = egui::vec2(
+        (panel_rect.width() * 0.30).clamp(260.0, 360.0),
+        option_height * 2.0 + option_gap + card_padding * 2.0,
+    ) * card_scale;
+    let card_rect = egui::Rect::from_center_size(panel_rect.center(), card_size);
+    painter.rect_filled(
+        card_rect,
+        egui::Rounding::same(10.0),
+        color_with_scaled_alpha(
+            egui::Color32::from_rgba_unmultiplied(22, 22, 24, 242),
+            menu_t,
+        ),
+    );
+    painter.rect_stroke(
+        card_rect,
+        egui::Rounding::same(10.0),
+        egui::Stroke::new(
+            1.0,
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 44),
+                menu_t,
+            ),
+        ),
+    );
+
+    let option_labels = [
+        language.minimize_app_text(),
+        language.close_app_text(),
+    ];
+    let option_font = egui::FontId::new(22.0, egui::FontFamily::Name("Bold".into()));
+    let option_width = card_rect.width() - card_padding * 2.0;
+    let first_option_y = card_rect.min.y + card_padding;
+
+    for (index, label) in option_labels.iter().enumerate() {
+        let option_rect = egui::Rect::from_min_size(
+            egui::pos2(card_rect.min.x + card_padding, first_option_y + index as f32 * (option_height + option_gap)),
+            egui::vec2(option_width, option_height),
+        );
+        let is_selected = selected_option == index;
+        let fill = if is_selected {
+            egui::Color32::from_rgba_unmultiplied(56, 56, 60, 214)
+        } else {
+            egui::Color32::from_rgba_unmultiplied(34, 34, 38, 188)
+        };
+        let stroke = if is_selected {
+            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 48)
+        } else {
+            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 18)
+        };
+
+        painter.rect_filled(
+            option_rect,
+            egui::Rounding::same(8.0),
+            color_with_scaled_alpha(fill, menu_t),
+        );
+        painter.rect_stroke(
+            option_rect,
+            egui::Rounding::same(8.0),
+            egui::Stroke::new(1.0, color_with_scaled_alpha(stroke, menu_t)),
+        );
+
+        let text_color = if is_selected {
+            egui::Color32::from_rgb(244, 246, 250)
+        } else {
+            egui::Color32::from_rgb(214, 218, 226)
+        };
+        let option_text = painter.layout_no_wrap(
+            (*label).to_string(),
+            option_font.clone(),
+            color_with_scaled_alpha(text_color, menu_t),
+        );
+        painter.galley(
+            egui::pos2(option_rect.min.x + 18.0, option_rect.center().y - option_text.size().y * 0.5),
+            option_text,
+        );
+
+        if let Some(icons) = icons {
+            if is_selected {
+                let icon_rect = egui::Rect::from_min_size(
+                    egui::pos2(option_rect.max.x - card_padding - 36.0, option_rect.center().y - 18.0),
+                    egui::vec2(36.0, 36.0),
+                );
+                let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+                painter.image(
+                    icons.btn_a.id(),
+                    icon_rect,
+                    uv,
+                    color_with_scaled_alpha(egui::Color32::WHITE, menu_t),
+                );
+            }
+        }
+    }
 }

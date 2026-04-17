@@ -299,7 +299,7 @@ use winapi::um::winuser::{
     GetForegroundWindow, GetWindowLongW, PostMessageW, SetForegroundWindow,
     SetLayeredWindowAttributes,
     SetWindowLongW, SetWindowPos, ShowWindow, GWL_EXSTYLE, LWA_ALPHA, SWP_NOSIZE,
-    SWP_NOZORDER, SW_RESTORE, WM_CLOSE, WS_EX_LAYERED,
+    SWP_NOZORDER, SW_MINIMIZE, SW_RESTORE, WM_CLOSE, WS_EX_LAYERED,
 };
 
 #[cfg(target_os = "windows")]
@@ -569,6 +569,28 @@ pub fn focus_current_app_window() -> bool {
     } else {
         false
     }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn focus_current_app_window() -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
+pub fn send_current_app_to_background() -> bool {
+    if let Some(hwnd) = find_current_app_window() {
+        unsafe {
+            ShowWindow(hwnd, SW_MINIMIZE);
+        }
+        true
+    } else {
+        false
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn send_current_app_to_background() -> bool {
+    false
 }
 
 #[cfg(target_os = "windows")]
