@@ -13,8 +13,9 @@ pub struct AchievementState {
     loading: HashSet<u32>,
     no_data: HashSet<u32>,
     icon_cache: HashMap<String, egui::TextureHandle>,
-    icon_pending: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
+    icon_pending: Arc<Mutex<Vec<(String, Option<Vec<u8>>)>>>,
     icon_loading: HashSet<String>,
+    icon_failed: HashSet<String>,
     icon_reveal: HashMap<String, f32>,
     text_reveal: HashMap<u32, f32>,
     checked_for: Option<u32>,
@@ -31,6 +32,7 @@ impl AchievementState {
             icon_cache: HashMap::new(),
             icon_pending: Arc::new(Mutex::new(Vec::new())),
             icon_loading: HashSet::new(),
+            icon_failed: HashSet::new(),
             icon_reveal: HashMap::new(),
             text_reveal: HashMap::new(),
             checked_for: None,
@@ -116,13 +118,17 @@ impl AchievementState {
         visible_icon_urls: &[String],
     ) {
         for url in visible_icon_urls {
-            if self.icon_cache.contains_key(url) || self.icon_loading.contains(url) {
+            if self.icon_cache.contains_key(url)
+                || self.icon_loading.contains(url)
+                || self.icon_failed.contains(url)
+            {
                 continue;
             }
 
             if let Some(bytes) = cover::load_cached_achievement_icon_bytes(url) {
+                self.icon_loading.insert(url.clone());
                 if let Ok(mut lock) = self.icon_pending.lock() {
-                    lock.push((url.clone(), bytes));
+                    lock.push((url.clone(), Some(bytes)));
                 }
                 ctx.request_repaint();
                 continue;
@@ -133,12 +139,11 @@ impl AchievementState {
             let ctx_clone = ctx.clone();
             let url_clone = url.clone();
             std::thread::spawn(move || {
-                if let Some(bytes) = cover::load_achievement_icon_bytes(&url_clone) {
-                    if let Ok(mut lock) = pending.lock() {
-                        lock.push((url_clone, bytes));
-                    }
-                    ctx_clone.request_repaint();
+                let bytes = cover::load_achievement_icon_bytes(&url_clone);
+                if let Ok(mut lock) = pending.lock() {
+                    lock.push((url_clone, bytes));
                 }
+                ctx_clone.request_repaint();
             });
         }
     }
@@ -155,6 +160,11 @@ impl AchievementState {
                 continue;
             }
 
+            let Some(bytes) = bytes else {
+                self.icon_failed.insert(url);
+                continue;
+            };
+
             use std::hash::{Hash, Hasher};
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             hasher_seed.hash(&mut hasher);
@@ -165,6 +175,9 @@ impl AchievementState {
             if let Some(texture) = cover::bytes_to_texture(ctx, &bytes, label) {
                 self.icon_reveal.insert(url.clone(), 0.0);
                 self.icon_cache.insert(url, texture);
+            } else {
+                cover::clear_cached_achievement_icon(&url);
+                self.icon_failed.insert(url);
             }
         }
     }

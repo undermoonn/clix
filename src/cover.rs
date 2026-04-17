@@ -98,9 +98,19 @@ fn achievement_icon_cache_path(url: &str) -> PathBuf {
     achievement_icon_cache_dir().join(format!("{:x}.img", hasher.finish()))
 }
 
+fn achievement_icon_bytes_are_valid(bytes: &[u8]) -> bool {
+    !bytes.is_empty() && image::load_from_memory(bytes).is_ok()
+}
+
+pub fn clear_cached_achievement_icon(url: &str) {
+    let _ = std::fs::remove_file(achievement_icon_cache_path(url));
+}
+
 pub fn load_cached_achievement_icon_bytes(url: &str) -> Option<Vec<u8>> {
-    let bytes = std::fs::read(achievement_icon_cache_path(url)).ok()?;
-    if bytes.is_empty() {
+    let cache_path = achievement_icon_cache_path(url);
+    let bytes = std::fs::read(&cache_path).ok()?;
+    if !achievement_icon_bytes_are_valid(&bytes) {
+        let _ = std::fs::remove_file(cache_path);
         return None;
     }
     Some(bytes)
@@ -118,7 +128,7 @@ pub fn load_achievement_icon_bytes(url: &str) -> Option<Vec<u8>> {
 
     let mut bytes = Vec::new();
     let mut reader = resp.into_reader().take(2 * 1024 * 1024);
-    if reader.read_to_end(&mut bytes).is_err() || bytes.is_empty() {
+    if reader.read_to_end(&mut bytes).is_err() || !achievement_icon_bytes_are_valid(&bytes) {
         return None;
     }
 
