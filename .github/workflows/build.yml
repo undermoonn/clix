@@ -1,0 +1,49 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  windows-build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check project
+        run: cargo check --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Package release archive
+        shell: pwsh
+        run: |
+          $archive = "target/release/big-screen-launcher-$env:GITHUB_REF_NAME-windows.zip"
+          if (Test-Path $archive) {
+            Remove-Item $archive
+          }
+          Compress-Archive -Path target/release/big-screen-launcher.exe -DestinationPath $archive
+
+      - name: Create GitHub release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: target/release/big-screen-launcher-${{ github.ref_name }}-windows.zip
