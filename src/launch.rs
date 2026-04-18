@@ -18,8 +18,6 @@ pub struct LaunchState {
     #[cfg(target_os = "windows")]
     target_path: Option<PathBuf>,
     #[cfg(target_os = "windows")]
-    last_keep_foreground_at: Instant,
-    #[cfg(target_os = "windows")]
     focus_pids: Option<HashSet<u32>>,
     #[cfg(target_os = "windows")]
     current_app_hwnd: Option<isize>,
@@ -112,8 +110,6 @@ pub fn begin_launch(game_index: usize, game: &Game, steam_paths: &[PathBuf]) -> 
         #[cfg(target_os = "windows")]
         target_path: if target_path.exists() { Some(target_path) } else { None },
         #[cfg(target_os = "windows")]
-        last_keep_foreground_at: Instant::now() - Duration::from_millis(400),
-        #[cfg(target_os = "windows")]
         focus_pids: None,
         #[cfg(target_os = "windows")]
         current_app_hwnd: find_current_app_window().map(|hwnd| hwnd as isize),
@@ -134,7 +130,6 @@ pub fn begin_focus_transition(game_index: usize, state: &RunningGameState) -> Op
             baseline_pids: HashSet::new(),
             baseline_hwnds: HashSet::new(),
             target_path: state.target_path.clone(),
-            last_keep_foreground_at: Instant::now(),
             focus_pids: Some(state.tracked_pids.clone()),
             current_app_hwnd: find_current_app_window().map(|hwnd| hwnd as isize),
             transition: None,
@@ -191,11 +186,6 @@ pub fn tick_launch_progress(state: &mut LaunchState, launch_held: bool) -> Launc
             }
 
             return LaunchTickResult::Pending;
-        }
-
-        if now.duration_since(state.last_keep_foreground_at) >= Duration::from_millis(250) {
-            bring_current_app_to_foreground();
-            state.last_keep_foreground_at = now;
         }
 
         if let Some((hwnd, pid)) = detect_launched_window(
@@ -532,17 +522,6 @@ fn maybe_align_window_top_left(hwnd: HWND, app_id: Option<u32>) {
 
     unsafe {
         SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn bring_current_app_to_foreground() {
-    let current_pid = unsafe { GetCurrentProcessId() } as u32;
-    for (hwnd, pid) in collect_visible_windows() {
-        if pid == current_pid {
-            bring_window_to_foreground(hwnd);
-            break;
-        }
     }
 }
 
