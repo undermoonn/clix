@@ -167,16 +167,6 @@ pub fn tick_launch_progress(state: &mut LaunchState, launch_held: bool) -> Launc
         if let Some(focus_pids) = &state.focus_pids {
             if let Some((hwnd, pid)) = find_best_window_for_pids(focus_pids, &state.game_name) {
                 maybe_align_window_top_left(hwnd, state.launch_app_id);
-
-                if let Some(current_hwnd) = state.current_app_hwnd.map(|hwnd| hwnd as HWND) {
-                    if current_hwnd != hwnd {
-                        if let Some(transition) = start_window_transition(current_hwnd, hwnd, pid) {
-                            state.transition = Some(transition);
-                            return LaunchTickResult::Pending;
-                        }
-                    }
-                }
-
                 bring_window_to_foreground(hwnd);
                 return LaunchTickResult::Ready(build_running_game_state(state, pid));
             }
