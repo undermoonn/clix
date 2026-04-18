@@ -119,6 +119,49 @@ fn draw_running_status_dot(painter: &egui::Painter, icon_rect: egui::Rect) {
     );
 }
 
+fn draw_main_clock(
+    painter: &egui::Painter,
+    time_pos: egui::Pos2,
+    wake_t: f32,
+) {
+    if wake_t <= 0.001 {
+        return;
+    }
+
+    let time_text = chrono::Local::now().format("%H:%M").to_string();
+    let time_font = egui::FontId::new(40.0, egui::FontFamily::Name("Bold".into()));
+    let time_galley = painter.layout_no_wrap(
+        time_text.clone(),
+        time_font.clone(),
+        color_with_scaled_alpha(
+            egui::Color32::from_rgba_unmultiplied(245, 247, 252, 168),
+            wake_t,
+        ),
+    );
+    let outline = painter.layout_no_wrap(
+        time_text,
+        time_font,
+        color_with_scaled_alpha(
+            egui::Color32::from_rgba_unmultiplied(0, 0, 0, 132),
+            wake_t,
+        ),
+    );
+    let offset = 0.9_f32;
+    for delta in [
+        egui::vec2(offset, 0.0),
+        egui::vec2(-offset, 0.0),
+        egui::vec2(0.0, offset),
+        egui::vec2(0.0, -offset),
+        egui::vec2(offset, offset),
+        egui::vec2(-offset, offset),
+        egui::vec2(offset, -offset),
+        egui::vec2(-offset, -offset),
+    ] {
+        painter.galley(time_pos + delta, outline.clone());
+    }
+    painter.galley(time_pos, time_galley);
+}
+
 fn dlss_tag_text(game: &crate::steam::Game) -> Option<String> {
     game.dlss_version.as_ref().map(|version| {
         let version = version.trim();
@@ -1297,6 +1340,19 @@ pub fn draw_hint_bar(
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
 
     let painter = ui.painter();
+    let show_clock = true;
+    let clock_gap = 34.0;
+    let clock_font = egui::FontId::new(40.0, egui::FontFamily::Name("Bold".into()));
+    let clock_galley = show_clock.then(|| {
+        painter.layout_no_wrap(
+            chrono::Local::now().format("%H:%M").to_string(),
+            clock_font,
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(245, 247, 252, 168),
+                wake_t,
+            ),
+        )
+    });
     let draw_icon = |painter: &egui::Painter, tex: &egui::TextureHandle, x: f32, size: f32| {
         painter.image(
             tex.id(),
@@ -1381,10 +1437,22 @@ pub fn draw_hint_bar(
     let g_back = painter.layout_no_wrap(language.back_text().to_string(), hint_font.clone(), hint_color);
     let g_force_close = painter.layout_no_wrap(language.hold_close_game_text().to_string(), hint_font.clone(), hint_color);
     let home_menu_group_w = action_icon_h;
-    let home_menu_x = padded_rect.max.x - home_menu_group_w;
+    let clock_reserved_w = clock_galley
+        .as_ref()
+        .map(|galley| galley.size().x + clock_gap)
+        .unwrap_or(0.0);
+    let home_menu_x = padded_rect.max.x - clock_reserved_w - home_menu_group_w;
     let b_label_reserve = g_back.size().x;
     let b_icon_x = home_menu_x - 20.0 - b_label_reserve - 6.0 - action_icon_h;
     let b_label_x = b_icon_x + action_icon_h + 6.0;
+
+    if let Some(clock_galley) = &clock_galley {
+        let clock_pos = egui::pos2(
+            home_menu_x + action_icon_h + clock_gap,
+            hint_y + row_h * 0.5 - clock_galley.size().y * 0.5,
+        );
+        draw_main_clock(painter, clock_pos, wake_t);
+    }
 
     if achievement_panel_active {
         let g_scroll = painter.layout_no_wrap(language.scroll_text().to_string(), hint_font.clone(), hint_color);
