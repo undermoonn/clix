@@ -24,6 +24,18 @@ use eframe::egui;
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
 
+fn load_app_icon() -> Option<eframe::IconData> {
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/app-icon-256.png"));
+    let rgba = image::load_from_memory(bytes).ok()?.to_rgba8();
+    let (width, height) = rgba.dimensions();
+
+    Some(eframe::IconData {
+        rgba: rgba.into_raw(),
+        width,
+        height,
+    })
+}
+
 #[cfg(target_os = "windows")]
 fn load_font_from_path(path: PathBuf) -> Option<egui::FontData> {
     std::fs::read(path).ok().map(egui::FontData::from_owned)
@@ -92,6 +104,7 @@ fn main() {
     let language = i18n::AppLanguage::detect_system();
     let options = eframe::NativeOptions {
         fullscreen: true,
+        icon_data: load_app_icon(),
         ..Default::default()
     };
     let _ = eframe::run_native(

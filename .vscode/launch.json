@@ -5,7 +5,7 @@
       "name": "Run clix release",
       "type": "cppvsdbg",
       "request": "launch",
-      "program": "${workspaceFolder}\\target\\release\\clix.exe",
+      "program": "${workspaceFolder}\\target\\release\\big-screen-launcher.exe",
       "cwd": "${workspaceFolder}",
       "preLaunchTask": "release",
       "console": "integratedTerminal"

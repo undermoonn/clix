@@ -142,8 +142,8 @@ impl AppLanguage {
 
     pub fn window_title(self) -> &'static str {
         match self {
-            Self::English => "Clix",
-            Self::SimplifiedChinese => "Clix",
+            Self::English => "Big Screen Launcher",
+            Self::SimplifiedChinese => "Big Screen Launcher",
         }
     }
 

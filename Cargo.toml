@@ -3,6 +3,8 @@ name = "clix"
 version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-only"
+autobins = false
+default-run = "big-screen-launcher"
 
 [dependencies]
 eframe = "0.23"
@@ -21,3 +23,13 @@ sys-locale = "0.3"
 winapi = { version = "0.3", features = ["winuser", "wingdi", "shellapi", "xinput", "psapi", "processthreadsapi", "handleapi", "winver", "libloaderapi"] }
 libloading = "0.7"
 crc32fast = "1"
+
+[build-dependencies]
+ico = "0.5"
+image = { version = "0.24", default-features = false, features = ["png"] }
+resvg = "0.47"
+winres = "0.1"
+
+[[bin]]
+name = "big-screen-launcher"
+path = "src/main.rs"
