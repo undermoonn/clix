@@ -13,7 +13,7 @@ winreg = { version = "0.9", optional = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 image = { version = "0.24", default-features = false, features = ["jpeg", "png"] }
-ureq = "2"
+ureq = "3"
 chrono = { version = "0.4", default-features = true, features = ["clock"] }
 sys-locale = "0.3"
 

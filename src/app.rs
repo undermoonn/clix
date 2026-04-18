@@ -178,10 +178,11 @@ impl eframe::App for LauncherApp {
             crate::xbox_home::guide_held(),
             now,
         );
+        let can_force_close = !self.page.show_achievement_panel();
         let force_close_hold = self.runtime.update_force_close_hold(
-            process_input,
-            selected_running,
-            input_frame.force_close_held,
+            process_input && can_force_close,
+            selected_running && can_force_close,
+            input_frame.force_close_held && can_force_close,
             now,
         );
         if home_hold.trigger_menu {
@@ -200,6 +201,9 @@ impl eframe::App for LauncherApp {
         }
 
         for action in &actions {
+            let previous_game = self.games.get(self.page.selected());
+            let previous_achievement_panel = self.page.show_achievement_panel();
+            let previous_achievement_selected = self.page.achievement_selected();
             let achievement_len = self
                 .achievements
                 .summary_for_selected(self.games.get(self.page.selected()))
@@ -211,6 +215,22 @@ impl eframe::App for LauncherApp {
                 self.can_open_achievement_panel_for_selected(),
                 achievement_len,
             );
+            let achievement_selection_changed = previous_achievement_panel
+                && self.page.show_achievement_panel()
+                && self.page.achievement_selected() != previous_achievement_selected;
+            let achievement_panel_closed = previous_achievement_panel && !self.page.show_achievement_panel();
+
+            if result.selected_changed
+                || result.open_achievement_panel
+                || result.refresh_achievements
+                || result.toggle_achievement_sort
+                || achievement_selection_changed
+                || achievement_panel_closed
+            {
+                self.achievements
+                    .clear_revealed_hidden_for_selected(previous_game);
+            }
+
             if result.open_achievement_panel {
                 self.achievements.refresh_for_selected(
                     self.games.get(self.page.selected()),
@@ -218,6 +238,29 @@ impl eframe::App for LauncherApp {
                     self.language,
                     ctx,
                 );
+            }
+            if result.reveal_hidden_achievement
+                && self.achievements.reveal_hidden_description_for_selected(
+                    self.games.get(self.page.selected()),
+                    self.page.achievement_selected(),
+                )
+            {
+                ctx.request_repaint();
+            }
+            if result.refresh_achievements {
+                self.achievements.force_refresh_for_selected(
+                    self.games.get(self.page.selected()),
+                    &self.steam_paths,
+                    self.language,
+                    ctx,
+                );
+            }
+            if result.toggle_achievement_sort {
+                self.achievements.toggle_sort_order();
+                ctx.request_repaint();
+            }
+            if achievement_selection_changed {
+                self.input.pulse_selection_change();
             }
             if result.selected_changed {
                 self.input.pulse_selection_change();
@@ -265,6 +308,7 @@ impl eframe::App for LauncherApp {
         let selected_achievement_reveal = self.achievements.text_reveal_for_selected(selected_game);
         let can_open_achievement_panel = self.can_open_achievement_panel_for_selected();
         let achievement_loading = self.achievements.loading_for_selected(selected_game);
+        let achievement_refresh_loading = self.achievements.refresh_loading_for_selected(selected_game);
         let achievement_has_no_data = self.achievements.has_no_data_for_selected(selected_game);
         let running_indices: Vec<usize> = self.running_games.keys().copied().collect();
         let launch_feedback = self
@@ -327,6 +371,10 @@ impl eframe::App for LauncherApp {
                             self.page.achievement_scroll_offset(),
                             self.page.wake_anim(),
                             game_icon,
+                            self.hint_icons.as_ref(),
+                            self.achievements.revealed_hidden_for_selected(selected_game),
+                            self.achievements.hidden_reveal_progress_for_selected(selected_game),
+                            self.achievements.sort_order().is_descending(),
                             self.achievements.icon_cache(),
                             self.achievements.icon_reveal(),
                         )
@@ -343,6 +391,7 @@ impl eframe::App for LauncherApp {
                         self.page.show_achievement_panel(),
                         self.page.show_home_menu(),
                         can_open_achievement_panel,
+                        achievement_refresh_loading,
                         selected_running,
                         self.runtime.force_close_hold_progress(),
                         self.page.wake_anim(),

@@ -1,8 +1,11 @@
 use std::collections::{HashMap, HashSet};
+use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::time::Duration;
 
 use crate::cache;
 use crate::i18n::AppLanguage;
+use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
 
 pub struct Game {
@@ -19,6 +22,8 @@ pub struct AchievementItem {
     pub api_name: String,
     pub display_name: Option<String>,
     pub description: Option<String>,
+    #[serde(default)]
+    pub is_hidden: bool,
     pub unlocked: Option<bool>,
     pub unlock_time: Option<u64>,
     pub global_percent: Option<f32>,
@@ -38,6 +43,40 @@ struct CachedAchievementSummary {
     summary: AchievementSummary,
 }
 
+#[derive(Debug, Deserialize)]
+struct GlobalAchievementPercentagesResponse {
+    achievementpercentages: GlobalAchievementPercentagesPayload,
+}
+
+#[derive(Debug, Deserialize)]
+struct GlobalAchievementPercentagesPayload {
+    achievements: Vec<GlobalAchievementPercentageEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GlobalAchievementPercentageEntry {
+    name: String,
+    #[serde(deserialize_with = "deserialize_percent_value")]
+    percent: f32,
+}
+
+fn deserialize_percent_value<'de, D>(deserializer: D) -> Result<f32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum PercentValue {
+        Number(f32),
+        Text(String),
+    }
+
+    match PercentValue::deserialize(deserializer)? {
+        PercentValue::Number(value) => Ok(value),
+        PercentValue::Text(text) => text.trim().parse::<f32>().map_err(de::Error::custom),
+    }
+}
+
 fn achievement_cache_dir(language: AppLanguage) -> PathBuf {
     let mut dir = cache::cache_subdir("achievement_cache");
     dir.push(language.steam_language_key());
@@ -47,6 +86,35 @@ fn achievement_cache_dir(language: AppLanguage) -> PathBuf {
 
 fn achievement_cache_path(app_id: u32, language: AppLanguage) -> PathBuf {
     achievement_cache_dir(language).join(format!("{}.json", app_id))
+}
+
+fn achievement_diagnostics_log_path() -> PathBuf {
+    cache::cache_subdir("achievement_cache").join("diagnostics.log")
+}
+
+fn log_achievement_request_failure(app_id: u32, url: &str, detail: &str) {
+    let log_path = achievement_diagnostics_log_path();
+    if let Some(parent) = log_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+    {
+        let _ = writeln!(
+            file,
+            "[clix] app {}: global achievement percentage request failed: url={}, {}",
+            app_id,
+            url,
+            detail
+        );
+    }
+}
+
+fn should_retry_achievement_request(err: &ureq::Error) -> bool {
+    matches!(err, ureq::Error::Timeout(_) | ureq::Error::Io(_))
 }
 
 pub fn load_cached_achievement_summary(
@@ -645,6 +713,7 @@ struct SchemaAchInfo {
     api_name: String,
     display_name: Option<String>,
     description: Option<String>,
+    is_hidden: bool,
     icon_url: Option<String>,
     icon_gray_url: Option<String>,
 }
@@ -723,12 +792,19 @@ fn collect_schema_achievement_metadata(
             if let Some(api_name) = api_name {
                 let display_name = extract_display_name(inner, language);
                 let description = extract_description(inner, language);
+                let is_hidden = extract_hidden_flag(inner);
                 let (icon_url, icon_gray_url) = extract_icon_urls(inner);
-                if display_name.is_some() || description.is_some() || icon_url.is_some() || icon_gray_url.is_some() {
+                if display_name.is_some()
+                    || description.is_some()
+                    || is_hidden
+                    || icon_url.is_some()
+                    || icon_gray_url.is_some()
+                {
                     let e = out.entry(api_name.clone()).or_insert_with(|| SchemaAchInfo {
                         api_name: api_name.clone(),
                         display_name: None,
                         description: None,
+                        is_hidden: false,
                         icon_url: None,
                         icon_gray_url: None,
                     });
@@ -737,6 +813,9 @@ fn collect_schema_achievement_metadata(
                     }
                     if e.description.is_none() {
                         e.description = description;
+                    }
+                    if !e.is_hidden {
+                        e.is_hidden = is_hidden;
                     }
                     if e.icon_url.is_none() {
                         e.icon_url = icon_url;
@@ -776,11 +855,13 @@ fn collect_achievement_bits(
                             if !api_name.is_empty() {
                                 let display_name = extract_display_name(fields, language);
                                 let description = extract_description(fields, language);
+                                let is_hidden = extract_hidden_flag(fields);
                                 let (icon_url, icon_gray_url) = extract_icon_urls(fields);
                                 entries.push((bit_idx, SchemaAchInfo {
                                     api_name: api_name.clone(),
                                     display_name,
                                     description,
+                                    is_hidden,
                                     icon_url,
                                     icon_gray_url,
                                 }));
@@ -851,6 +932,40 @@ fn extract_description(fields: &HashMap<String, BvdfVal>, language: AppLanguage)
         .and_then(|(_, v)| if let BvdfVal::Nested(n) = v { Some(n) } else { None })?;
 
     extract_localized_nested_string(desc_node, language)
+}
+
+fn extract_hidden_flag(fields: &HashMap<String, BvdfVal>) -> bool {
+    fn parse_hidden_value(value: &BvdfVal) -> bool {
+        match value {
+            BvdfVal::Int32(number) => *number != 0,
+            BvdfVal::Uint64(number) => *number != 0,
+            BvdfVal::Str(text) => matches!(
+                text.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes"
+            ),
+            BvdfVal::Nested(_) => false,
+        }
+    }
+
+    if let Some(value) = fields
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case("hidden"))
+        .map(|(_, value)| value)
+    {
+        return parse_hidden_value(value);
+    }
+
+    fields
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case("display"))
+        .and_then(|(_, value)| match value {
+            BvdfVal::Nested(display) => display
+                .iter()
+                .find(|(key, _)| key.eq_ignore_ascii_case("hidden"))
+                .map(|(_, value)| parse_hidden_value(value)),
+            _ => None,
+        })
+        .unwrap_or(false)
 }
 
 fn normalize_schema_icon_value(app_id: u32, raw: &str) -> Option<String> {
@@ -1016,6 +1131,72 @@ fn load_schema_icon_urls(
         }
     }
     map
+}
+
+fn load_global_achievement_percentages(app_id: u32) -> HashMap<String, f32> {
+    let request_timeout = Duration::from_secs(5);
+    let max_attempts = 2;
+    let url = format!(
+        "https://api.steampowered.com/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/?gameid={}",
+        app_id
+    );
+    let mut attempt = 1;
+    let resp = loop {
+        match ureq::get(&url)
+            .config()
+            .timeout_global(Some(request_timeout))
+            .build()
+            .call()
+        {
+            Ok(resp) => break resp,
+            Err(ureq::Error::StatusCode(status)) => {
+                log_achievement_request_failure(
+                    app_id,
+                    &url,
+                    &format!("status={}, attempt={}/{}", status, attempt, max_attempts),
+                );
+                return HashMap::new();
+            }
+            Err(err) => {
+                if should_retry_achievement_request(&err) && attempt < max_attempts {
+                    attempt += 1;
+                    continue;
+                }
+
+                log_achievement_request_failure(
+                    app_id,
+                    &url,
+                    &format!("error={}, attempt={}/{}", err, attempt, max_attempts),
+                );
+                return HashMap::new();
+            }
+        }
+    };
+
+    let mut bytes = Vec::new();
+    if let Err(err) = resp
+        .into_body()
+        .into_reader()
+        .take(256 * 1024)
+        .read_to_end(&mut bytes)
+    {
+        let _ = err;
+        return HashMap::new();
+    }
+
+    let Ok(payload) = serde_json::from_slice::<GlobalAchievementPercentagesResponse>(&bytes) else {
+        return HashMap::new();
+    };
+
+    let percentages: HashMap<String, f32> = payload
+        .achievementpercentages
+        .achievements
+        .into_iter()
+        .filter(|entry| entry.percent.is_finite())
+        .map(|entry| (entry.name, entry.percent))
+        .collect();
+
+    percentages
 }
 
 /// Load achievement unlock status from appcache/stats/UserGameStats_<accountid>_<appid>.bin.
@@ -1269,6 +1450,7 @@ fn load_local_schema_items(
                     api_name: info.api_name.clone(),
                     display_name: None,
                     description: None,
+                    is_hidden: false,
                     unlocked: None,
                     unlock_time: None,
                     global_percent: None,
@@ -1280,6 +1462,9 @@ fn load_local_schema_items(
             }
             if e.description.is_none() {
                 e.description = info.description.clone();
+            }
+            if !e.is_hidden {
+                e.is_hidden = info.is_hidden;
             }
             if e.icon_url.is_none() {
                 e.icon_url = info
@@ -1303,6 +1488,7 @@ fn load_local_schema_items(
                 api_name,
                 display_name: None,
                 description: None,
+                is_hidden: false,
                 unlocked: None,
                 unlock_time: None,
                 global_percent: None,
@@ -1314,6 +1500,9 @@ fn load_local_schema_items(
         }
         if e.description.is_none() {
             e.description = info.description;
+        }
+        if !e.is_hidden {
+            e.is_hidden = info.is_hidden;
         }
         if e.icon_url.is_none() {
             e.icon_url = info
@@ -1334,17 +1523,44 @@ fn load_local_schema_items(
 
 fn achievement_unlock_sort_rank(unlocked: Option<bool>) -> u8 {
     match unlocked {
-        Some(false) => 0,
-        None => 1,
-        Some(true) => 2,
+        Some(true) => 0,
+        Some(false) => 1,
+        None => 2,
     }
 }
 
-fn achievement_percent_sort_value(global_percent: Option<f32>) -> f32 {
+fn achievement_percent_sort_value(global_percent: Option<f32>) -> Option<f32> {
     match global_percent {
-        Some(value) if value.is_finite() => value,
-        _ => 101.0,
+        Some(value) if value.is_finite() => Some(value),
+        _ => None,
     }
+}
+
+pub fn sort_achievement_items(items: &mut [AchievementItem], descending: bool) {
+    items.sort_by(|a, b| {
+        let a_percent = achievement_percent_sort_value(a.global_percent);
+        let b_percent = achievement_percent_sort_value(b.global_percent);
+
+        a_percent
+            .is_none()
+            .cmp(&b_percent.is_none())
+            .then_with(|| match (a_percent, b_percent) {
+                (Some(a_percent), Some(b_percent)) if descending => b_percent.total_cmp(&a_percent),
+                (Some(a_percent), Some(b_percent)) => a_percent.total_cmp(&b_percent),
+                _ => std::cmp::Ordering::Equal,
+            })
+            .then_with(|| {
+                achievement_unlock_sort_rank(a.unlocked)
+                    .cmp(&achievement_unlock_sort_rank(b.unlocked))
+            })
+            .then_with(|| {
+                a.display_name
+                    .as_deref()
+                    .unwrap_or(&a.api_name)
+                    .cmp(b.display_name.as_deref().unwrap_or(&b.api_name))
+            })
+            .then_with(|| a.api_name.cmp(&b.api_name))
+    });
 }
 
 pub fn load_achievement_summary(
@@ -1367,6 +1583,7 @@ pub fn load_achievement_summary(
                 api_name: api_name.clone(),
                 display_name: None,
                 description: None,
+                is_hidden: false,
                 unlocked: None,
                 unlock_time: None,
                 global_percent: None,
@@ -1390,6 +1607,7 @@ pub fn load_achievement_summary(
                     api_name: name,
                     display_name: None,
                     description: None,
+                    is_hidden: false,
                     unlocked: None,
                     unlock_time: None,
                     global_percent: None,
@@ -1407,7 +1625,9 @@ pub fn load_achievement_summary(
     // Phase 5 — apply any remaining metadata from local schema helpers.
     let display_names = load_schema_display_names(app_id, steam_paths, language);
     let descriptions = load_schema_descriptions(app_id, steam_paths, language);
+    let hidden_flags = load_schema_achievement_metadata(app_id, steam_paths, language);
     let schema_icons = load_schema_icon_urls(app_id, steam_paths, language);
+    let global_percentages = load_global_achievement_percentages(app_id);
     for item in items_map.values_mut() {
         if item.display_name.is_none() {
             if let Some(dn) = display_names.get(&item.api_name) {
@@ -1417,6 +1637,11 @@ pub fn load_achievement_summary(
         if item.description.is_none() {
             if let Some(description) = descriptions.get(&item.api_name) {
                 item.description = Some(description.clone());
+            }
+        }
+        if !item.is_hidden {
+            if let Some(info) = hidden_flags.get(&item.api_name) {
+                item.is_hidden = info.is_hidden;
             }
         }
         if item.icon_url.is_none() || item.icon_gray_url.is_none() {
@@ -1429,18 +1654,13 @@ pub fn load_achievement_summary(
                 }
             }
         }
+        if let Some(percent) = global_percentages.get(&item.api_name) {
+            item.global_percent = Some(*percent);
+        }
     }
 
     let mut items: Vec<AchievementItem> = items_map.into_values().collect();
-    items.sort_by(|a, b| {
-        achievement_unlock_sort_rank(a.unlocked)
-            .cmp(&achievement_unlock_sort_rank(b.unlocked))
-            .then_with(|| {
-                achievement_percent_sort_value(a.global_percent)
-                    .total_cmp(&achievement_percent_sort_value(b.global_percent))
-            })
-            .then_with(|| a.api_name.cmp(&b.api_name))
-    });
+    sort_achievement_items(&mut items, true);
 
     Some(AchievementSummary {
         unlocked: unlocked_count,
@@ -1452,12 +1672,12 @@ pub fn load_achievement_summary(
 #[cfg(test)]
 mod tests {
     use super::{
-        achievement_percent_sort_value, achievement_unlock_sort_rank, parse_app_type_token,
-        window_contains_app_name, AchievementItem,
+        achievement_percent_sort_value, parse_app_type_token, sort_achievement_items,
+        window_contains_app_name, AchievementItem, GlobalAchievementPercentagesResponse,
     };
 
     #[test]
-    fn achievement_sort_handles_mixed_states_and_nan() {
+    fn achievement_sort_defaults_to_highest_unlock_rate_first() {
         let mut items = vec![
             AchievementItem {
                 api_name: "unknown".to_string(),
@@ -1479,18 +1699,62 @@ mod tests {
             },
         ];
 
-        items.sort_by(|a, b| {
-            achievement_unlock_sort_rank(a.unlocked)
-                .cmp(&achievement_unlock_sort_rank(b.unlocked))
-                .then_with(|| {
-                    achievement_percent_sort_value(a.global_percent)
-                        .total_cmp(&achievement_percent_sort_value(b.global_percent))
-                })
-                .then_with(|| a.api_name.cmp(&b.api_name))
-        });
+        sort_achievement_items(&mut items, true);
+
+        let names: Vec<_> = items.iter().map(|item| item.api_name.as_str()).collect();
+        assert_eq!(names, vec!["unknown", "unlocked", "locked"]);
+    }
+
+    #[test]
+    fn achievement_sort_can_switch_to_lowest_unlock_rate_first() {
+        let mut items = vec![
+            AchievementItem {
+                api_name: "rare".to_string(),
+                global_percent: Some(1.5),
+                ..AchievementItem::default()
+            },
+            AchievementItem {
+                api_name: "common".to_string(),
+                global_percent: Some(62.5),
+                ..AchievementItem::default()
+            },
+            AchievementItem {
+                api_name: "unknown".to_string(),
+                global_percent: None,
+                ..AchievementItem::default()
+            },
+        ];
+
+        sort_achievement_items(&mut items, false);
 
         let names: Vec<_> = items.into_iter().map(|item| item.api_name).collect();
-        assert_eq!(names, vec!["locked", "unknown", "unlocked"]);
+        assert_eq!(names, vec!["rare", "common", "unknown"]);
+    }
+
+    #[test]
+    fn achievement_percent_sort_value_filters_invalid_values() {
+        assert_eq!(achievement_percent_sort_value(Some(18.2)), Some(18.2));
+        assert_eq!(achievement_percent_sort_value(Some(f32::NAN)), None);
+        assert_eq!(achievement_percent_sort_value(None), None);
+    }
+
+    #[test]
+    fn global_achievement_percentages_accept_string_percent_values() {
+        let payload = r#"{
+            "achievementpercentages": {
+                "achievements": [
+                    { "name": "ACH_ONE", "percent": "38.0" },
+                    { "name": "ACH_TWO", "percent": 12.5 }
+                ]
+            }
+        }"#;
+
+        let parsed: GlobalAchievementPercentagesResponse =
+            serde_json::from_str(payload).expect("payload should parse");
+
+        assert_eq!(parsed.achievementpercentages.achievements.len(), 2);
+        assert_eq!(parsed.achievementpercentages.achievements[0].percent, 38.0);
+        assert_eq!(parsed.achievementpercentages.achievements[1].percent, 12.5);
     }
 
     #[test]

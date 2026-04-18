@@ -84,6 +84,13 @@ impl AppLanguage {
         }
     }
 
+    pub fn refresh_text(self) -> &'static str {
+        match self {
+            Self::English => "Refresh",
+            Self::SimplifiedChinese => "刷新",
+        }
+    }
+
     pub fn start_text(self) -> &'static str {
         match self {
             Self::English => "Launch",
@@ -95,6 +102,27 @@ impl AppLanguage {
         match self {
             Self::English => "Details",
             Self::SimplifiedChinese => "详情",
+        }
+    }
+
+    pub fn achievement_hidden_text(self) -> &'static str {
+        match self {
+            Self::English => "Show hidden achievement",
+            Self::SimplifiedChinese => "显示隐藏成就",
+        }
+    }
+
+    pub fn unlock_rate_high_to_low_text(self) -> &'static str {
+        match self {
+            Self::English => "Rate High-Low",
+            Self::SimplifiedChinese => "解锁率高到低",
+        }
+    }
+
+    pub fn unlock_rate_low_to_high_text(self) -> &'static str {
+        match self {
+            Self::English => "Rate Low-High",
+            Self::SimplifiedChinese => "解锁率低到高",
         }
     }
 

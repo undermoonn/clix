@@ -4,7 +4,7 @@ use std::time::Instant;
 #[cfg(target_os = "windows")]
 use winapi::um::xinput::{
     XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B, XINPUT_GAMEPAD_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_LEFT,
-    XINPUT_GAMEPAD_DPAD_RIGHT, XINPUT_GAMEPAD_DPAD_UP, XINPUT_GAMEPAD_X,
+    XINPUT_GAMEPAD_DPAD_RIGHT, XINPUT_GAMEPAD_DPAD_UP, XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y,
 };
 
 #[cfg(target_os = "windows")]
@@ -34,6 +34,8 @@ pub enum ControllerAction {
     Left,
     Right,
     Launch,
+    Refresh,
+    Sort,
     Quit,
 }
 
@@ -45,6 +47,8 @@ impl ControllerAction {
             "left" => Some(ControllerAction::Left),
             "right" => Some(ControllerAction::Right),
             "launch" => Some(ControllerAction::Launch),
+            "refresh" => Some(ControllerAction::Refresh),
+            "sort" => Some(ControllerAction::Sort),
             "quit" => Some(ControllerAction::Quit),
             _ => None,
         }
@@ -136,18 +140,21 @@ impl InputController {
 
         if process_input {
             let action_names: &[&str] = if include_quit_action {
-                &["up", "down", "left", "right", "launch", "quit"]
+                &["up", "down", "left", "right", "launch", "refresh", "sort", "quit"]
             } else {
-                &["up", "down", "left", "right", "launch"]
+                &["up", "down", "left", "right", "launch", "refresh", "sort"]
             };
 
             for action_name in action_names {
+                let action_name = *action_name;
                 if !raw_held.contains(action_name) {
                     continue;
                 }
 
                 let should_fire = if let Some(state) = self.nav_held.get_mut(action_name) {
-                    if !state.past_initial {
+                    if matches!(action_name, "refresh" | "sort") {
+                        false
+                    } else if !state.past_initial {
                         if now.duration_since(state.since).as_millis() >= NAV_INITIAL_DELAY_MS {
                             state.past_initial = true;
                             state.last_fire = now;
@@ -318,7 +325,11 @@ impl InputController {
                 raw_held.insert("quit");
             }
             if (buttons & XINPUT_GAMEPAD_X) != 0 {
+                raw_held.insert("refresh");
                 raw_held.insert("force_close");
+            }
+            if (buttons & XINPUT_GAMEPAD_Y) != 0 {
+                raw_held.insert("sort");
             }
             if *ly > 16000 {
                 raw_held.insert("up");
@@ -377,6 +388,12 @@ impl InputController {
             }
             "launch" => {
                 raw_held.insert("launch");
+            }
+            "refresh" => {
+                raw_held.insert("refresh");
+            }
+            "sort" => {
+                raw_held.insert("sort");
             }
             "quit" => {
                 raw_held.insert("quit");

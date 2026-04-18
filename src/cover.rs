@@ -115,7 +115,8 @@ pub fn load_achievement_icon_bytes(url: &str) -> Option<Vec<u8>> {
     }
 
     let mut bytes = Vec::new();
-    let mut reader = resp.into_reader().take(2 * 1024 * 1024);
+    let (_, body) = resp.into_parts();
+    let mut reader = body.into_reader().take(2 * 1024 * 1024);
     if reader.read_to_end(&mut bytes).is_err() || !achievement_icon_bytes_are_valid(&bytes) {
         return None;
     }
@@ -140,7 +141,8 @@ fn download_hd_cover(app_id: u32) -> Option<Vec<u8>> {
         if let Ok(resp) = ureq::get(url).call() {
             if resp.status() == 200 {
                 let mut bytes: Vec<u8> = Vec::new();
-                if resp
+                let (_, body) = resp.into_parts();
+                if body
                     .into_reader()
                     .take(10 * 1024 * 1024)
                     .read_to_end(&mut bytes)
@@ -181,7 +183,8 @@ fn download_logo_bytes(app_id: u32) -> Option<Vec<u8>> {
         if let Ok(resp) = ureq::get(url).call() {
             if resp.status() == 200 {
                 let mut bytes: Vec<u8> = Vec::new();
-                if resp
+                let (_, body) = resp.into_parts();
+                if body
                     .into_reader()
                     .take(4 * 1024 * 1024)
                     .read_to_end(&mut bytes)

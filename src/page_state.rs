@@ -4,6 +4,9 @@ use crate::input::ControllerAction;
 
 pub struct PageActionResult {
     pub open_achievement_panel: bool,
+    pub reveal_hidden_achievement: bool,
+    pub refresh_achievements: bool,
+    pub toggle_achievement_sort: bool,
     pub launch_selected: bool,
     pub selected_changed: bool,
     pub close_frame: bool,
@@ -130,6 +133,9 @@ impl PageState {
     ) -> PageActionResult {
         let mut result = PageActionResult {
             open_achievement_panel: false,
+            reveal_hidden_achievement: false,
+            refresh_achievements: false,
+            toggle_achievement_sort: false,
             launch_selected: false,
             selected_changed: false,
             close_frame: false,
@@ -182,6 +188,16 @@ impl PageState {
                 ControllerAction::Quit => {
                     self.close_achievement_panel();
                 }
+                ControllerAction::Launch => {
+                    result.reveal_hidden_achievement = true;
+                }
+                ControllerAction::Refresh => {
+                    result.refresh_achievements = true;
+                }
+                ControllerAction::Sort => {
+                    self.reset_achievement_selection();
+                    result.toggle_achievement_sort = true;
+                }
                 _ => {}
             }
             return result;
@@ -214,6 +230,8 @@ impl PageState {
             ControllerAction::Launch => {
                 result.launch_selected = true;
             }
+            ControllerAction::Refresh => {}
+            ControllerAction::Sort => {}
             ControllerAction::Quit => {}
             ControllerAction::Up => {}
         }
@@ -408,5 +426,31 @@ mod tests {
         assert!(result.send_app_to_background);
         assert!(!result.close_frame);
         assert!(!page.show_home_menu());
+    }
+
+    #[test]
+    fn achievement_panel_launch_marks_hidden_reveal_action() {
+        let mut page = PageState::new();
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert!(result.reveal_hidden_achievement);
+        assert!(!result.launch_selected);
+    }
+
+    #[test]
+    fn achievement_panel_sort_resets_selection_to_top() {
+        let mut page = PageState::new();
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+
+        assert_eq!(page.achievement_selected(), 2);
+
+        let result = page.handle_action(&ControllerAction::Sort, 3, true, 4);
+
+        assert!(result.toggle_achievement_sort);
+        assert_eq!(page.achievement_selected(), 0);
     }
 }
