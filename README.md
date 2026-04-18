@@ -11,9 +11,9 @@ Controller input currently supports XInput devices only.
 
 Examples of the current UI are shown below:
 
-![Clix Screenshot 1](./screenshots/Clix%202026_4_17%2019_25_45.png)
+![Clix Home Screen](./screenshots/Clix%202026_4_17%2019_25_45.png)
 
-![Clix Screenshot 2](./screenshots/Clix%202026_4_17%2019_25_02.png)
+![Clix Achievements Screen](./screenshots/Clix%202026_4_18%2014_23_16.png)
 
 
 ## License
