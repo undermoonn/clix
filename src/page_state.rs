@@ -2,6 +2,15 @@ use eframe::egui;
 
 use crate::input::ControllerAction;
 
+const HOME_MENU_OPTION_COUNT: usize = 4;
+const HOME_MENU_COLUMNS: usize = 2;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResolutionPreset {
+    HalfMaxRefresh,
+    MaxRefresh,
+}
+
 pub struct PageActionResult {
     pub open_achievement_panel: bool,
     pub reveal_hidden_achievement: bool,
@@ -11,6 +20,7 @@ pub struct PageActionResult {
     pub selected_changed: bool,
     pub close_frame: bool,
     pub send_app_to_background: bool,
+    pub set_resolution: Option<ResolutionPreset>,
 }
 
 pub struct PageState {
@@ -140,27 +150,43 @@ impl PageState {
             selected_changed: false,
             close_frame: false,
             send_app_to_background: false,
+            set_resolution: None,
         };
 
         if self.show_home_menu {
             match action {
                 ControllerAction::Left => {
-                    if self.home_menu_selected > 0 {
+                    if self.home_menu_selected % HOME_MENU_COLUMNS > 0 {
                         self.home_menu_selected -= 1;
                     }
                 }
                 ControllerAction::Right => {
-                    if self.home_menu_selected < 1 {
+                    if self.home_menu_selected % HOME_MENU_COLUMNS + 1 < HOME_MENU_COLUMNS
+                        && self.home_menu_selected + 1 < HOME_MENU_OPTION_COUNT
+                    {
                         self.home_menu_selected += 1;
+                    }
+                }
+                ControllerAction::Up => {
+                    if self.home_menu_selected >= HOME_MENU_COLUMNS {
+                        self.home_menu_selected -= HOME_MENU_COLUMNS;
+                    }
+                }
+                ControllerAction::Down => {
+                    let target = self.home_menu_selected + HOME_MENU_COLUMNS;
+                    if target < HOME_MENU_OPTION_COUNT {
+                        self.home_menu_selected = target;
                     }
                 }
                 ControllerAction::Launch => {
                     let selected_option = self.home_menu_selected;
                     self.close_home_menu();
-                    if selected_option == 0 {
-                        result.send_app_to_background = true;
-                    } else {
-                        result.close_frame = true;
+                    match selected_option {
+                        0 => result.send_app_to_background = true,
+                        1 => result.close_frame = true,
+                        2 => result.set_resolution = Some(ResolutionPreset::HalfMaxRefresh),
+                        3 => result.set_resolution = Some(ResolutionPreset::MaxRefresh),
+                        _ => {}
                     }
                 }
                 ControllerAction::Quit => {
@@ -277,15 +303,7 @@ impl PageState {
                 self.home_menu_anim = 1.0;
             }
 
-            let home_menu_scroll_target = self.home_menu_selected as f32;
-            let home_menu_scroll_diff = home_menu_scroll_target - self.home_menu_scroll_offset;
-            if home_menu_scroll_diff.abs() > 0.001 {
-                self.home_menu_scroll_offset +=
-                    home_menu_scroll_diff * (1.0 - (-16.0 * dt).exp());
-                ctx.request_repaint();
-            } else {
-                self.home_menu_scroll_offset = home_menu_scroll_target;
-            }
+            self.home_menu_scroll_offset = self.home_menu_selected as f32;
         } else {
             self.home_menu_anim = 0.0;
             self.home_menu_scroll_offset = self.home_menu_selected as f32;
@@ -342,7 +360,7 @@ impl PageState {
 
 #[cfg(test)]
 mod tests {
-    use super::PageState;
+    use super::{PageState, ResolutionPreset};
     use crate::input::ControllerAction;
 
     #[test]
@@ -401,15 +419,38 @@ mod tests {
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
 
         assert!(!result.send_app_to_background);
+        assert_eq!(result.set_resolution, None);
         assert!(result.close_frame);
         assert!(!page.show_home_menu());
     }
 
     #[test]
-    fn up_down_do_not_change_home_menu_selection() {
+    fn home_menu_selection_stops_at_last_resolution_option() {
         let mut page = PageState::new();
         page.open_home_menu();
 
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+
+        assert_eq!(page.home_menu_selected, 3);
+    }
+
+    #[test]
+    fn down_moves_home_menu_selection_to_resolution_row() {
+        let mut page = PageState::new();
+        page.open_home_menu();
+
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+
+        assert_eq!(page.home_menu_selected, 2);
+    }
+
+    #[test]
+    fn up_returns_home_menu_selection_to_top_row() {
+        let mut page = PageState::new();
+        page.open_home_menu();
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Up, 3, true, 4);
 
@@ -424,6 +465,42 @@ mod tests {
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
 
         assert!(result.send_app_to_background);
+        assert_eq!(result.set_resolution, None);
+        assert!(!result.close_frame);
+        assert!(!page.show_home_menu());
+    }
+
+    #[test]
+    fn launch_on_half_refresh_option_requests_resolution_change() {
+        let mut page = PageState::new();
+        page.open_home_menu();
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert_eq!(
+            result.set_resolution,
+            Some(ResolutionPreset::HalfMaxRefresh)
+        );
+        assert!(!result.send_app_to_background);
+        assert!(!result.close_frame);
+        assert!(!page.show_home_menu());
+    }
+
+    #[test]
+    fn launch_on_max_refresh_option_requests_resolution_change() {
+        let mut page = PageState::new();
+        page.open_home_menu();
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
+
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert_eq!(
+            result.set_resolution,
+            Some(ResolutionPreset::MaxRefresh)
+        );
+        assert!(!result.send_app_to_background);
         assert!(!result.close_frame);
         assert!(!page.show_home_menu());
     }

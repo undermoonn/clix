@@ -70,6 +70,20 @@ impl AppLanguage {
         }
     }
 
+    pub fn set_display_resolution_text(self) -> &'static str {
+        match self {
+            Self::English => "Set Display Resolution",
+            Self::SimplifiedChinese => "设置显示分辨率",
+        }
+    }
+
+    pub fn current_display_mode_text(self) -> &'static str {
+        match self {
+            Self::English => "Current",
+            Self::SimplifiedChinese => "当前",
+        }
+    }
+
     pub fn hold_close_game_text(self) -> &'static str {
         match self {
             Self::English => "Force Exit",

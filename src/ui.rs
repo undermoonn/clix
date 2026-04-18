@@ -1566,6 +1566,9 @@ pub fn draw_home_menu(
     ui: &mut egui::Ui,
     language: AppLanguage,
     icons: Option<&HintIcons>,
+    current_mode_label: &str,
+    half_refresh_label: &str,
+    max_refresh_label: &str,
     menu_anim: f32,
     selected_option_t: f32,
     wake_anim: f32,
@@ -1598,12 +1601,34 @@ pub fn draw_home_menu(
         ),
     );
 
-    let option_height = 100.0;
+    let option_height = 94.0;
     let option_gap = 22.0;
+    let row_gap = 44.0;
+    let section_gap = 16.0;
     let content_padding = 28.0;
-    let content_height = option_height;
+    let section_font = egui::FontId::new(24.0, egui::FontFamily::Name("Bold".into()));
+    let current_mode_font = egui::FontId::new(20.0, egui::FontFamily::Proportional);
+    let section_text = painter.layout_no_wrap(
+        language.set_display_resolution_text().to_string(),
+        section_font.clone(),
+        color_with_scaled_alpha(egui::Color32::from_rgb(150, 158, 170), sheet_t),
+    );
+    let current_mode_summary = format!(
+        "{} {}",
+        language.current_display_mode_text(),
+        current_mode_label
+    );
+    let current_mode_text = painter.layout_no_wrap(
+        current_mode_summary,
+        current_mode_font,
+        color_with_scaled_alpha(egui::Color32::from_rgb(134, 142, 152), sheet_t),
+    );
+    let section_text_height = section_text.size().y;
+    let current_mode_text_height = current_mode_text.size().y;
+    let current_mode_text_width = current_mode_text.size().x;
+    let content_height = option_height + row_gap + section_text_height + section_gap + option_height;
     let sheet_height = (panel_rect.height() * 0.34)
-        .clamp(content_height + content_padding * 2.0, 360.0);
+        .clamp(content_height + content_padding * 2.0, 420.0);
     let sheet_rect = egui::Rect::from_center_size(panel_rect.center(), egui::vec2(panel_rect.width(), sheet_height));
     painter.rect_filled(
         sheet_rect,
@@ -1611,21 +1636,24 @@ pub fn draw_home_menu(
         color_with_scaled_alpha(egui::Color32::from_rgb(18, 19, 22), sheet_t),
     );
 
-    let option_labels = [
+    let primary_option_labels = [
         language.minimize_app_text(),
         language.close_app_text(),
     ];
+    let resolution_option_labels = [half_refresh_label, max_refresh_label];
     let option_font = egui::FontId::new(22.0, egui::FontFamily::Name("Bold".into()));
-    let content_width = (sheet_rect.width() * 0.50).clamp(420.0, 760.0);
+    let content_width = (sheet_rect.width() * 0.56).clamp(520.0, 860.0);
     let content_rect = egui::Rect::from_center_size(
         sheet_rect.center(),
         egui::vec2(content_width, content_height),
     );
     let option_width = (content_rect.width() - option_gap) * 0.5;
-    let option_inner_padding = 24.0;
-    let selected_expand = egui::vec2(10.0, 10.0);
-    let selected_slide_t = selected_option_t.clamp(0.0, (option_labels.len() - 1) as f32);
-    let option_rects: Vec<_> = option_labels
+    let option_inner_padding = 20.0;
+    let selected_index = selected_option_t.round().clamp(0.0, 3.0) as usize;
+    let top_row_y = content_rect.min.y;
+    let section_y = top_row_y + option_height + row_gap;
+    let bottom_row_y = section_y + section_text_height + section_gap;
+    let top_row_rects: Vec<_> = primary_option_labels
         .iter()
         .enumerate()
         .map(|(index, _)| {
@@ -1634,31 +1662,43 @@ pub fn draw_home_menu(
             egui::Rect::from_min_size(
                 egui::pos2(
                     content_rect.min.x + index as f32 * (option_width + option_gap),
-                    content_rect.min.y,
+                    top_row_y,
                 ),
                 egui::vec2(option_width, option_height),
             )
             .translate(option_offset)
         })
         .collect();
+    let bottom_row_rects: Vec<_> = resolution_option_labels
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            let option_t = phase_t(0.30 + index as f32 * 0.08, 0.90 + index as f32 * 0.08);
+            let option_offset = egui::vec2(0.0, lerp_f32(12.0, 0.0, option_t));
+            egui::Rect::from_min_size(
+                egui::pos2(
+                    content_rect.min.x + index as f32 * (option_width + option_gap),
+                    bottom_row_y,
+                ),
+                egui::vec2(option_width, option_height),
+            )
+            .translate(option_offset)
+        })
+        .collect();
+    let option_rects: Vec<_> = top_row_rects
+        .iter()
+        .chain(bottom_row_rects.iter())
+        .copied()
+        .collect();
     let highlight_offset = egui::vec2(0.0, lerp_f32(8.0, 0.0, highlight_t));
-    let highlight_scale = lerp_f32(0.965, 1.0, highlight_t);
-    let selected_rect = egui::Rect::from_center_size(
-        egui::pos2(
-            content_rect.min.x
-                + option_width * 0.5
-                + selected_slide_t * (option_width + option_gap),
-            content_rect.center().y,
-        ),
-        egui::vec2(
-            (option_width + selected_expand.x) * highlight_scale,
-            (option_height + selected_expand.y) * highlight_scale,
-        ),
-    )
-    .translate(highlight_offset);
+    let selected_rect = option_rects[selected_index].translate(highlight_offset);
 
     for (index, option_rect) in option_rects.iter().enumerate() {
-        let option_t = phase_t(0.14 + index as f32 * 0.08, 0.74 + index as f32 * 0.08);
+        let option_t = if index < 2 {
+            phase_t(0.14 + index as f32 * 0.08, 0.74 + index as f32 * 0.08)
+        } else {
+            phase_t(0.30 + (index - 2) as f32 * 0.08, 0.90 + (index - 2) as f32 * 0.08)
+        };
         painter.rect_filled(
             *option_rect,
             egui::Rounding::same(12.0),
@@ -1666,15 +1706,37 @@ pub fn draw_home_menu(
         );
     }
 
+    painter.galley(
+        egui::pos2(content_rect.min.x, section_y),
+        section_text,
+    );
+    painter.galley(
+        egui::pos2(
+            content_rect.max.x - current_mode_text_width,
+            section_y + (section_text_height - current_mode_text_height) * 0.5,
+        ),
+        current_mode_text,
+    );
+
     painter.rect_filled(
         selected_rect,
         egui::Rounding::same(14.0),
         color_with_scaled_alpha(egui::Color32::from_rgb(86, 90, 100), highlight_t),
     );
 
+    let option_labels = [
+        primary_option_labels[0],
+        primary_option_labels[1],
+        resolution_option_labels[0],
+        resolution_option_labels[1],
+    ];
     for (index, (label, option_rect)) in option_labels.iter().zip(option_rects.iter()).enumerate() {
-        let option_t = phase_t(0.14 + index as f32 * 0.08, 0.74 + index as f32 * 0.08);
-        let selectedness = smoothstep01(1.0 - (selected_slide_t - index as f32).abs().clamp(0.0, 1.0));
+        let option_t = if index < 2 {
+            phase_t(0.14 + index as f32 * 0.08, 0.74 + index as f32 * 0.08)
+        } else {
+            phase_t(0.30 + (index - 2) as f32 * 0.08, 0.90 + (index - 2) as f32 * 0.08)
+        };
+        let selectedness = if selected_index == index { 1.0 } else { 0.0 };
         let text_color = egui::Color32::from_rgb(
             lerp_f32(214.0, 248.0, selectedness).round() as u8,
             lerp_f32(218.0, 249.0, selectedness).round() as u8,

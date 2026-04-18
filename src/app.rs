@@ -4,11 +4,12 @@ use std::time::Instant;
 
 use crate::achievements::AchievementState;
 use crate::artwork::ArtworkState;
+use crate::display_mode::{self, ResolutionOptions};
 use crate::game_icons::GameIconState;
 use crate::i18n::AppLanguage;
 use crate::input::InputController;
 use crate::launch::{self, LaunchState};
-use crate::page_state::PageState;
+use crate::page_state::{PageState, ResolutionPreset};
 use crate::playtime::PlaytimeState;
 use crate::runtime_state::RuntimeState;
 use crate::steam::{self, Game};
@@ -28,6 +29,7 @@ pub struct LauncherApp {
     achievements: AchievementState,
     playtime: PlaytimeState,
     runtime: RuntimeState,
+    resolution_options: ResolutionOptions,
     wake_focus_pending: bool,
     pending_send_to_background: bool,
 }
@@ -55,6 +57,7 @@ impl LauncherApp {
             achievements: AchievementState::new(),
             playtime: PlaytimeState::new(),
             runtime: RuntimeState::new(),
+            resolution_options: crate::display_mode::detect_resolution_options(),
             wake_focus_pending: false,
             pending_send_to_background: false,
         }
@@ -116,6 +119,15 @@ impl LauncherApp {
             &self.steam_paths,
             ctx,
         );
+    }
+
+    fn apply_resolution_preset(&self, preset: ResolutionPreset) {
+        let option = match preset {
+            ResolutionPreset::HalfMaxRefresh => &self.resolution_options.half_refresh,
+            ResolutionPreset::MaxRefresh => &self.resolution_options.max_refresh,
+        };
+
+        let _ = display_mode::apply_resolution_choice(option);
     }
 }
 
@@ -186,6 +198,7 @@ impl eframe::App for LauncherApp {
             now,
         );
         if home_hold.trigger_menu {
+            self.resolution_options = crate::display_mode::detect_resolution_options();
             self.page.open_home_menu();
             ctx.request_repaint();
         }
@@ -273,6 +286,9 @@ impl eframe::App for LauncherApp {
                 self.pending_send_to_background = true;
                 self.input.clear_held();
                 ctx.request_repaint();
+            }
+            if let Some(preset) = result.set_resolution {
+                self.apply_resolution_preset(preset);
             }
             if result.close_frame {
                 frame.close();
@@ -402,6 +418,9 @@ impl eframe::App for LauncherApp {
                     ui,
                     self.language,
                     self.hint_icons.as_ref(),
+                    &self.resolution_options.current.label,
+                    &self.resolution_options.half_refresh.label,
+                    &self.resolution_options.max_refresh.label,
                     self.page.home_menu_anim(),
                     self.page.home_menu_scroll_offset(),
                     self.page.wake_anim(),

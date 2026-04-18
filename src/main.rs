@@ -6,6 +6,7 @@ mod artwork;
 mod cache;
 mod cover;
 mod dlss;
+mod display_mode;
 mod game_icons;
 mod i18n;
 mod input;
