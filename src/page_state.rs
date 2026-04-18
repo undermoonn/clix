@@ -2,6 +2,9 @@ use eframe::egui;
 
 use crate::input::ControllerAction;
 
+#[cfg(target_os = "windows")]
+const HOME_MENU_OPTION_COUNT: usize = 5;
+#[cfg(not(target_os = "windows"))]
 const HOME_MENU_OPTION_COUNT: usize = 4;
 const HOME_MENU_COLUMNS: usize = 2;
 
@@ -16,6 +19,7 @@ pub struct PageActionResult {
     pub reveal_hidden_achievement: bool,
     pub refresh_achievements: bool,
     pub toggle_achievement_sort: bool,
+    pub toggle_launch_on_startup: bool,
     pub launch_selected: bool,
     pub selected_changed: bool,
     pub close_frame: bool,
@@ -146,6 +150,7 @@ impl PageState {
             reveal_hidden_achievement: false,
             refresh_achievements: false,
             toggle_achievement_sort: false,
+            toggle_launch_on_startup: false,
             launch_selected: false,
             selected_changed: false,
             close_frame: false,
@@ -180,12 +185,24 @@ impl PageState {
                 }
                 ControllerAction::Launch => {
                     let selected_option = self.home_menu_selected;
-                    self.close_home_menu();
                     match selected_option {
-                        0 => result.send_app_to_background = true,
-                        1 => result.close_frame = true,
-                        2 => result.set_resolution = Some(ResolutionPreset::HalfMaxRefresh),
-                        3 => result.set_resolution = Some(ResolutionPreset::MaxRefresh),
+                        0 => {
+                            self.close_home_menu();
+                            result.send_app_to_background = true;
+                        }
+                        1 => {
+                            self.close_home_menu();
+                            result.close_frame = true;
+                        }
+                        2 => {
+                            self.close_home_menu();
+                            result.set_resolution = Some(ResolutionPreset::HalfMaxRefresh);
+                        }
+                        3 => {
+                            self.close_home_menu();
+                            result.set_resolution = Some(ResolutionPreset::MaxRefresh);
+                        }
+                        4 => result.toggle_launch_on_startup = true,
                         _ => {}
                     }
                 }
@@ -422,6 +439,21 @@ mod tests {
         assert_eq!(result.set_resolution, None);
         assert!(result.close_frame);
         assert!(!page.show_home_menu());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn launch_on_startup_option_toggles_without_closing_menu() {
+        let mut page = PageState::new();
+        page.open_home_menu();
+
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert!(result.toggle_launch_on_startup);
+        assert!(page.show_home_menu());
     }
 
     #[test]

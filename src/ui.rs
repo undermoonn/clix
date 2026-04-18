@@ -1569,6 +1569,8 @@ pub fn draw_home_menu(
     current_mode_label: &str,
     half_refresh_label: &str,
     max_refresh_label: &str,
+    launch_on_startup_enabled: bool,
+    show_launch_on_startup: bool,
     menu_anim: f32,
     selected_option_t: f32,
     wake_anim: f32,
@@ -1608,8 +1610,13 @@ pub fn draw_home_menu(
     let content_padding = 28.0;
     let section_font = egui::FontId::new(24.0, egui::FontFamily::Name("Bold".into()));
     let current_mode_font = egui::FontId::new(20.0, egui::FontFamily::Proportional);
-    let section_text = painter.layout_no_wrap(
+    let resolution_section_text = painter.layout_no_wrap(
         language.set_display_resolution_text().to_string(),
+        section_font.clone(),
+        color_with_scaled_alpha(egui::Color32::from_rgb(150, 158, 170), sheet_t),
+    );
+    let startup_section_text = painter.layout_no_wrap(
+        language.startup_settings_text().to_string(),
         section_font.clone(),
         color_with_scaled_alpha(egui::Color32::from_rgb(150, 158, 170), sheet_t),
     );
@@ -1623,12 +1630,22 @@ pub fn draw_home_menu(
         current_mode_font,
         color_with_scaled_alpha(egui::Color32::from_rgb(134, 142, 152), sheet_t),
     );
-    let section_text_height = section_text.size().y;
+    let resolution_section_text_height = resolution_section_text.size().y;
+    let startup_section_text_height = startup_section_text.size().y;
     let current_mode_text_height = current_mode_text.size().y;
     let current_mode_text_width = current_mode_text.size().x;
-    let content_height = option_height + row_gap + section_text_height + section_gap + option_height;
+    let content_height = option_height
+        + row_gap
+        + resolution_section_text_height
+        + section_gap
+        + option_height
+        + if show_launch_on_startup {
+            row_gap + startup_section_text_height + section_gap + option_height
+        } else {
+            0.0
+        };
     let sheet_height = (panel_rect.height() * 0.34)
-        .clamp(content_height + content_padding * 2.0, 420.0);
+        .clamp(content_height + content_padding * 2.0, 540.0);
     let sheet_rect = egui::Rect::from_center_size(panel_rect.center(), egui::vec2(panel_rect.width(), sheet_height));
     painter.rect_filled(
         sheet_rect,
@@ -1642,6 +1659,7 @@ pub fn draw_home_menu(
     ];
     let resolution_option_labels = [half_refresh_label, max_refresh_label];
     let option_font = egui::FontId::new(22.0, egui::FontFamily::Name("Bold".into()));
+    let option_detail_font = egui::FontId::new(18.0, egui::FontFamily::Proportional);
     let content_width = (sheet_rect.width() * 0.56).clamp(520.0, 860.0);
     let content_rect = egui::Rect::from_center_size(
         sheet_rect.center(),
@@ -1649,15 +1667,27 @@ pub fn draw_home_menu(
     );
     let option_width = (content_rect.width() - option_gap) * 0.5;
     let option_inner_padding = 20.0;
-    let selected_index = selected_option_t.round().clamp(0.0, 3.0) as usize;
+    let selected_index = selected_option_t
+        .round()
+        .clamp(0.0, if show_launch_on_startup { 4.0 } else { 3.0 }) as usize;
     let top_row_y = content_rect.min.y;
     let section_y = top_row_y + option_height + row_gap;
-    let bottom_row_y = section_y + section_text_height + section_gap;
+    let bottom_row_y = section_y + resolution_section_text_height + section_gap;
+    let startup_section_y = bottom_row_y + option_height + row_gap;
+    let startup_row_y = startup_section_y + startup_section_text_height + section_gap;
+    let option_phase_t = |index: usize| -> f32 {
+        match index {
+            0 | 1 => phase_t(0.14 + index as f32 * 0.08, 0.74 + index as f32 * 0.08),
+            2 | 3 => phase_t(0.30 + (index - 2) as f32 * 0.08, 0.90 + (index - 2) as f32 * 0.08),
+            4 => phase_t(0.46, 1.0),
+            _ => 1.0,
+        }
+    };
     let top_row_rects: Vec<_> = primary_option_labels
         .iter()
         .enumerate()
         .map(|(index, _)| {
-            let option_t = phase_t(0.14 + index as f32 * 0.08, 0.74 + index as f32 * 0.08);
+            let option_t = option_phase_t(index);
             let option_offset = egui::vec2(0.0, lerp_f32(12.0, 0.0, option_t));
             egui::Rect::from_min_size(
                 egui::pos2(
@@ -1673,7 +1703,7 @@ pub fn draw_home_menu(
         .iter()
         .enumerate()
         .map(|(index, _)| {
-            let option_t = phase_t(0.30 + index as f32 * 0.08, 0.90 + index as f32 * 0.08);
+            let option_t = option_phase_t(index + 2);
             let option_offset = egui::vec2(0.0, lerp_f32(12.0, 0.0, option_t));
             egui::Rect::from_min_size(
                 egui::pos2(
@@ -1685,20 +1715,26 @@ pub fn draw_home_menu(
             .translate(option_offset)
         })
         .collect();
+    let startup_rect = show_launch_on_startup.then(|| {
+        let option_t = option_phase_t(4);
+        let option_offset = egui::vec2(0.0, lerp_f32(12.0, 0.0, option_t));
+        egui::Rect::from_min_size(
+            egui::pos2(content_rect.min.x, startup_row_y),
+            egui::vec2(content_rect.width(), option_height),
+        )
+        .translate(option_offset)
+    });
     let option_rects: Vec<_> = top_row_rects
         .iter()
         .chain(bottom_row_rects.iter())
+        .chain(startup_rect.iter())
         .copied()
         .collect();
     let highlight_offset = egui::vec2(0.0, lerp_f32(8.0, 0.0, highlight_t));
     let selected_rect = option_rects[selected_index].translate(highlight_offset);
 
     for (index, option_rect) in option_rects.iter().enumerate() {
-        let option_t = if index < 2 {
-            phase_t(0.14 + index as f32 * 0.08, 0.74 + index as f32 * 0.08)
-        } else {
-            phase_t(0.30 + (index - 2) as f32 * 0.08, 0.90 + (index - 2) as f32 * 0.08)
-        };
+        let option_t = option_phase_t(index);
         painter.rect_filled(
             *option_rect,
             egui::Rounding::same(12.0),
@@ -1708,15 +1744,21 @@ pub fn draw_home_menu(
 
     painter.galley(
         egui::pos2(content_rect.min.x, section_y),
-        section_text,
+        resolution_section_text,
     );
     painter.galley(
         egui::pos2(
             content_rect.max.x - current_mode_text_width,
-            section_y + (section_text_height - current_mode_text_height) * 0.5,
+            section_y + (resolution_section_text_height - current_mode_text_height) * 0.5,
         ),
         current_mode_text,
     );
+    if show_launch_on_startup {
+        painter.galley(
+            egui::pos2(content_rect.min.x, startup_section_y),
+            startup_section_text,
+        );
+    }
 
     painter.rect_filled(
         selected_rect,
@@ -1724,36 +1766,74 @@ pub fn draw_home_menu(
         color_with_scaled_alpha(egui::Color32::from_rgb(86, 90, 100), highlight_t),
     );
 
-    let option_labels = [
-        primary_option_labels[0],
-        primary_option_labels[1],
-        resolution_option_labels[0],
-        resolution_option_labels[1],
+    let option_labels = vec![
+        primary_option_labels[0].to_string(),
+        primary_option_labels[1].to_string(),
+        resolution_option_labels[0].to_string(),
+        resolution_option_labels[1].to_string(),
+        language.launch_on_startup_text().to_string(),
     ];
-    for (index, (label, option_rect)) in option_labels.iter().zip(option_rects.iter()).enumerate() {
-        let option_t = if index < 2 {
-            phase_t(0.14 + index as f32 * 0.08, 0.74 + index as f32 * 0.08)
-        } else {
-            phase_t(0.30 + (index - 2) as f32 * 0.08, 0.90 + (index - 2) as f32 * 0.08)
-        };
+    for (index, option_rect) in option_rects.iter().enumerate() {
+        let option_t = option_phase_t(index);
         let selectedness = if selected_index == index { 1.0 } else { 0.0 };
         let text_color = egui::Color32::from_rgb(
             lerp_f32(214.0, 248.0, selectedness).round() as u8,
             lerp_f32(218.0, 249.0, selectedness).round() as u8,
             lerp_f32(226.0, 252.0, selectedness).round() as u8,
         );
-        let option_text = painter.layout_no_wrap(
-            (*label).to_string(),
-            option_font.clone(),
-            color_with_scaled_alpha(text_color, option_t),
-        );
-        painter.galley(
-            egui::pos2(
-                option_rect.min.x + option_inner_padding,
-                option_rect.center().y - option_text.size().y * 0.5,
-            ),
-            option_text,
-        );
+        let label = option_labels
+            .get(index)
+            .map(String::as_str)
+            .unwrap_or_default();
+        if index == 4 && show_launch_on_startup {
+            let option_text = painter.layout_no_wrap(
+                label.to_string(),
+                option_font.clone(),
+                color_with_scaled_alpha(text_color, option_t),
+            );
+            let status_text = painter.layout_no_wrap(
+                if launch_on_startup_enabled {
+                    language.enabled_text().to_string()
+                } else {
+                    language.disabled_text().to_string()
+                },
+                option_detail_font.clone(),
+                color_with_scaled_alpha(
+                    if launch_on_startup_enabled {
+                        egui::Color32::from_rgb(164, 214, 174)
+                    } else {
+                        egui::Color32::from_rgb(146, 154, 164)
+                    },
+                    option_t,
+                ),
+            );
+            let total_height = option_text.size().y + 6.0 + status_text.size().y;
+            let top_y = option_rect.center().y - total_height * 0.5;
+            painter.galley(
+                egui::pos2(option_rect.min.x + option_inner_padding, top_y),
+                option_text,
+            );
+            painter.galley(
+                egui::pos2(
+                    option_rect.min.x + option_inner_padding,
+                    top_y + total_height - status_text.size().y,
+                ),
+                status_text,
+            );
+        } else {
+            let option_text = painter.layout_no_wrap(
+                label.to_string(),
+                option_font.clone(),
+                color_with_scaled_alpha(text_color, option_t),
+            );
+            painter.galley(
+                egui::pos2(
+                    option_rect.min.x + option_inner_padding,
+                    option_rect.center().y - option_text.size().y * 0.5,
+                ),
+                option_text,
+            );
+        }
     }
 
     if let Some(icons) = icons {

@@ -12,6 +12,7 @@ mod i18n;
 mod input;
 mod launch;
 mod runtime_state;
+mod startup;
 mod page_state;
 mod playtime;
 mod steam;

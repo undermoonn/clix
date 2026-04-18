@@ -30,6 +30,7 @@ pub struct LauncherApp {
     playtime: PlaytimeState,
     runtime: RuntimeState,
     resolution_options: ResolutionOptions,
+    launch_on_startup_enabled: bool,
     wake_focus_pending: bool,
     pending_send_to_background: bool,
 }
@@ -58,6 +59,7 @@ impl LauncherApp {
             playtime: PlaytimeState::new(),
             runtime: RuntimeState::new(),
             resolution_options: crate::display_mode::detect_resolution_options(),
+            launch_on_startup_enabled: crate::startup::is_enabled(),
             wake_focus_pending: false,
             pending_send_to_background: false,
         }
@@ -199,6 +201,7 @@ impl eframe::App for LauncherApp {
         );
         if home_hold.trigger_menu {
             self.resolution_options = crate::display_mode::detect_resolution_options();
+            self.launch_on_startup_enabled = crate::startup::is_enabled();
             self.page.open_home_menu();
             ctx.request_repaint();
         }
@@ -270,6 +273,14 @@ impl eframe::App for LauncherApp {
             }
             if result.toggle_achievement_sort {
                 self.achievements.toggle_sort_order();
+                ctx.request_repaint();
+            }
+            if result.toggle_launch_on_startup {
+                if crate::startup::set_enabled(!self.launch_on_startup_enabled) {
+                    self.launch_on_startup_enabled = !self.launch_on_startup_enabled;
+                } else {
+                    self.launch_on_startup_enabled = crate::startup::is_enabled();
+                }
                 ctx.request_repaint();
             }
             if achievement_selection_changed {
@@ -421,6 +432,8 @@ impl eframe::App for LauncherApp {
                     &self.resolution_options.current.label,
                     &self.resolution_options.half_refresh.label,
                     &self.resolution_options.max_refresh.label,
+                    self.launch_on_startup_enabled,
+                    crate::startup::supported(),
                     self.page.home_menu_anim(),
                     self.page.home_menu_scroll_offset(),
                     self.page.wake_anim(),

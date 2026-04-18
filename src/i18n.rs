@@ -84,6 +84,34 @@ impl AppLanguage {
         }
     }
 
+    pub fn startup_settings_text(self) -> &'static str {
+        match self {
+            Self::English => "Startup",
+            Self::SimplifiedChinese => "启动",
+        }
+    }
+
+    pub fn launch_on_startup_text(self) -> &'static str {
+        match self {
+            Self::English => "Launch on Startup",
+            Self::SimplifiedChinese => "开机自启",
+        }
+    }
+
+    pub fn enabled_text(self) -> &'static str {
+        match self {
+            Self::English => "On",
+            Self::SimplifiedChinese => "开启",
+        }
+    }
+
+    pub fn disabled_text(self) -> &'static str {
+        match self {
+            Self::English => "Off",
+            Self::SimplifiedChinese => "关闭",
+        }
+    }
+
     pub fn hold_close_game_text(self) -> &'static str {
         match self {
             Self::English => "Force Exit",
