@@ -1,4 +1,4 @@
-# Clix
+# Project Clix
 
 A controller-first launcher designed to deliver a console-like user experience for Windows built with Rust and eframe (egui).
 
