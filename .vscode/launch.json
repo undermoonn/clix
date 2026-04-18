@@ -7,7 +7,7 @@
       "request": "launch",
       "program": "${workspaceFolder}\\target\\release\\clix.exe",
       "cwd": "${workspaceFolder}",
-      "preLaunchTask": "cargo build --release",
+      "preLaunchTask": "release",
       "console": "integratedTerminal"
     }
   ]
