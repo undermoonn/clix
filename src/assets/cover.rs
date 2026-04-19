@@ -124,7 +124,7 @@ pub fn hd_cache_dir() -> PathBuf {
 }
 
 fn hero_logo_cache_path(app_id: u32) -> PathBuf {
-    hd_cache_dir().join(format!("{}_logo.img", app_id))
+    hd_cache_dir().join(format!("{}_logo.png", app_id))
 }
 
 fn is_png_bytes(bytes: &[u8]) -> bool {
@@ -141,11 +141,17 @@ fn achievement_icon_cache_path(url: &str) -> PathBuf {
 
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     url.hash(&mut hasher);
-    achievement_icon_cache_dir().join(format!("{:x}.img", hasher.finish()))
+    achievement_icon_cache_dir().join(format!("{:x}.png", hasher.finish()))
 }
 
-fn achievement_icon_bytes_are_valid(bytes: &[u8]) -> bool {
-    !bytes.is_empty() && image::load_from_memory(bytes).is_ok()
+fn encode_achievement_icon_cache_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
+    let dyn_img = image::load_from_memory(bytes).ok()?;
+    let rgba = dyn_img.to_rgba8();
+    png_bytes_from_rgba(rgba.width(), rgba.height(), rgba.as_raw())
+}
+
+fn achievement_icon_cache_bytes_are_valid(bytes: &[u8]) -> bool {
+    is_png_bytes(bytes) && image::load_from_memory(bytes).is_ok()
 }
 
 pub fn clear_cached_achievement_icon(url: &str) {
@@ -155,7 +161,7 @@ pub fn clear_cached_achievement_icon(url: &str) {
 pub fn load_cached_achievement_icon_bytes(url: &str) -> Option<Vec<u8>> {
     let cache_path = achievement_icon_cache_path(url);
     let bytes = std::fs::read(&cache_path).ok()?;
-    if !achievement_icon_bytes_are_valid(&bytes) {
+    if !achievement_icon_cache_bytes_are_valid(&bytes) {
         let _ = std::fs::remove_file(cache_path);
         return None;
     }
@@ -175,12 +181,13 @@ pub fn load_achievement_icon_bytes(url: &str) -> Option<Vec<u8>> {
     let mut bytes = Vec::new();
     let (_, body) = resp.into_parts();
     let mut reader = body.into_reader().take(2 * 1024 * 1024);
-    if reader.read_to_end(&mut bytes).is_err() || !achievement_icon_bytes_are_valid(&bytes) {
+    if reader.read_to_end(&mut bytes).is_err() {
         return None;
     }
 
-    let _ = std::fs::write(achievement_icon_cache_path(url), &bytes);
-    Some(bytes)
+    let cache_bytes = encode_achievement_icon_cache_bytes(&bytes)?;
+    let _ = std::fs::write(achievement_icon_cache_path(url), &cache_bytes);
+    Some(cache_bytes)
 }
 
 fn download_hd_cover(app_id: u32) -> Option<Vec<u8>> {
