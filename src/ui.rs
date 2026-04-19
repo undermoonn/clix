@@ -253,7 +253,7 @@ impl SelectedGameHeaderContent {
 
         self.title_galley.size().y
             + if meta_height > 0.0 {
-                2.0 + meta_height
+                6.0 + meta_height
             } else {
                 0.0
             }
@@ -403,7 +403,7 @@ fn draw_selected_game_header(
         || content.achievement_galley.is_some()
         || content.achievement_prev_galley.is_some()
     {
-        let meta_pos = egui::pos2(title_pos.x, title_pos.y + content.title_galley.size().y + 2.0);
+        let meta_pos = egui::pos2(title_pos.x, title_pos.y + content.title_galley.size().y + 6.0);
         let mut meta_x = meta_pos.x;
         if let Some(primary_meta_galley) = &content.primary_meta_galley {
             painter.galley(egui::pos2(meta_x, meta_pos.y), primary_meta_galley.clone());
@@ -631,8 +631,8 @@ pub fn draw_game_list(
     let wake_t = smoothstep01(wake_anim);
     let wake_offset_y = lerp_f32(42.0, 0.0, wake_t);
 
-    let selected_size = 30.0;
-    let base_size = 18.0;
+    let selected_size = 34.0;
+    let base_size = 20.0;
     let column_spacing = 152.0;
 
     let hero_ratio = 1240.0 / 3840.0;
@@ -746,7 +746,7 @@ pub fn draw_game_list(
                 previous_achievement_summary_reveal,
                 font_id,
                 text_color,
-                selected_size * 0.5,
+                17.0,
                 140.0 * meta_t,
                 meta_text_width,
             );
@@ -1000,7 +1000,7 @@ pub fn draw_achievement_page(
     let page_enter_offset_y = lerp_f32(panel_rect.height() + 28.0, 0.0, panel_t)
         + lerp_f32(30.0, 0.0, wake_t);
     let content_top = padded_rect.min.y + 18.0;
-    let title_font_size = 18.0 + (30.0 - 18.0) * smoothstep01(game_select_anim);
+    let title_font_size = 20.0 + (34.0 - 20.0) * smoothstep01(game_select_anim);
     let title_font = egui::FontId::new(title_font_size, egui::FontFamily::Name("Bold".into()));
     let header = build_selected_game_header(
         ui,
@@ -1013,7 +1013,7 @@ pub fn draw_achievement_page(
         0.0,
         title_font,
         egui::Color32::WHITE,
-        15.0,
+        17.0,
         140.0,
         (padded_rect.width() - 96.0).max(220.0),
     );
