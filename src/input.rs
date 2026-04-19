@@ -39,22 +39,124 @@ pub enum ControllerAction {
     Quit,
 }
 
-impl ControllerAction {
-    fn from_str(value: &str) -> Option<Self> {
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum InputAction {
+    Up,
+    Down,
+    Left,
+    Right,
+    Launch,
+    Refresh,
+    Sort,
+    Quit,
+    ForceClose,
+}
+
+impl InputAction {
+    const COUNT: usize = 9;
+    const ALL: [Self; Self::COUNT] = [
+        Self::Up,
+        Self::Down,
+        Self::Left,
+        Self::Right,
+        Self::Launch,
+        Self::Refresh,
+        Self::Sort,
+        Self::Quit,
+        Self::ForceClose,
+    ];
+    const POLLABLE_ACTIONS: [Self; 7] = [
+        Self::Up,
+        Self::Down,
+        Self::Left,
+        Self::Right,
+        Self::Launch,
+        Self::Refresh,
+        Self::Sort,
+    ];
+    const POLLABLE_ACTIONS_WITH_QUIT: [Self; 8] = [
+        Self::Up,
+        Self::Down,
+        Self::Left,
+        Self::Right,
+        Self::Launch,
+        Self::Refresh,
+        Self::Sort,
+        Self::Quit,
+    ];
+
+    fn index(self) -> usize {
+        self as usize
+    }
+
+    fn bit(self) -> u16 {
+        1u16 << (self as u16)
+    }
+
+    fn from_mapping_key(value: &str) -> Option<Self> {
         match value {
-            "up" => Some(ControllerAction::Up),
-            "down" => Some(ControllerAction::Down),
-            "left" => Some(ControllerAction::Left),
-            "right" => Some(ControllerAction::Right),
-            "launch" => Some(ControllerAction::Launch),
-            "refresh" => Some(ControllerAction::Refresh),
-            "sort" => Some(ControllerAction::Sort),
-            "quit" => Some(ControllerAction::Quit),
+            "up" => Some(Self::Up),
+            "down" => Some(Self::Down),
+            "left" => Some(Self::Left),
+            "right" => Some(Self::Right),
+            "launch" => Some(Self::Launch),
+            "refresh" => Some(Self::Refresh),
+            "sort" => Some(Self::Sort),
+            "quit" => Some(Self::Quit),
+            "force_close" => Some(Self::ForceClose),
             _ => None,
+        }
+    }
+
+    fn from_vertical_mapping_key(value: &str) -> Option<Self> {
+        match value {
+            "up" => Some(Self::Up),
+            "down" => Some(Self::Down),
+            _ => None,
+        }
+    }
+
+    fn to_controller_action(self) -> Option<ControllerAction> {
+        match self {
+            Self::Up => Some(ControllerAction::Up),
+            Self::Down => Some(ControllerAction::Down),
+            Self::Left => Some(ControllerAction::Left),
+            Self::Right => Some(ControllerAction::Right),
+            Self::Launch => Some(ControllerAction::Launch),
+            Self::Refresh => Some(ControllerAction::Refresh),
+            Self::Sort => Some(ControllerAction::Sort),
+            Self::Quit => Some(ControllerAction::Quit),
+            Self::ForceClose => None,
+        }
+    }
+
+    fn repeats(self) -> bool {
+        !matches!(self, Self::Refresh | Self::Sort)
+    }
+
+    fn pollable_actions(include_quit_action: bool) -> &'static [Self] {
+        if include_quit_action {
+            &Self::POLLABLE_ACTIONS_WITH_QUIT
+        } else {
+            &Self::POLLABLE_ACTIONS
         }
     }
 }
 
+#[derive(Clone, Copy, Default)]
+struct RawHeldState(u16);
+
+impl RawHeldState {
+    fn insert(&mut self, action: InputAction) {
+        self.0 |= action.bit();
+    }
+
+    fn contains(&self, action: InputAction) -> bool {
+        (self.0 & action.bit()) != 0
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct NavState {
     pub since: Instant,
     pub last_fire: Instant,
@@ -72,9 +174,11 @@ pub struct InputController {
     xinput: Option<XInput>,
     #[cfg(target_os = "windows")]
     rumble_state: Option<RumbleState>,
+    #[cfg(target_os = "windows")]
+    last_connected_controller_index: Option<DWORD>,
     mapping: Mapping,
     remap_target: Option<String>,
-    nav_held: HashMap<&'static str, NavState>,
+    nav_held: [Option<NavState>; InputAction::COUNT],
 }
 
 #[cfg(target_os = "windows")]
@@ -93,6 +197,88 @@ struct RumbleSettings {
     right_strength: u16,
 }
 
+#[cfg(target_os = "windows")]
+#[derive(Default)]
+struct XInputAggregateState {
+    buttons: u16,
+    up: bool,
+    down: bool,
+    left: bool,
+    right: bool,
+}
+
+#[cfg(target_os = "windows")]
+impl XInputAggregateState {
+    fn from_states(states: &[(DWORD, u16, i32, i32)]) -> Self {
+        let mut aggregate = Self::default();
+
+        for (_, buttons, ly, lx) in states {
+            aggregate.buttons |= *buttons;
+            aggregate.up |= *ly > 16000;
+            aggregate.down |= *ly < -16000;
+            aggregate.right |= *lx > 16000;
+            aggregate.left |= *lx < -16000;
+        }
+
+        aggregate
+    }
+
+    fn populate_raw_held(&self, raw_held: &mut RawHeldState) {
+        if (self.buttons & XINPUT_GAMEPAD_DPAD_UP) != 0 || self.up {
+            raw_held.insert(InputAction::Up);
+        }
+        if (self.buttons & XINPUT_GAMEPAD_DPAD_DOWN) != 0 || self.down {
+            raw_held.insert(InputAction::Down);
+        }
+        if (self.buttons & XINPUT_GAMEPAD_DPAD_LEFT) != 0 || self.left {
+            raw_held.insert(InputAction::Left);
+        }
+        if (self.buttons & XINPUT_GAMEPAD_DPAD_RIGHT) != 0 || self.right {
+            raw_held.insert(InputAction::Right);
+        }
+        if (self.buttons & XINPUT_GAMEPAD_A) != 0 {
+            raw_held.insert(InputAction::Launch);
+        }
+        if (self.buttons & XINPUT_GAMEPAD_B) != 0 {
+            raw_held.insert(InputAction::Quit);
+        }
+        if (self.buttons & XINPUT_GAMEPAD_X) != 0 {
+            raw_held.insert(InputAction::Refresh);
+            raw_held.insert(InputAction::ForceClose);
+        }
+        if (self.buttons & XINPUT_GAMEPAD_Y) != 0 {
+            raw_held.insert(InputAction::Sort);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum VerticalAxisDirection {
+    Negative,
+    Positive,
+}
+
+impl VerticalAxisDirection {
+    #[cfg(target_os = "windows")]
+    fn from_thumb_ly(ly: i32) -> Option<Self> {
+        if ly < -16000 {
+            Some(Self::Negative)
+        } else if ly > 16000 {
+            Some(Self::Positive)
+        } else {
+            None
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn is_active(self, aggregate: &XInputAggregateState) -> bool {
+        match self {
+            Self::Negative => aggregate.down,
+            Self::Positive => aggregate.up,
+        }
+    }
+}
+
 impl InputController {
     pub fn new() -> Self {
         Self {
@@ -100,14 +286,16 @@ impl InputController {
             xinput: XInput::new().ok(),
             #[cfg(target_os = "windows")]
             rumble_state: None,
+            #[cfg(target_os = "windows")]
+            last_connected_controller_index: None,
             mapping: Mapping::default(),
             remap_target: None,
-            nav_held: HashMap::new(),
+            nav_held: [None; InputAction::COUNT],
         }
     }
 
     pub fn clear_held(&mut self) {
-        self.nav_held.clear();
+        self.nav_held.fill(None);
         #[cfg(target_os = "windows")]
         self.stop_rumble();
     }
@@ -123,36 +311,43 @@ impl InputController {
     }
 
     pub fn poll(&mut self, process_input: bool, include_quit_action: bool) -> InputFrame {
-        let mut raw_held: std::collections::HashSet<&'static str> =
-            std::collections::HashSet::new();
-        let mut actions = Vec::new();
+        let mut raw_held = RawHeldState::default();
 
         self.collect_raw_held(&mut raw_held);
 
+        self.poll_with_raw_held(raw_held, process_input, include_quit_action, Instant::now())
+    }
+
+    fn poll_with_raw_held(
+        &mut self,
+        raw_held: RawHeldState,
+        process_input: bool,
+        include_quit_action: bool,
+        now: Instant,
+    ) -> InputFrame {
+        let mut actions = Vec::new();
+
         if !process_input {
-            self.nav_held.clear();
-        }
-
-        let now = Instant::now();
-        if process_input {
-            self.nav_held.retain(|key, _| raw_held.contains(key));
+            self.nav_held.fill(None);
         }
 
         if process_input {
-            let action_names: &[&str] = if include_quit_action {
-                &["up", "down", "left", "right", "launch", "refresh", "sort", "quit"]
-            } else {
-                &["up", "down", "left", "right", "launch", "refresh", "sort"]
-            };
+            for action in InputAction::ALL {
+                if !raw_held.contains(action) {
+                    self.nav_held[action.index()] = None;
+                }
+            }
+        }
 
-            for action_name in action_names {
-                let action_name = *action_name;
-                if !raw_held.contains(action_name) {
+        if process_input {
+            for action in InputAction::pollable_actions(include_quit_action) {
+                if !raw_held.contains(*action) {
                     continue;
                 }
 
-                let should_fire = if let Some(state) = self.nav_held.get_mut(action_name) {
-                    if matches!(action_name, "refresh" | "sort") {
+                let state_slot = &mut self.nav_held[action.index()];
+                let should_fire = if let Some(state) = state_slot.as_mut() {
+                    if !action.repeats() {
                         false
                     } else if !state.past_initial {
                         if now.duration_since(state.since).as_millis() >= NAV_INITIAL_DELAY_MS {
@@ -164,7 +359,7 @@ impl InputController {
                         }
                     } else {
                         let held_ms = now.duration_since(state.since).as_millis();
-                        let repeat_interval_ms = nav_repeat_interval_ms(action_name, held_ms);
+                        let repeat_interval_ms = nav_repeat_interval_ms(*action, held_ms);
 
                         if now.duration_since(state.last_fire).as_millis() >= repeat_interval_ms {
                             state.last_fire = now;
@@ -174,19 +369,16 @@ impl InputController {
                         }
                     }
                 } else {
-                    self.nav_held.insert(
-                        action_name,
-                        NavState {
-                            since: now,
-                            last_fire: now,
-                            past_initial: false,
-                        },
-                    );
+                    *state_slot = Some(NavState {
+                        since: now,
+                        last_fire: now,
+                        past_initial: false,
+                    });
                     true
                 };
 
                 if should_fire {
-                    if let Some(action) = ControllerAction::from_str(action_name) {
+                    if let Some(action) = action.to_controller_action() {
                         actions.push(action);
                     }
                 }
@@ -195,12 +387,12 @@ impl InputController {
 
         InputFrame {
             actions,
-            launch_held: raw_held.contains("launch"),
-            force_close_held: raw_held.contains("force_close"),
+            launch_held: raw_held.contains(InputAction::Launch),
+            force_close_held: raw_held.contains(InputAction::ForceClose),
         }
     }
 
-    fn collect_raw_held(&mut self, raw_held: &mut std::collections::HashSet<&'static str>) {
+    fn collect_raw_held(&mut self, raw_held: &mut RawHeldState) {
         #[cfg(target_os = "windows")]
         {
             let _ = self.collect_xinput(raw_held);
@@ -216,22 +408,52 @@ impl InputController {
     #[cfg(target_os = "windows")]
     fn start_xinput_selection_rumble(&mut self) -> bool {
         let settings = xinput_rumble_settings();
-        let Some(xinput) = &self.xinput else {
+        if self.xinput.is_none() {
+            return false;
+        }
+
+        if let Some(controller_index) = self.last_connected_controller_index {
+            if self.start_xinput_rumble(controller_index, settings) {
+                return true;
+            }
+        }
+
+        let controller_index = {
+            let Some(xinput) = self.xinput.as_ref() else {
+                return false;
+            };
+            xinput.first_connected_index()
+        };
+
+        let Some(controller_index) = controller_index else {
             return false;
         };
 
-        let Some(controller_index) = xinput.first_connected_index() else {
-            return false;
+        self.start_xinput_rumble(controller_index, settings)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn start_xinput_rumble(
+        &mut self,
+        controller_index: DWORD,
+        settings: RumbleSettings,
+    ) -> bool {
+        let started = {
+            let Some(xinput) = self.xinput.as_ref() else {
+                return false;
+            };
+
+            xinput
+                .set_state(
+                    controller_index,
+                    settings.left_strength,
+                    settings.right_strength,
+                )
+                .is_ok()
         };
 
-        if xinput
-            .set_state(
-                controller_index,
-                settings.left_strength,
-                settings.right_strength,
-            )
-            .is_ok()
-        {
+        if started {
+            self.last_connected_controller_index = Some(controller_index);
             self.rumble_state = Some(RumbleState::XInput {
                 controller_index,
                 active_until: Instant::now()
@@ -274,153 +496,85 @@ impl InputController {
     }
 
     #[cfg(target_os = "windows")]
-    fn collect_xinput(&mut self, raw_held: &mut std::collections::HashSet<&'static str>) -> bool {
+    fn collect_xinput(&mut self, raw_held: &mut RawHeldState) -> bool {
         let Some(xinput) = &self.xinput else {
+            self.last_connected_controller_index = None;
             return false;
         };
 
         let states = xinput.get_states();
         if states.is_empty() {
+            self.last_connected_controller_index = None;
             return false;
         }
 
-        if let Some(target) = self.remap_target.clone() {
-            for (_, buttons, ly, _) in &states {
-                if *buttons != 0 {
-                    self.mapping.map.insert(target.clone(), InputToken::XButton(*buttons));
-                    self.remap_target = None;
-                    return true;
-                }
-                if *ly < -16000 {
-                    self.mapping.map.insert(target.clone(), InputToken::XAxis(-1));
-                    self.remap_target = None;
-                    return true;
-                }
-                if *ly > 16000 {
-                    self.mapping.map.insert(target.clone(), InputToken::XAxis(1));
-                    self.remap_target = None;
-                    return true;
-                }
-            }
+        self.last_connected_controller_index = states.first().map(|(index, _, _, _)| *index);
+
+        if self.try_remap_xinput(&states) {
             return true;
         }
 
-        for (_, buttons, ly, lx) in &states {
-            if (buttons & XINPUT_GAMEPAD_DPAD_UP) != 0 {
-                raw_held.insert("up");
-            }
-            if (buttons & XINPUT_GAMEPAD_DPAD_DOWN) != 0 {
-                raw_held.insert("down");
-            }
-            if (buttons & XINPUT_GAMEPAD_DPAD_LEFT) != 0 {
-                raw_held.insert("left");
-            }
-            if (buttons & XINPUT_GAMEPAD_DPAD_RIGHT) != 0 {
-                raw_held.insert("right");
-            }
-            if (buttons & XINPUT_GAMEPAD_A) != 0 {
-                raw_held.insert("launch");
-            }
-            if (buttons & XINPUT_GAMEPAD_B) != 0 {
-                raw_held.insert("quit");
-            }
-            if (buttons & XINPUT_GAMEPAD_X) != 0 {
-                raw_held.insert("refresh");
-                raw_held.insert("force_close");
-            }
-            if (buttons & XINPUT_GAMEPAD_Y) != 0 {
-                raw_held.insert("sort");
-            }
-            if *ly > 16000 {
-                raw_held.insert("up");
-            } else if *ly < -16000 {
-                raw_held.insert("down");
-            }
-            if *lx > 16000 {
-                raw_held.insert("right");
-            } else if *lx < -16000 {
-                raw_held.insert("left");
-            }
+        let aggregate = XInputAggregateState::from_states(&states);
+        aggregate.populate_raw_held(raw_held);
+
+        self.apply_xinput_mapping(raw_held, &aggregate);
+
+        true
+    }
+
+    #[cfg(target_os = "windows")]
+    fn try_remap_xinput(&mut self, states: &[(DWORD, u16, i32, i32)]) -> bool {
+        if self.remap_target.is_none() {
+            return false;
         }
 
-        for (key, token) in &self.mapping.map {
-            match token {
-                InputToken::XButton(mask) => {
-                    for (_, buttons, _, _) in &states {
-                        if (buttons & mask) != 0 {
-                            Self::insert_mapped_action(raw_held, key);
-                        }
-                    }
-                }
-                InputToken::XAxis(dir) => {
-                    for (_, _, ly, _) in &states {
-                        if *dir > 0 && *ly > 16000 {
-                            Self::insert_mapped_vertical_action(raw_held, key);
-                        }
-                        if *dir < 0 && *ly < -16000 {
-                            Self::insert_mapped_vertical_action(raw_held, key);
-                        }
-                    }
-                }
-                _ => {}
+        for (_, buttons, ly, _) in states {
+            if let Some(token) = InputToken::detect_xinput(*buttons, *ly) {
+                let target = self.remap_target.take().unwrap();
+                self.mapping.map.insert(target, token);
+                return true;
             }
         }
 
         true
     }
 
-    fn insert_mapped_action(
-        raw_held: &mut std::collections::HashSet<&'static str>,
-        key: &str,
+    #[cfg(target_os = "windows")]
+    fn apply_xinput_mapping(
+        &self,
+        raw_held: &mut RawHeldState,
+        aggregate: &XInputAggregateState,
     ) {
-        match key {
-            "up" => {
-                raw_held.insert("up");
+
+        for (key, token) in &self.mapping.map {
+            if !token.is_active_xinput(aggregate) {
+                continue;
             }
-            "down" => {
-                raw_held.insert("down");
+
+            match token {
+                InputToken::VerticalAxis(_) => {
+                    if let Some(action) = InputAction::from_vertical_mapping_key(key) {
+                        raw_held.insert(action);
+                    }
+                }
+                _ => Self::insert_mapped_action(raw_held, key),
             }
-            "left" => {
-                raw_held.insert("left");
-            }
-            "right" => {
-                raw_held.insert("right");
-            }
-            "launch" => {
-                raw_held.insert("launch");
-            }
-            "refresh" => {
-                raw_held.insert("refresh");
-            }
-            "sort" => {
-                raw_held.insert("sort");
-            }
-            "quit" => {
-                raw_held.insert("quit");
-            }
-            "force_close" => {
-                raw_held.insert("force_close");
-            }
-            _ => {}
         }
     }
 
-    fn insert_mapped_vertical_action(
-        raw_held: &mut std::collections::HashSet<&'static str>,
+    fn insert_mapped_action(
+        raw_held: &mut RawHeldState,
         key: &str,
     ) {
-        if key == "up" {
-            raw_held.insert("up");
-        }
-        if key == "down" {
-            raw_held.insert("down");
+        if let Some(action) = InputAction::from_mapping_key(key) {
+            raw_held.insert(action);
         }
     }
 }
 
-fn nav_repeat_interval_ms(action_name: &str, held_ms: u128) -> u128 {
-    match action_name {
-        "up" | "down" | "left" | "right" => {
+fn nav_repeat_interval_ms(action: InputAction, held_ms: u128) -> u128 {
+    match action {
+        InputAction::Up | InputAction::Down | InputAction::Left | InputAction::Right => {
             if held_ms >= NAV_REPEAT_ACCEL_STAGE2_AFTER_MS {
                 NAV_REPEAT_INTERVAL_STAGE2_MS
             } else if held_ms >= NAV_REPEAT_ACCEL_STAGE1_AFTER_MS {
@@ -516,7 +670,27 @@ pub enum InputToken {
     #[default]
     None,
     XButton(u16),
-    XAxis(i8),
+    VerticalAxis(VerticalAxisDirection),
+}
+
+impl InputToken {
+    #[cfg(target_os = "windows")]
+    fn detect_xinput(buttons: u16, ly: i32) -> Option<Self> {
+        if buttons != 0 {
+            Some(Self::XButton(buttons))
+        } else {
+            VerticalAxisDirection::from_thumb_ly(ly).map(Self::VerticalAxis)
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn is_active_xinput(&self, aggregate: &XInputAggregateState) -> bool {
+        match self {
+            Self::XButton(mask) => (aggregate.buttons & mask) != 0,
+            Self::VerticalAxis(direction) => direction.is_active(aggregate),
+            Self::None => false,
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -530,6 +704,106 @@ fn xinput_rumble_settings() -> RumbleSettings {
         duration_ms: XINPUT_SELECTION_RUMBLE_DURATION_MS,
         left_strength: XINPUT_SELECTION_RUMBLE_LEFT_STRENGTH,
         right_strength: XINPUT_SELECTION_RUMBLE_RIGHT_STRENGTH,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ControllerAction, InputAction, InputController, RawHeldState, NAV_INITIAL_DELAY_MS,
+        NAV_REPEAT_ACCEL_STAGE1_AFTER_MS, NAV_REPEAT_INTERVAL_MS,
+    };
+    use std::time::{Duration, Instant};
+
+    fn raw_held(actions: &[InputAction]) -> RawHeldState {
+        let mut held = RawHeldState::default();
+        for action in actions {
+            held.insert(*action);
+        }
+        held
+    }
+
+    #[test]
+    fn first_press_fires_immediately() {
+        let mut input = InputController::new();
+        let now = Instant::now();
+
+        let frame = input.poll_with_raw_held(raw_held(&[InputAction::Down]), true, false, now);
+
+        assert!(matches!(frame.actions.as_slice(), [ControllerAction::Down]));
+    }
+
+    #[test]
+    fn held_navigation_waits_for_initial_delay_before_repeating() {
+        let mut input = InputController::new();
+        let now = Instant::now();
+
+        let first = input.poll_with_raw_held(raw_held(&[InputAction::Right]), true, false, now);
+        let before_delay = input.poll_with_raw_held(
+            raw_held(&[InputAction::Right]),
+            true,
+            false,
+            now + Duration::from_millis((NAV_INITIAL_DELAY_MS - 1) as u64),
+        );
+        let after_delay = input.poll_with_raw_held(
+            raw_held(&[InputAction::Right]),
+            true,
+            false,
+            now + Duration::from_millis((NAV_INITIAL_DELAY_MS + 1) as u64),
+        );
+        let before_repeat = input.poll_with_raw_held(
+            raw_held(&[InputAction::Right]),
+            true,
+            false,
+            now + Duration::from_millis((NAV_INITIAL_DELAY_MS + NAV_REPEAT_INTERVAL_MS - 1) as u64),
+        );
+        let after_repeat = input.poll_with_raw_held(
+            raw_held(&[InputAction::Right]),
+            true,
+            false,
+            now + Duration::from_millis((NAV_INITIAL_DELAY_MS + NAV_REPEAT_INTERVAL_MS + 1) as u64),
+        );
+
+        assert!(matches!(first.actions.as_slice(), [ControllerAction::Right]));
+        assert!(before_delay.actions.is_empty());
+        assert!(matches!(after_delay.actions.as_slice(), [ControllerAction::Right]));
+        assert!(before_repeat.actions.is_empty());
+        assert!(matches!(after_repeat.actions.as_slice(), [ControllerAction::Right]));
+    }
+
+    #[test]
+    fn refresh_and_sort_do_not_repeat_while_held() {
+        let mut input = InputController::new();
+        let now = Instant::now();
+        let held_until = now + Duration::from_millis((NAV_REPEAT_ACCEL_STAGE1_AFTER_MS + 250) as u64);
+
+        let first = input.poll_with_raw_held(raw_held(&[InputAction::Refresh, InputAction::Sort]), true, false, now);
+        let held = input.poll_with_raw_held(
+            raw_held(&[InputAction::Refresh, InputAction::Sort]),
+            true,
+            false,
+            held_until,
+        );
+
+        assert!(matches!(first.actions.as_slice(), [ControllerAction::Refresh, ControllerAction::Sort]));
+        assert!(held.actions.is_empty());
+    }
+
+    #[test]
+    fn clear_held_resets_repeat_state() {
+        let mut input = InputController::new();
+        let now = Instant::now();
+
+        let _ = input.poll_with_raw_held(raw_held(&[InputAction::Up]), true, false, now);
+        input.clear_held();
+        let frame = input.poll_with_raw_held(
+            raw_held(&[InputAction::Up]),
+            true,
+            false,
+            now + Duration::from_millis((NAV_INITIAL_DELAY_MS / 2) as u64),
+        );
+
+        assert!(matches!(frame.actions.as_slice(), [ControllerAction::Up]));
     }
 }
 
