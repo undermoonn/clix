@@ -8,6 +8,7 @@ use crate::display_mode::{self, ResolutionOptions};
 use crate::game_icons::GameIconState;
 use crate::i18n::AppLanguage;
 use crate::input::InputController;
+use crate::install_size::InstallSizeState;
 use crate::launch::{self, LaunchState};
 use crate::page_state::{PageState, ResolutionPreset};
 use crate::playtime::PlaytimeState;
@@ -28,6 +29,7 @@ pub struct LauncherApp {
     running_games: HashMap<usize, launch::RunningGameState>,
     achievements: AchievementState,
     playtime: PlaytimeState,
+    install_size: InstallSizeState,
     runtime: RuntimeState,
     resolution_options: ResolutionOptions,
     launch_on_startup_enabled: bool,
@@ -44,7 +46,7 @@ impl LauncherApp {
 
         let steam_paths = steam::find_steam_paths();
         let games = steam::scan_games_with_paths(&steam_paths);
-        LauncherApp {
+        let mut app = LauncherApp {
             language,
             games,
             input: InputController::new(),
@@ -57,12 +59,15 @@ impl LauncherApp {
             running_games: HashMap::new(),
             achievements: AchievementState::new(),
             playtime: PlaytimeState::new(),
+            install_size: InstallSizeState::new(),
             runtime: RuntimeState::new(),
             resolution_options: crate::display_mode::detect_resolution_options(),
             launch_on_startup_enabled: crate::startup::is_enabled(),
             wake_focus_pending: false,
             pending_send_to_background: false,
-        }
+        };
+        app.refresh_selected_install_size(ctx);
+        app
     }
 
     fn can_open_achievement_panel_for_selected(&self) -> bool {
@@ -123,6 +128,11 @@ impl LauncherApp {
         );
     }
 
+    fn refresh_selected_install_size(&mut self, ctx: &egui::Context) {
+        self.install_size
+            .refresh_for_selected(self.games.get(self.page.selected()), ctx);
+    }
+
     fn apply_resolution_preset(&self, preset: ResolutionPreset) {
         let option = match preset {
             ResolutionPreset::HalfMaxRefresh => &self.resolution_options.half_refresh,
@@ -150,6 +160,7 @@ impl eframe::App for LauncherApp {
 
         if focus.did_gain_focus {
             self.refresh_selected_playtime(ctx);
+            self.refresh_selected_install_size(ctx);
         }
 
         if crate::xbox_home::take_wake_request() {
@@ -289,6 +300,7 @@ impl eframe::App for LauncherApp {
             if result.selected_changed {
                 self.input.pulse_selection_change();
                 self.refresh_selected_playtime(ctx);
+                self.refresh_selected_install_size(ctx);
             }
             if result.launch_selected && !self.selected_launch_pending() {
                 self.launch_selected();
@@ -311,6 +323,7 @@ impl eframe::App for LauncherApp {
         self.achievements.drain_results();
         self.achievements.drain_icon_results(ctx);
         self.playtime.drain_results(&mut self.games);
+        self.install_size.drain_results(&mut self.games);
 
         let selected_game = self.games.get(self.page.selected());
         let selected_app_id = selected_game.and_then(|game| game.app_id);

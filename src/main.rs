@@ -10,6 +10,7 @@ mod display_mode;
 mod game_icons;
 mod i18n;
 mod input;
+mod install_size;
 mod launch;
 mod runtime_state;
 mod startup;

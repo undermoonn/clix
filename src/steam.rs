@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::cache;
@@ -14,6 +14,7 @@ pub struct Game {
     pub app_id: Option<u32>,
     pub last_played: u64,
     pub playtime_minutes: u32,
+    pub installed_size_bytes: Option<u64>,
     pub dlss_version: Option<String>,
 }
 
@@ -368,6 +369,7 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                             app_id: Some(id),
                             last_played: last_played_map.get(&id).copied().unwrap_or(0),
                             playtime_minutes: playtime_map.get(&id).copied().unwrap_or(0),
+                            installed_size_bytes: None,
                             dlss_version,
                         });
                     }
@@ -417,6 +419,7 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                                 app_id: Some(app_id),
                                 last_played: last_played_map.get(&app_id).copied().unwrap_or(0),
                                 playtime_minutes: playtime_map.get(&app_id).copied().unwrap_or(0),
+                                installed_size_bytes: None,
                                 dlss_version,
                             });
                         }
@@ -454,6 +457,31 @@ fn parse_userdata(steam_paths: &[PathBuf]) -> (HashMap<u32, u64>, HashMap<u32, u
 pub fn load_game_playtime_minutes(app_id: u32, steam_paths: &[PathBuf]) -> Option<u32> {
     let (_, playtime) = parse_userdata_filtered(steam_paths, Some(app_id));
     playtime.get(&app_id).copied()
+}
+
+pub fn load_game_installed_size(path: &Path) -> Option<u64> {
+    if !path.exists() {
+        return None;
+    }
+
+    let mut total_size = 0u64;
+    for entry in walkdir::WalkDir::new(path)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+
+        total_size = total_size.saturating_add(metadata.len());
+    }
+
+    Some(total_size)
 }
 
 fn parse_userdata_filtered(

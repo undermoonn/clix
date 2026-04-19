@@ -194,6 +194,28 @@ impl AppLanguage {
         }
     }
 
+    pub fn format_installed_size(self, size_bytes: u64) -> String {
+        const KIB: f64 = 1024.0;
+        const MIB: f64 = KIB * 1024.0;
+        const GIB: f64 = MIB * 1024.0;
+
+        let format_value = |value: f64| {
+            let value = format!("{:.1}", value);
+            value.trim_end_matches(".0").to_owned()
+        };
+
+        let bytes = size_bytes as f64;
+        if bytes >= GIB {
+            format!("{} GB", format_value(bytes / GIB))
+        } else if bytes >= MIB {
+            format!("{} MB", format_value(bytes / MIB))
+        } else if bytes >= KIB {
+            format!("{} KB", format_value(bytes / KIB))
+        } else {
+            format!("{} B", size_bytes)
+        }
+    }
+
     pub fn format_achievement_progress(self, unlocked: Option<u32>, total: u32) -> String {
         match (self, unlocked) {
             (Self::English, Some(unlocked)) => format!("{}/{} achievements", unlocked, total),

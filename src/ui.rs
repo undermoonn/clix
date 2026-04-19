@@ -226,7 +226,7 @@ fn draw_title_tag(
 
 struct SelectedGameHeaderContent {
     title_galley: std::sync::Arc<egui::Galley>,
-    playtime_galley: Option<std::sync::Arc<egui::Galley>>,
+    primary_meta_galley: Option<std::sync::Arc<egui::Galley>>,
     achievement_galley: Option<std::sync::Arc<egui::Galley>>,
     title_font: egui::FontId,
 }
@@ -234,7 +234,7 @@ struct SelectedGameHeaderContent {
 impl SelectedGameHeaderContent {
     fn total_height(&self) -> f32 {
         let meta_height = self
-            .playtime_galley
+            .primary_meta_galley
             .as_ref()
             .map(|galley| galley.size().y)
             .into_iter()
@@ -268,8 +268,17 @@ fn build_selected_game_header(
     meta_max_width: f32,
 ) -> SelectedGameHeaderContent {
     let title_galley = painter.layout_no_wrap(game.name.clone(), title_font.clone(), title_color);
+    let installed_size_str = game
+        .installed_size_bytes
+        .map(|size_bytes| language.format_installed_size(size_bytes))
+        .unwrap_or_default();
     let playtime_str = language.format_playtime(game.playtime_minutes);
-    let has_playtime_meta = !playtime_str.is_empty();
+    let primary_meta_text = [installed_size_str, playtime_str]
+        .into_iter()
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("  •  ");
+    let has_primary_meta = !primary_meta_text.is_empty();
     let achievement_text = summary.and_then(|achievement_summary| {
         (achievement_summary.total > 0).then(|| {
             language.format_achievement_progress(
@@ -286,8 +295,8 @@ fn build_selected_game_header(
         190,
         meta_alpha.clamp(0.0, 255.0) as u8,
     );
-    let playtime_galley = has_playtime_meta.then(|| {
-        painter.layout_no_wrap(playtime_str, meta_font.clone(), playtime_color)
+    let primary_meta_galley = has_primary_meta.then(|| {
+        painter.layout_no_wrap(primary_meta_text, meta_font.clone(), playtime_color)
     });
     let achievement_color = egui::Color32::from_rgba_unmultiplied(
         180,
@@ -296,7 +305,7 @@ fn build_selected_game_header(
         (meta_alpha * achievement_meta_reveal).clamp(0.0, 255.0) as u8,
     );
     let achievement_galley = achievement_text.map(|text| {
-        let prefixed = if has_playtime_meta {
+        let prefixed = if has_primary_meta {
             format!("  •  {}", text)
         } else {
             text
@@ -306,7 +315,7 @@ fn build_selected_game_header(
 
     SelectedGameHeaderContent {
         title_galley,
-        playtime_galley,
+        primary_meta_galley,
         achievement_galley,
         title_font,
     }
@@ -346,12 +355,12 @@ fn draw_selected_game_header(
 
     painter.galley(title_pos, content.title_galley.clone());
 
-    if content.playtime_galley.is_some() || content.achievement_galley.is_some() {
+    if content.primary_meta_galley.is_some() || content.achievement_galley.is_some() {
         let meta_pos = egui::pos2(title_pos.x, title_pos.y + content.title_galley.size().y + 2.0);
         let mut meta_x = meta_pos.x;
-        if let Some(playtime_galley) = &content.playtime_galley {
-            painter.galley(egui::pos2(meta_x, meta_pos.y), playtime_galley.clone());
-            meta_x += playtime_galley.size().x;
+        if let Some(primary_meta_galley) = &content.primary_meta_galley {
+            painter.galley(egui::pos2(meta_x, meta_pos.y), primary_meta_galley.clone());
+            meta_x += primary_meta_galley.size().x;
         }
         if let Some(achievement_galley) = &content.achievement_galley {
             painter.galley(egui::pos2(meta_x, meta_pos.y), achievement_galley.clone());
