@@ -371,11 +371,11 @@ impl eframe::App for LauncherApp {
         let selected_game = self.games.get(self.page.selected());
         let selected_app_id = selected_game.and_then(|game| game.app_id);
         let updated_global_percentages = steam::take_updated_global_achievement_percentages();
-        let achievement_icon_scope = if self.page.show_achievement_panel() {
-            selected_app_id
-        } else {
-            None
-        };
+        let achievement_icon_scope = achievement_panel_scope_app_id(
+            selected_app_id,
+            self.page.show_achievement_panel(),
+            self.page.achievement_panel_anim(),
+        );
         self.achievements.sync_summary_scope(selected_app_id);
         self.achievements.sync_detail_scope(achievement_icon_scope);
         self.achievements.sync_icon_scope(achievement_icon_scope);
@@ -524,5 +524,41 @@ impl eframe::App for LauncherApp {
             self.achievements
                 .ensure_icons_for_urls(achievement_icon_scope, ctx, &visible_achievement_icon_urls);
         }
+    }
+}
+
+fn achievement_panel_scope_app_id(
+    selected_app_id: Option<u32>,
+    achievement_panel_open: bool,
+    achievement_panel_anim: f32,
+) -> Option<u32> {
+    if achievement_panel_open || achievement_panel_anim > 0.001 {
+        selected_app_id
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::achievement_panel_scope_app_id;
+
+    #[test]
+    fn keeps_achievement_scope_while_close_animation_is_still_visible() {
+        assert_eq!(
+            achievement_panel_scope_app_id(Some(42), false, 0.25),
+            Some(42)
+        );
+    }
+
+    #[test]
+    fn clears_achievement_scope_after_close_animation_finishes() {
+        assert_eq!(achievement_panel_scope_app_id(Some(42), false, 0.001), None);
+        assert_eq!(achievement_panel_scope_app_id(Some(42), false, 0.0), None);
+    }
+
+    #[test]
+    fn keeps_achievement_scope_while_panel_is_open() {
+        assert_eq!(achievement_panel_scope_app_id(Some(42), true, 0.0), Some(42));
     }
 }
