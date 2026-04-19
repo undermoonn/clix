@@ -17,7 +17,7 @@ pub fn draw_background(
     let screen = ctx.content_rect();
     let bg_painter = ctx.layer_painter(egui::LayerId::background());
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-    let base_alpha: f32 = 60.0;
+    let base_alpha: f32 = 170.0;
     let hero_ratio = 1240.0 / 3840.0;
     let page_scroll_t = smoothstep01(achievement_panel_anim);
     let wake_t = smoothstep01(wake_anim);
