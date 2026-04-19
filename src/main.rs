@@ -106,6 +106,7 @@ fn main() {
     };
     let options = eframe::NativeOptions {
         viewport,
+        renderer: eframe::Renderer::Glow,
         ..Default::default()
     };
     let _ = eframe::run_native(
