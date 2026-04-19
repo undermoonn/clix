@@ -7,7 +7,7 @@ use std::time::Duration;
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
 
-use crate::cache;
+use crate::assets::cache;
 use crate::i18n::AppLanguage;
 
 use super::types::AchievementSummary;

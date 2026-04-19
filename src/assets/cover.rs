@@ -3,7 +3,7 @@ use image::ImageEncoder;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use crate::cache;
+use super::cache;
 
 #[cfg(target_os = "windows")]
 use walkdir::WalkDir;

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::cache;
+use super::cache;
 
 use walkdir::WalkDir;
 

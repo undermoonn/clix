@@ -4,7 +4,7 @@ use eframe::egui;
 
 use crate::i18n::AppLanguage;
 
-use super::assets::HintIcons;
+use super::hint_icons::HintIcons;
 use super::anim::{lerp_f32, smoothstep01};
 use super::text::{color_with_scaled_alpha, draw_main_clock};
 

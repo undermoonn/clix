@@ -1,3 +1,5 @@
+pub(crate) mod xbox_home;
+
 use std::collections::HashMap;
 use std::time::Instant;
 

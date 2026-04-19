@@ -215,7 +215,7 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                             continue;
                         }
                         let game_path = lib.join("common").join(&install_dir);
-                        let dlss_version = crate::dlss::detect_version(&game_path, Some(id));
+                        let dlss_version = crate::assets::dlss::detect_version(&game_path, Some(id));
                         games.push(Game {
                             name,
                             path: game_path,
@@ -264,7 +264,7 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                             }
                             let install_path = PathBuf::from(install_location);
                             let dlss_version =
-                                crate::dlss::detect_version(&install_path, Some(app_id));
+                                crate::assets::dlss::detect_version(&install_path, Some(app_id));
                             seen_app_ids.insert(app_id);
                             games.push(Game {
                                 name: display_name,

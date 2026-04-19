@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use eframe::egui;
 
-use crate::cover;
+use crate::assets::cover;
 use crate::steam::Game;
 
 const ICON_WINDOW_RADIUS: usize = 11;

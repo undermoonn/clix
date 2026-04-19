@@ -95,8 +95,13 @@ fn parse_command_path(command: &str) -> Option<PathBuf> {
         return None;
     }
 
+    if let Some(rest) = trimmed.strip_prefix("\\\"") {
+        let end = rest.find("\\\"").or_else(|| rest.find('"'))?;
+        return Some(PathBuf::from(&rest[..end]));
+    }
+
     if let Some(rest) = trimmed.strip_prefix('"') {
-        let end = rest.find('"')?;
+        let end = rest.find('"').or_else(|| rest.find("\\\""))?;
         return Some(PathBuf::from(&rest[..end]));
     }
 
@@ -114,6 +119,16 @@ mod tests {
     #[test]
     fn parse_command_path_reads_quoted_executable() {
         let path = parse_command_path(r#"\"C:\Program Files\Clix\big-screen-launcher.exe\" --background"#);
+
+        assert_eq!(
+            path,
+            Some(PathBuf::from(r"C:\Program Files\Clix\big-screen-launcher.exe"))
+        );
+    }
+
+    #[test]
+    fn parse_command_path_reads_plain_quoted_executable() {
+        let path = parse_command_path(r#""C:\Program Files\Clix\big-screen-launcher.exe" --background"#);
 
         assert_eq!(
             path,

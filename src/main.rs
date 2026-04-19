@@ -1,26 +1,13 @@
 #![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
-mod achievements;
-mod artwork;
-mod cache;
-mod cover;
-mod dlss;
-mod display_mode;
-mod game_icons;
+mod assets;
 mod i18n;
 mod input;
-mod install_size;
 mod launch;
-mod runtime_state;
-mod startup;
-mod page_state;
-mod playtime;
-mod power;
+mod system;
 mod steam;
 mod ui;
-#[cfg(target_os = "windows")]
-mod xbox_home;
 
 use eframe::egui;
 

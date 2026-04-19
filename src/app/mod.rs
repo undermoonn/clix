@@ -1,20 +1,30 @@
+mod achievements;
+mod artwork;
+mod game_icons;
+mod install_size;
+mod playtime;
+mod state;
+
 use eframe::egui;
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::achievements::AchievementState;
-use crate::artwork::ArtworkState;
-use crate::display_mode::{self, ResolutionOptions};
-use crate::game_icons::GameIconState;
 use crate::i18n::AppLanguage;
-use crate::input::InputController;
-use crate::install_size::InstallSizeState;
+use crate::input::{self, InputController};
 use crate::launch::{self, LaunchState};
-use crate::page_state::{PageState, PowerAction, ResolutionPreset};
-use crate::playtime::PlaytimeState;
-use crate::runtime_state::RuntimeState;
+use crate::system::{
+    display_mode::{self, ResolutionOptions},
+    power, startup,
+};
 use crate::steam::{self, Game};
 use crate::ui;
+
+use self::achievements::AchievementState;
+use self::artwork::ArtworkState;
+use self::game_icons::GameIconState;
+use self::install_size::InstallSizeState;
+use self::playtime::PlaytimeState;
+use self::state::{PageState, PowerAction, ResolutionPreset, RuntimeState};
 
 pub struct LauncherApp {
     language: AppLanguage,
@@ -40,7 +50,7 @@ pub struct LauncherApp {
 impl LauncherApp {
     pub fn new(language: AppLanguage, ctx: &egui::Context) -> Self {
         #[cfg(target_os = "windows")]
-        crate::xbox_home::start(ctx.clone());
+        input::xbox_home::start(ctx.clone());
         #[cfg(not(target_os = "windows"))]
         let _ = ctx;
 
@@ -61,8 +71,8 @@ impl LauncherApp {
             playtime: PlaytimeState::new(),
             install_size: InstallSizeState::new(),
             runtime: RuntimeState::new(),
-            resolution_options: crate::display_mode::detect_resolution_options(),
-            launch_on_startup_enabled: crate::startup::is_enabled(),
+            resolution_options: display_mode::detect_resolution_options(),
+            launch_on_startup_enabled: startup::is_enabled(),
             wake_focus_pending: false,
             pending_send_to_background: false,
         };
@@ -147,10 +157,10 @@ impl LauncherApp {
 
         match action {
             PowerAction::Sleep => {
-                let _ = crate::power::sleep_system();
+                let _ = power::sleep_system();
             }
             PowerAction::Shutdown => {
-                if crate::power::shutdown_system() {
+                if power::shutdown_system() {
                     frame.close();
                 }
             }
@@ -178,7 +188,7 @@ impl eframe::App for LauncherApp {
             self.refresh_selected_install_size(ctx);
         }
 
-        if crate::xbox_home::take_wake_request() {
+        if input::xbox_home::take_wake_request() {
             self.page.prepare_wake_animation();
             self.wake_focus_pending = true;
             self.runtime.suppress_home_hold_until_release();
@@ -215,7 +225,7 @@ impl eframe::App for LauncherApp {
         let home_hold = self.runtime.update_home_hold(
             process_input,
             self.page.show_home_menu(),
-            crate::xbox_home::guide_held(),
+            input::xbox_home::guide_held(),
             now,
         );
         let can_force_close = !self.page.show_achievement_panel();
@@ -226,8 +236,8 @@ impl eframe::App for LauncherApp {
             now,
         );
         if home_hold.trigger_menu {
-            self.resolution_options = crate::display_mode::detect_resolution_options();
-            self.launch_on_startup_enabled = crate::startup::is_enabled();
+            self.resolution_options = display_mode::detect_resolution_options();
+            self.launch_on_startup_enabled = startup::is_enabled();
             self.page.open_home_menu();
             ctx.request_repaint();
         }
@@ -242,7 +252,7 @@ impl eframe::App for LauncherApp {
             ctx.request_repaint();
         }
         let shutdown_hold = self.runtime.update_shutdown_hold(
-            process_input && crate::power::supported(),
+            process_input && power::supported(),
             self.page.show_home_menu(),
             self.page.home_menu_shutdown_selected(),
             input_frame.launch_held,
@@ -317,10 +327,10 @@ impl eframe::App for LauncherApp {
                 ctx.request_repaint();
             }
             if result.toggle_launch_on_startup {
-                if crate::startup::set_enabled(!self.launch_on_startup_enabled) {
+                if startup::set_enabled(!self.launch_on_startup_enabled) {
                     self.launch_on_startup_enabled = !self.launch_on_startup_enabled;
                 } else {
-                    self.launch_on_startup_enabled = crate::startup::is_enabled();
+                    self.launch_on_startup_enabled = startup::is_enabled();
                 }
                 ctx.request_repaint();
             }
@@ -500,10 +510,10 @@ impl eframe::App for LauncherApp {
                     &self.resolution_options.current.label,
                     &self.resolution_options.half_refresh.label,
                     &self.resolution_options.max_refresh.label,
-                    crate::power::supported(),
+                    power::supported(),
                     self.runtime.shutdown_hold_progress(),
                     self.launch_on_startup_enabled,
-                    crate::startup::supported(),
+                    startup::supported(),
                     self.page.home_menu_anim(),
                     self.page.home_menu_scroll_offset(),
                     self.page.wake_anim(),

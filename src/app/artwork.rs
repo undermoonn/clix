@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::cover;
+use crate::assets::cover;
 
 struct PendingBackgroundAssets {
     app_id: u32,

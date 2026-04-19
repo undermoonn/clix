@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::cover;
+use crate::assets::cover;
 use crate::i18n::AppLanguage;
 use crate::steam::{self, AchievementSummary, Game};
 
