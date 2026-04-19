@@ -17,11 +17,7 @@ fn png_bytes_to_texture(
     let dyn_img = image::load_from_memory(bytes).ok()?;
     let rgba = dyn_img.to_rgba8();
     let size = [rgba.width() as usize, rgba.height() as usize];
-    let pixels: Vec<egui::Color32> = rgba
-        .pixels()
-        .map(|p| egui::Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]))
-        .collect();
-    let image = egui::ColorImage { size, pixels };
+    let image = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
     Some(ctx.load_texture(label, image, egui::TextureOptions::LINEAR))
 }
 

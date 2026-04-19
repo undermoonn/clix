@@ -5,7 +5,7 @@ use eframe::egui;
 use crate::i18n::AppLanguage;
 use crate::steam::{AchievementSummary, Game};
 
-use super::text::{build_wrapped_galley, scale_alpha};
+use super::text::{build_wrapped_galley, corner_radius, scale_alpha};
 
 pub(crate) fn dlss_tag_text(game: &Game) -> Option<String> {
     game.dlss_version.as_ref().map(|version| {
@@ -65,7 +65,7 @@ pub(crate) fn draw_title_tag(
 
     painter.rect_filled(
         tag_rect,
-        egui::Rounding::same((tag_rect.height() * 0.5).min(10.0)),
+        corner_radius((tag_rect.height() * 0.5).min(10.0)),
         egui::Color32::from_rgba_unmultiplied(
             fill_color.r(),
             fill_color.g(),
@@ -76,6 +76,7 @@ pub(crate) fn draw_title_tag(
     painter.galley(
         egui::pos2(tag_rect.min.x + padding_x, tag_rect.min.y + padding_y),
         galley,
+        egui::Color32::WHITE,
     );
 
     tag_rect.width()
@@ -243,10 +244,10 @@ pub(crate) fn draw_selected_game_header(
         egui::vec2(d, -d),
         egui::vec2(-d, -d),
     ] {
-        painter.galley(title_pos + off, outline_galley.clone());
+        painter.galley(title_pos + off, outline_galley.clone(), egui::Color32::WHITE);
     }
 
-    painter.galley(title_pos, content.title_galley.clone());
+    painter.galley(title_pos, content.title_galley.clone(), egui::Color32::WHITE);
 
     if content.primary_meta_galley.is_some()
         || content.achievement_galley.is_some()
@@ -255,14 +256,26 @@ pub(crate) fn draw_selected_game_header(
         let meta_pos = egui::pos2(title_pos.x, title_pos.y + content.title_galley.size().y + 6.0);
         let mut meta_x = meta_pos.x;
         if let Some(primary_meta_galley) = &content.primary_meta_galley {
-            painter.galley(egui::pos2(meta_x, meta_pos.y), primary_meta_galley.clone());
+            painter.galley(
+                egui::pos2(meta_x, meta_pos.y),
+                primary_meta_galley.clone(),
+                egui::Color32::WHITE,
+            );
             meta_x += primary_meta_galley.size().x;
         }
         if let Some(achievement_prev_galley) = &content.achievement_prev_galley {
-            painter.galley(egui::pos2(meta_x, meta_pos.y), achievement_prev_galley.clone());
+            painter.galley(
+                egui::pos2(meta_x, meta_pos.y),
+                achievement_prev_galley.clone(),
+                egui::Color32::WHITE,
+            );
         }
         if let Some(achievement_galley) = &content.achievement_galley {
-            painter.galley(egui::pos2(meta_x, meta_pos.y), achievement_galley.clone());
+            painter.galley(
+                egui::pos2(meta_x, meta_pos.y),
+                achievement_galley.clone(),
+                egui::Color32::WHITE,
+            );
         }
     }
 }

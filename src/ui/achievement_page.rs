@@ -12,7 +12,7 @@ use super::header::{
     installed_size_tag_text,
 };
 use super::text::{
-    build_wrapped_galley, color_with_scaled_alpha, format_achievement_status,
+    build_wrapped_galley, color_with_scaled_alpha, corner_radius, format_achievement_status,
 };
 
 fn draw_achievement_icon(
@@ -47,14 +47,10 @@ fn draw_achievement_icon(
     let reveal = reveal.clamp(0.0, 1.0);
     let alpha = ((tint.a() as f32) * reveal).round() as u8;
     let fade_tint = egui::Color32::from_rgba_unmultiplied(tint.r(), tint.g(), tint.b(), alpha);
-    painter.add(egui::Shape::Rect(egui::epaint::RectShape {
-        rect: draw_rect,
-        rounding: egui::Rounding::same(ACHIEVEMENT_ICON_ROUNDING),
-        fill: fade_tint,
-        stroke: egui::Stroke::NONE,
-        fill_texture_id: texture.id(),
-        uv,
-    }));
+    painter.add(egui::Shape::Rect(
+        egui::epaint::RectShape::filled(draw_rect, corner_radius(ACHIEVEMENT_ICON_ROUNDING), fade_tint)
+            .with_texture(texture.id(), uv),
+    ));
 }
 
 fn draw_centered_achievement_loading(ui: &egui::Ui, rect: egui::Rect) {
@@ -93,6 +89,7 @@ fn draw_centered_achievement_empty(
             rect.center().y - empty_galley.size().y * 0.5,
         ),
         empty_galley,
+        egui::Color32::WHITE,
     );
 }
 
@@ -142,12 +139,13 @@ fn draw_badge(
     let rect = egui::Rect::from_min_size(top_left, size);
     painter.rect_filled(
         rect,
-        egui::Rounding::same((rect.height() * 0.5).min(9.0)),
+        corner_radius((rect.height() * 0.5).min(9.0)),
         alpha_fill,
     );
     painter.galley(
         egui::pos2(rect.min.x + 9.0, rect.min.y + (rect.height() - galley.size().y) * 0.5),
         galley,
+        egui::Color32::WHITE,
     );
     size
 }
@@ -170,7 +168,7 @@ fn draw_hidden_achievement_overlay(
     let overlay_painter = painter.with_clip_rect(overlay_rect);
     overlay_painter.rect_filled(
         overlay_rect,
-        egui::Rounding::same(6.0),
+        corner_radius(6.0),
         color_with_scaled_alpha(
             egui::Color32::from_rgba_unmultiplied(20, 22, 26, 232),
             overlay_alpha,
@@ -194,7 +192,7 @@ fn draw_hidden_achievement_overlay(
         overlay_rect.center().x - group_width * 0.5,
         overlay_rect.center().y - title_size.y * 0.5,
     );
-    overlay_painter.galley(title_pos, title);
+    overlay_painter.galley(title_pos, title, egui::Color32::WHITE);
 
     if let Some(icons) = icons {
         let icon_rect = egui::Rect::from_min_size(
@@ -310,7 +308,7 @@ pub fn draw_achievement_page(
 
     painter.rect_filled(
         list_rect,
-        egui::Rounding::same(8.0),
+        corner_radius(8.0),
         color_with_scaled_alpha(egui::Color32::from_rgb(14, 14, 14), wake_t),
     );
 
@@ -427,7 +425,7 @@ pub fn draw_achievement_page(
         };
         list_painter.rect_filled(
             row_rect,
-            egui::Rounding::same(6.0),
+            corner_radius(6.0),
             color_with_scaled_alpha(bg_color, wake_t),
         );
 
@@ -451,7 +449,7 @@ pub fn draw_achievement_page(
             );
             list_painter.with_clip_rect(fill_clip_rect).rect_filled(
                 row_rect,
-                egui::Rounding::same(6.0),
+                corner_radius(6.0),
                 color_with_scaled_alpha(fill_color, wake_t),
             );
         }
@@ -592,15 +590,19 @@ pub fn draw_achievement_page(
             };
             list_painter.rect_filled(
                 icon_rect,
-                egui::Rounding::same(4.0),
+                corner_radius(4.0),
                 color_with_scaled_alpha(fill, wake_t),
             );
         }
 
         let text_top = content_top;
-        list_painter.galley(egui::pos2(text_x, text_top), title_galley.clone());
+        list_painter.galley(
+            egui::pos2(text_x, text_top),
+            title_galley.clone(),
+            egui::Color32::WHITE,
+        );
         let description_pos = egui::pos2(text_x, text_top + title_galley.size().y + 6.0);
-        list_painter.galley(description_pos, description_galley.clone());
+        list_painter.galley(description_pos, description_galley.clone(), egui::Color32::WHITE);
         let right_column_rect = egui::Rect::from_min_max(
             egui::pos2(row_rect.max.x - right_padding - right_column_width, row_rect.min.y),
             egui::pos2(row_rect.max.x - right_padding, row_rect.max.y),
@@ -614,7 +616,7 @@ pub fn draw_achievement_page(
         let right_block_top = right_column_rect.center().y - right_block_height * 0.5;
         let right_column_x = right_column_rect.max.x;
         let percent_pos = egui::pos2(right_column_x - percent_galley.size().x, right_block_top);
-        list_painter.galley(percent_pos, percent_galley.clone());
+        list_painter.galley(percent_pos, percent_galley.clone(), egui::Color32::WHITE);
         if let Some(unlock_time_galley) = unlock_time_galley {
             list_painter.galley(
                 egui::pos2(
@@ -622,6 +624,7 @@ pub fn draw_achievement_page(
                     percent_pos.y + percent_galley.size().y + right_block_spacing,
                 ),
                 unlock_time_galley,
+                egui::Color32::WHITE,
             );
         }
 

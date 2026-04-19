@@ -2,6 +2,10 @@ use std::sync::Arc;
 
 use eframe::egui;
 
+pub(crate) fn corner_radius(value: f32) -> egui::CornerRadius {
+    egui::CornerRadius::same(value.round().clamp(0.0, 255.0) as u8)
+}
+
 pub(crate) fn format_achievement_status(
     unlocked: Option<bool>,
     unlock_time: Option<u64>,
@@ -38,7 +42,7 @@ pub(crate) fn build_wrapped_galley(
             ..Default::default()
         },
     );
-    ui.ctx().fonts(|fonts| fonts.layout_job(job))
+    ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
 }
 
 pub(crate) fn scale_alpha(alpha: u8, scale: f32) -> u8 {
@@ -90,7 +94,7 @@ pub(crate) fn draw_main_clock(painter: &egui::Painter, time_pos: egui::Pos2, wak
         egui::vec2(offset, -offset),
         egui::vec2(-offset, -offset),
     ] {
-        painter.galley(time_pos + delta, outline.clone());
+        painter.galley(time_pos + delta, outline.clone(), egui::Color32::WHITE);
     }
-    painter.galley(time_pos, time_galley);
+    painter.galley(time_pos, time_galley, egui::Color32::WHITE);
 }

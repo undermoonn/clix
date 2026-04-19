@@ -7,7 +7,7 @@ use crate::steam::{AchievementSummary, Game};
 
 use super::anim::{lerp_f32, smoothstep01};
 use super::header::{build_selected_game_header, draw_selected_game_header};
-use super::text::color_with_scaled_alpha;
+use super::text::{color_with_scaled_alpha, corner_radius};
 
 fn launch_press_t(elapsed_seconds: f32) -> f32 {
     let press_in_duration = 0.06;
@@ -38,14 +38,10 @@ fn draw_game_icon(
     tint: egui::Color32,
 ) {
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-    painter.add(egui::Shape::Rect(egui::epaint::RectShape {
-        rect: icon_rect,
-        rounding: egui::Rounding::same(8.0),
-        fill: tint,
-        stroke: egui::Stroke::NONE,
-        fill_texture_id: texture.id(),
-        uv,
-    }));
+    painter.add(egui::Shape::Rect(
+        egui::epaint::RectShape::filled(icon_rect, corner_radius(8.0), tint)
+            .with_texture(texture.id(), uv),
+    ));
 }
 
 fn draw_running_status_dot(painter: &egui::Painter, icon_rect: egui::Rect) {

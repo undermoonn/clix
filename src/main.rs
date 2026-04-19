@@ -10,16 +10,17 @@ mod steam;
 mod ui;
 
 use eframe::egui;
+use std::sync::Arc;
 
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
 
-fn load_app_icon() -> Option<eframe::IconData> {
+fn load_app_icon() -> Option<egui::IconData> {
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/app-icon-256.png"));
     let rgba = image::load_from_memory(bytes).ok()?.to_rgba8();
     let (width, height) = rgba.dimensions();
 
-    Some(eframe::IconData {
+    Some(egui::IconData {
         rgba: rgba.into_raw(),
         width,
         height,
@@ -66,8 +67,12 @@ fn configure_fonts(ctx: &egui::Context, language: i18n::AppLanguage) {
 
     let mut fonts = egui::FontDefinitions::default();
 
-    fonts.font_data.insert("ui_regular".to_owned(), regular_font);
-    fonts.font_data.insert("ui_bold".to_owned(), bold_font);
+    fonts
+        .font_data
+        .insert("ui_regular".to_owned(), Arc::new(regular_font));
+    fonts
+        .font_data
+        .insert("ui_bold".to_owned(), Arc::new(bold_font));
     fonts
         .families
         .entry(egui::FontFamily::Proportional)
@@ -92,9 +97,15 @@ fn configure_fonts(_ctx: &egui::Context, _language: i18n::AppLanguage) {}
 
 fn main() {
     let language = i18n::AppLanguage::detect_system();
+    let viewport = if let Some(icon) = load_app_icon() {
+        egui::ViewportBuilder::default()
+            .with_fullscreen(true)
+            .with_icon(icon)
+    } else {
+        egui::ViewportBuilder::default().with_fullscreen(true)
+    };
     let options = eframe::NativeOptions {
-        fullscreen: true,
-        icon_data: load_app_icon(),
+        viewport,
         ..Default::default()
     };
     let _ = eframe::run_native(
@@ -102,7 +113,7 @@ fn main() {
         options,
         Box::new(move |cc| {
             configure_fonts(&cc.egui_ctx, language);
-            Box::new(app::LauncherApp::new(language, &cc.egui_ctx))
+            Ok(Box::new(app::LauncherApp::new(language, &cc.egui_ctx)))
         }),
     );
 }

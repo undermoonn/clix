@@ -177,6 +177,7 @@ pub fn draw_hint_bar(
                 hint_y + (row_h - g_refresh.size().y) * 0.5,
             ),
             g_refresh,
+            egui::Color32::WHITE,
         );
         cursor_x = refresh_x - 20.0;
 
@@ -188,12 +189,13 @@ pub fn draw_hint_bar(
                 hint_y + (row_h - g_scroll.size().y) * 0.5,
             ),
             g_scroll,
+            egui::Color32::WHITE,
         );
 
         draw_icon(painter, &icons.btn_b, b_icon_x, action_icon_h);
 
         let gy = hint_y + (row_h - g_back.size().y) * 0.5;
-        painter.galley(egui::pos2(b_label_x, gy), g_back);
+        painter.galley(egui::pos2(b_label_x, gy), g_back, egui::Color32::WHITE);
 
         draw_icon(painter, &icons.guide, home_menu_x, action_icon_h);
         return;
@@ -224,7 +226,11 @@ pub fn draw_hint_bar(
         draw_icon(painter, &icons.dpad_down, achievements_x, action_icon_h);
 
         let gy = hint_y + (row_h - g_achievements.size().y) * 0.5;
-        painter.galley(egui::pos2(achievements_x + action_icon_h + 6.0, gy), g_achievements);
+        painter.galley(
+            egui::pos2(achievements_x + action_icon_h + 6.0, gy),
+            g_achievements,
+            egui::Color32::WHITE,
+        );
     }
 
     if game_running {
@@ -237,13 +243,21 @@ pub fn draw_hint_bar(
         );
 
         let gy = hint_y + (row_h - g_force_close.size().y) * 0.5;
-        painter.galley(egui::pos2(force_close_x + action_icon_h + 6.0, gy), g_force_close);
+        painter.galley(
+            egui::pos2(force_close_x + action_icon_h + 6.0, gy),
+            g_force_close,
+            egui::Color32::WHITE,
+        );
     }
 
     draw_icon(painter, &icons.btn_a, launch_x, action_icon_h);
 
     let gy = hint_y + (row_h - g_launch.size().y) * 0.5;
-    painter.galley(egui::pos2(launch_x + action_icon_h + 6.0, gy), g_launch);
+    painter.galley(
+        egui::pos2(launch_x + action_icon_h + 6.0, gy),
+        g_launch,
+        egui::Color32::WHITE,
+    );
 
     draw_icon(painter, &icons.guide, home_menu_x, action_icon_h);
 }

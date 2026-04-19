@@ -152,8 +152,18 @@ impl LauncherApp {
         let _ = display_mode::apply_resolution_choice(option);
     }
 
-    fn apply_power_action(&mut self, action: PowerAction, frame: &mut eframe::Frame) {
+    fn close_root_viewport(&self, ctx: &egui::Context) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+
+    fn apply_power_action(
+        &mut self,
+        action: PowerAction,
+        ctx: &egui::Context,
+        frame: &mut eframe::Frame,
+    ) {
         self.input.clear_held();
+        let _ = frame;
 
         match action {
             PowerAction::Sleep => {
@@ -161,7 +171,7 @@ impl LauncherApp {
             }
             PowerAction::Shutdown => {
                 if power::shutdown_system() {
-                    frame.close();
+                    self.close_root_viewport(ctx);
                 }
             }
         }
@@ -169,7 +179,8 @@ impl LauncherApp {
 }
 
 impl eframe::App for LauncherApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
         ctx.output_mut(|output| output.cursor_icon = egui::CursorIcon::None);
 
         if self.wake_focus_pending {
@@ -184,8 +195,8 @@ impl eframe::App for LauncherApp {
         let focus = self.runtime.update_focus(has_focus, now);
 
         if focus.did_gain_focus {
-            self.refresh_selected_playtime(ctx);
-            self.refresh_selected_install_size(ctx);
+            self.refresh_selected_playtime(&ctx);
+            self.refresh_selected_install_size(&ctx);
         }
 
         if input::xbox_home::take_wake_request() {
@@ -259,7 +270,7 @@ impl eframe::App for LauncherApp {
             now,
         );
         if shutdown_hold.trigger_shutdown {
-            self.apply_power_action(PowerAction::Shutdown, frame);
+            self.apply_power_action(PowerAction::Shutdown, &ctx, frame);
         }
         if shutdown_hold.should_repaint {
             ctx.request_repaint();
@@ -303,7 +314,7 @@ impl eframe::App for LauncherApp {
                     self.games.get(self.page.selected()),
                     &self.steam_paths,
                     self.language,
-                    ctx,
+                    &ctx,
                 );
             }
             if result.reveal_hidden_achievement
@@ -319,7 +330,7 @@ impl eframe::App for LauncherApp {
                     self.games.get(self.page.selected()),
                     &self.steam_paths,
                     self.language,
-                    ctx,
+                    &ctx,
                 );
             }
             if result.toggle_achievement_sort {
@@ -339,8 +350,8 @@ impl eframe::App for LauncherApp {
             }
             if result.selected_changed {
                 self.input.pulse_selection_change();
-                self.refresh_selected_playtime(ctx);
-                self.refresh_selected_install_size(ctx);
+                self.refresh_selected_playtime(&ctx);
+                self.refresh_selected_install_size(&ctx);
             }
             if result.launch_selected && !self.selected_launch_pending() {
                 self.launch_selected();
@@ -354,17 +365,17 @@ impl eframe::App for LauncherApp {
                 self.apply_resolution_preset(preset);
             }
             if let Some(power_action) = result.power_action {
-                self.apply_power_action(power_action, frame);
+                self.apply_power_action(power_action, &ctx, frame);
             }
             if result.close_frame {
-                frame.close();
+                self.close_root_viewport(&ctx);
             }
         }
 
-        self.tick_launch_progress(ctx, input_frame.launch_held);
+        self.tick_launch_progress(&ctx, input_frame.launch_held);
         self.tick_running_game_state();
         self.achievements.drain_results();
-        self.achievements.drain_icon_results(ctx);
+        self.achievements.drain_icon_results(&ctx);
         self.playtime.drain_results(&mut self.games);
         self.install_size.drain_results(&mut self.games);
 
@@ -385,24 +396,24 @@ impl eframe::App for LauncherApp {
             self.language,
             self.page.show_achievement_panel(),
             &updated_global_percentages,
-            ctx,
+            &ctx,
         );
         if self
             .artwork
-            .tick_selection(self.page.selected(), selected_app_id, &self.steam_paths, ctx)
+            .tick_selection(self.page.selected(), selected_app_id, &self.steam_paths, &ctx)
         {
             self.achievements
-                .refresh_summary_for_selected(selected_game, &self.steam_paths, self.language, ctx);
+                .refresh_summary_for_selected(selected_game, &self.steam_paths, self.language, &ctx);
         }
-        self.artwork.drain_pending(selected_app_id, ctx);
+        self.artwork.drain_pending(selected_app_id, &ctx);
 
         let dt = ctx.input(|input| input.predicted_dt);
-        self.artwork.tick_fade(ctx, dt);
-        self.page.tick_animations(ctx, dt);
-        self.achievements.animate_reveals(ctx, dt);
+        self.artwork.tick_fade(&ctx, dt);
+        self.page.tick_animations(&ctx, dt);
+        self.achievements.animate_reveals(&ctx, dt);
 
         self.game_icons
-            .ensure_loaded(ctx, &self.steam_paths, &self.games, self.page.selected());
+            .ensure_loaded(&ctx, &self.steam_paths, &self.games, self.page.selected());
 
         let selected_achievement_summary = self.achievements.summary_for_selected(selected_game);
         let selected_achievement_detail = self.achievements.detail_for_selected(selected_game);
@@ -420,11 +431,11 @@ impl eframe::App for LauncherApp {
             .map(|state| (state.game_index, state.elapsed_seconds()));
         let mut visible_achievement_icon_urls = Vec::new();
 
-        egui::CentralPanel::default()
-            .frame(egui::Frame::none().fill(egui::Color32::TRANSPARENT))
-            .show(ctx, |ui| {
+        egui::Frame::new()
+            .fill(egui::Color32::TRANSPARENT)
+            .show(ui, |ui| {
                 ui::draw_background(
-                    ctx,
+                    &ctx,
                     self.artwork.cover(),
                     self.artwork.cover_prev(),
                     self.artwork.logo(),
@@ -522,7 +533,7 @@ impl eframe::App for LauncherApp {
 
         if !visible_achievement_icon_urls.is_empty() {
             self.achievements
-                .ensure_icons_for_urls(achievement_icon_scope, ctx, &visible_achievement_icon_urls);
+                .ensure_icons_for_urls(achievement_icon_scope, &ctx, &visible_achievement_icon_urls);
         }
     }
 }

@@ -1,7 +1,7 @@
 use eframe::egui;
 
 use super::anim::{lerp_f32, smoothstep01};
-use super::text::scale_alpha;
+use super::text::{corner_radius, scale_alpha};
 
 pub fn draw_background(
     ctx: &egui::Context,
@@ -14,7 +14,7 @@ pub fn draw_background(
     achievement_panel_anim: f32,
     wake_anim: f32,
 ) {
-    let screen = ctx.screen_rect();
+    let screen = ctx.content_rect();
     let bg_painter = ctx.layer_painter(egui::LayerId::background());
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
     let base_alpha: f32 = 60.0;
@@ -27,7 +27,7 @@ pub fn draw_background(
     let wake_shift_y = -16.0 * wake_inv;
     let wake_alpha_scale = lerp_f32(0.72, 1.0, wake_t);
 
-    bg_painter.rect_filled(screen, egui::Rounding::ZERO, egui::Color32::from_rgb(18, 18, 18));
+    bg_painter.rect_filled(screen, egui::CornerRadius::ZERO, egui::Color32::from_rgb(18, 18, 18));
 
     let top_rect = |tex: &egui::TextureHandle, dx: f32| -> egui::Rect {
         let tex_size = tex.size_vec2();
@@ -120,7 +120,7 @@ pub fn draw_background(
     if wake_overlay_alpha > 0 {
         bg_painter.rect_filled(
             screen,
-            egui::Rounding::ZERO,
+            corner_radius(0.0),
             egui::Color32::from_rgba_unmultiplied(8, 10, 14, wake_overlay_alpha),
         );
     }

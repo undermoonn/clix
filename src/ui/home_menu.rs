@@ -4,7 +4,7 @@ use crate::i18n::AppLanguage;
 
 use super::hint_icons::HintIcons;
 use super::anim::{lerp_f32, smoothstep01};
-use super::text::color_with_scaled_alpha;
+use super::text::{color_with_scaled_alpha, corner_radius};
 
 pub fn draw_home_menu(
     ui: &mut egui::Ui,
@@ -77,7 +77,7 @@ pub fn draw_home_menu(
     let painter = ui.painter();
     painter.rect_filled(
         panel_rect,
-        egui::Rounding::ZERO,
+        egui::CornerRadius::ZERO,
         color_with_scaled_alpha(
             egui::Color32::from_rgba_unmultiplied(6, 8, 12, 178),
             overlay_t,
@@ -150,7 +150,7 @@ pub fn draw_home_menu(
     );
     painter.rect_filled(
         sheet_rect,
-        egui::Rounding::ZERO,
+        egui::CornerRadius::ZERO,
         color_with_scaled_alpha(egui::Color32::from_rgb(18, 19, 22), sheet_t),
     );
 
@@ -262,29 +262,42 @@ pub fn draw_home_menu(
         let option_t = option_phase_t(index);
         painter.rect_filled(
             *option_rect,
-            egui::Rounding::same(12.0),
+            corner_radius(12.0),
             color_with_scaled_alpha(egui::Color32::from_rgb(28, 30, 34), option_t),
         );
     }
 
     if let Some(power_section_text) = &power_section_text {
-        painter.galley(egui::pos2(content_rect.min.x, power_section_y), power_section_text.clone());
+        painter.galley(
+            egui::pos2(content_rect.min.x, power_section_y),
+            power_section_text.clone(),
+            egui::Color32::WHITE,
+        );
     }
-    painter.galley(egui::pos2(content_rect.min.x, resolution_section_y), resolution_section_text);
+    painter.galley(
+        egui::pos2(content_rect.min.x, resolution_section_y),
+        resolution_section_text,
+        egui::Color32::WHITE,
+    );
     painter.galley(
         egui::pos2(
             content_rect.max.x - current_mode_text_width,
             resolution_section_y + (resolution_section_text_height - current_mode_text_height) * 0.5,
         ),
         current_mode_text,
+        egui::Color32::WHITE,
     );
     if show_launch_on_startup {
-        painter.galley(egui::pos2(content_rect.min.x, startup_section_y), startup_section_text);
+        painter.galley(
+            egui::pos2(content_rect.min.x, startup_section_y),
+            startup_section_text,
+            egui::Color32::WHITE,
+        );
     }
 
     painter.rect_filled(
         selected_rect,
-        egui::Rounding::same(14.0),
+        corner_radius(14.0),
         color_with_scaled_alpha(egui::Color32::from_rgb(86, 90, 100), highlight_t),
     );
 
@@ -334,13 +347,18 @@ pub fn draw_home_menu(
             );
             let total_height = option_text.size().y + 6.0 + status_text.size().y;
             let top_y = option_rect.center().y - total_height * 0.5;
-            painter.galley(egui::pos2(option_rect.min.x + option_inner_padding, top_y), option_text);
+            painter.galley(
+                egui::pos2(option_rect.min.x + option_inner_padding, top_y),
+                option_text,
+                egui::Color32::WHITE,
+            );
             painter.galley(
                 egui::pos2(
                     option_rect.min.x + option_inner_padding,
                     top_y + total_height - status_text.size().y,
                 ),
                 status_text,
+                egui::Color32::WHITE,
             );
         } else {
             let option_text = painter.layout_no_wrap(
@@ -354,6 +372,7 @@ pub fn draw_home_menu(
                     option_rect.center().y - option_text.size().y * 0.5,
                 ),
                 option_text,
+                egui::Color32::WHITE,
             );
         }
     }
