@@ -3,7 +3,12 @@ use eframe::egui;
 use crate::input::ControllerAction;
 
 #[cfg(target_os = "windows")]
-const HOME_MENU_OPTION_COUNT: usize = 5;
+const HOME_MENU_HAS_POWER_OPTIONS: bool = true;
+#[cfg(not(target_os = "windows"))]
+const HOME_MENU_HAS_POWER_OPTIONS: bool = false;
+
+#[cfg(target_os = "windows")]
+const HOME_MENU_OPTION_COUNT: usize = 7;
 #[cfg(not(target_os = "windows"))]
 const HOME_MENU_OPTION_COUNT: usize = 4;
 const HOME_MENU_COLUMNS: usize = 2;
@@ -12,6 +17,12 @@ const HOME_MENU_COLUMNS: usize = 2;
 pub enum ResolutionPreset {
     HalfMaxRefresh,
     MaxRefresh,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PowerAction {
+    Sleep,
+    Shutdown,
 }
 
 pub struct PageActionResult {
@@ -25,6 +36,7 @@ pub struct PageActionResult {
     pub close_frame: bool,
     pub send_app_to_background: bool,
     pub set_resolution: Option<ResolutionPreset>,
+    pub power_action: Option<PowerAction>,
 }
 
 pub struct PageState {
@@ -106,6 +118,10 @@ impl PageState {
         self.home_menu_scroll_offset
     }
 
+    pub fn home_menu_shutdown_selected(&self) -> bool {
+        HOME_MENU_HAS_POWER_OPTIONS && self.show_home_menu && self.home_menu_selected == 3
+    }
+
     pub fn achievement_panel_anim(&self) -> f32 {
         self.achievement_panel_anim
     }
@@ -156,6 +172,7 @@ impl PageState {
             close_frame: false,
             send_app_to_background: false,
             set_resolution: None,
+            power_action: None,
         };
 
         if self.show_home_menu {
@@ -185,25 +202,52 @@ impl PageState {
                 }
                 ControllerAction::Launch => {
                     let selected_option = self.home_menu_selected;
-                    match selected_option {
-                        0 => {
-                            self.close_home_menu();
-                            result.send_app_to_background = true;
+                    if HOME_MENU_HAS_POWER_OPTIONS {
+                        match selected_option {
+                            0 => {
+                                self.close_home_menu();
+                                result.send_app_to_background = true;
+                            }
+                            1 => {
+                                self.close_home_menu();
+                                result.close_frame = true;
+                            }
+                            2 => {
+                                self.close_home_menu();
+                                result.power_action = Some(PowerAction::Sleep);
+                            }
+                            3 => {}
+                            4 => {
+                                self.close_home_menu();
+                                result.set_resolution = Some(ResolutionPreset::HalfMaxRefresh);
+                            }
+                            5 => {
+                                self.close_home_menu();
+                                result.set_resolution = Some(ResolutionPreset::MaxRefresh);
+                            }
+                            6 => result.toggle_launch_on_startup = true,
+                            _ => {}
                         }
-                        1 => {
-                            self.close_home_menu();
-                            result.close_frame = true;
+                    } else {
+                        match selected_option {
+                            0 => {
+                                self.close_home_menu();
+                                result.send_app_to_background = true;
+                            }
+                            1 => {
+                                self.close_home_menu();
+                                result.close_frame = true;
+                            }
+                            2 => {
+                                self.close_home_menu();
+                                result.set_resolution = Some(ResolutionPreset::HalfMaxRefresh);
+                            }
+                            3 => {
+                                self.close_home_menu();
+                                result.set_resolution = Some(ResolutionPreset::MaxRefresh);
+                            }
+                            _ => {}
                         }
-                        2 => {
-                            self.close_home_menu();
-                            result.set_resolution = Some(ResolutionPreset::HalfMaxRefresh);
-                        }
-                        3 => {
-                            self.close_home_menu();
-                            result.set_resolution = Some(ResolutionPreset::MaxRefresh);
-                        }
-                        4 => result.toggle_launch_on_startup = true,
-                        _ => {}
                     }
                 }
                 ControllerAction::Quit => {
@@ -377,7 +421,7 @@ impl PageState {
 
 #[cfg(test)]
 mod tests {
-    use super::{PageState, ResolutionPreset};
+    use super::{PageState, PowerAction, ResolutionPreset};
     use crate::input::ControllerAction;
 
     #[test]
@@ -449,6 +493,7 @@ mod tests {
 
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
 
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
 
@@ -457,18 +502,48 @@ mod tests {
     }
 
     #[test]
-    fn home_menu_selection_stops_at_last_resolution_option() {
+    fn home_menu_selection_stops_at_last_option() {
         let mut page = PageState::new();
         page.open_home_menu();
 
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
 
+        #[cfg(target_os = "windows")]
+        assert_eq!(page.home_menu_selected, 6);
+
+        #[cfg(not(target_os = "windows"))]
         assert_eq!(page.home_menu_selected, 3);
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn down_moves_home_menu_selection_to_power_row() {
+        let mut page = PageState::new();
+        page.open_home_menu();
+
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+
+        assert_eq!(page.home_menu_selected, 2);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn second_down_moves_home_menu_selection_to_resolution_row() {
+        let mut page = PageState::new();
+        page.open_home_menu();
+
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+
+        assert_eq!(page.home_menu_selected, 4);
+    }
+
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn down_moves_home_menu_selection_to_resolution_row() {
         let mut page = PageState::new();
@@ -502,6 +577,58 @@ mod tests {
         assert!(!page.show_home_menu());
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn launch_on_sleep_option_requests_sleep() {
+        let mut page = PageState::new();
+        page.open_home_menu();
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert_eq!(result.power_action, Some(PowerAction::Sleep));
+        assert_eq!(result.set_resolution, None);
+        assert!(!result.close_frame);
+        assert!(!page.show_home_menu());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn launch_on_shutdown_option_waits_for_hold() {
+        let mut page = PageState::new();
+        page.open_home_menu();
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
+
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert_eq!(result.power_action, None);
+        assert_eq!(result.set_resolution, None);
+        assert!(!result.close_frame);
+        assert!(page.show_home_menu());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn launch_on_half_refresh_option_requests_resolution_change() {
+        let mut page = PageState::new();
+        page.open_home_menu();
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert_eq!(
+            result.set_resolution,
+            Some(ResolutionPreset::HalfMaxRefresh)
+        );
+        assert_eq!(result.power_action, None);
+        assert!(!result.send_app_to_background);
+        assert!(!result.close_frame);
+        assert!(!page.show_home_menu());
+    }
+
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn launch_on_half_refresh_option_requests_resolution_change() {
         let mut page = PageState::new();
@@ -519,6 +646,28 @@ mod tests {
         assert!(!page.show_home_menu());
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn launch_on_max_refresh_option_requests_resolution_change() {
+        let mut page = PageState::new();
+        page.open_home_menu();
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
+
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert_eq!(
+            result.set_resolution,
+            Some(ResolutionPreset::MaxRefresh)
+        );
+        assert_eq!(result.power_action, None);
+        assert!(!result.send_app_to_background);
+        assert!(!result.close_frame);
+        assert!(!page.show_home_menu());
+    }
+
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn launch_on_max_refresh_option_requests_resolution_change() {
         let mut page = PageState::new();

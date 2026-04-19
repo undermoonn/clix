@@ -70,6 +70,27 @@ impl AppLanguage {
         }
     }
 
+    pub fn power_text(self) -> &'static str {
+        match self {
+            Self::English => "Power",
+            Self::SimplifiedChinese => "电源",
+        }
+    }
+
+    pub fn sleep_text(self) -> &'static str {
+        match self {
+            Self::English => "Sleep",
+            Self::SimplifiedChinese => "睡眠",
+        }
+    }
+
+    pub fn shutdown_text(self) -> &'static str {
+        match self {
+            Self::English => "Shut Down",
+            Self::SimplifiedChinese => "关机",
+        }
+    }
+
     pub fn set_display_resolution_text(self) -> &'static str {
         match self {
             Self::English => "Set Display Resolution",

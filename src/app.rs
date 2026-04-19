@@ -10,7 +10,7 @@ use crate::i18n::AppLanguage;
 use crate::input::InputController;
 use crate::install_size::InstallSizeState;
 use crate::launch::{self, LaunchState};
-use crate::page_state::{PageState, ResolutionPreset};
+use crate::page_state::{PageState, PowerAction, ResolutionPreset};
 use crate::playtime::PlaytimeState;
 use crate::runtime_state::RuntimeState;
 use crate::steam::{self, Game};
@@ -141,6 +141,21 @@ impl LauncherApp {
 
         let _ = display_mode::apply_resolution_choice(option);
     }
+
+    fn apply_power_action(&mut self, action: PowerAction, frame: &mut eframe::Frame) {
+        self.input.clear_held();
+
+        match action {
+            PowerAction::Sleep => {
+                let _ = crate::power::sleep_system();
+            }
+            PowerAction::Shutdown => {
+                if crate::power::shutdown_system() {
+                    frame.close();
+                }
+            }
+        }
+    }
 }
 
 impl eframe::App for LauncherApp {
@@ -224,6 +239,19 @@ impl eframe::App for LauncherApp {
             }
         }
         if force_close_hold.should_repaint {
+            ctx.request_repaint();
+        }
+        let shutdown_hold = self.runtime.update_shutdown_hold(
+            process_input && crate::power::supported(),
+            self.page.show_home_menu(),
+            self.page.home_menu_shutdown_selected(),
+            input_frame.launch_held,
+            now,
+        );
+        if shutdown_hold.trigger_shutdown {
+            self.apply_power_action(PowerAction::Shutdown, frame);
+        }
+        if shutdown_hold.should_repaint {
             ctx.request_repaint();
         }
 
@@ -314,6 +342,9 @@ impl eframe::App for LauncherApp {
             }
             if let Some(preset) = result.set_resolution {
                 self.apply_resolution_preset(preset);
+            }
+            if let Some(power_action) = result.power_action {
+                self.apply_power_action(power_action, frame);
             }
             if result.close_frame {
                 frame.close();
@@ -469,6 +500,8 @@ impl eframe::App for LauncherApp {
                     &self.resolution_options.current.label,
                     &self.resolution_options.half_refresh.label,
                     &self.resolution_options.max_refresh.label,
+                    crate::power::supported(),
+                    self.runtime.shutdown_hold_progress(),
                     self.launch_on_startup_enabled,
                     crate::startup::supported(),
                     self.page.home_menu_anim(),
