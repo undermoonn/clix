@@ -4,6 +4,12 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 #[cfg(target_os = "windows")]
+use std::sync::Once;
+
+#[cfg(target_os = "windows")]
+use eframe::egui;
+
+#[cfg(target_os = "windows")]
 use winapi::um::xinput::{
     XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B, XINPUT_GAMEPAD_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_LEFT,
     XINPUT_GAMEPAD_DPAD_RIGHT, XINPUT_GAMEPAD_DPAD_UP, XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y,
@@ -184,6 +190,18 @@ pub struct InputController {
 }
 
 #[cfg(target_os = "windows")]
+pub fn start_repaint_watcher(ctx: egui::Context) {
+    static START_ONCE: Once = Once::new();
+
+    START_ONCE.call_once(move || {
+        std::thread::spawn(move || run_xinput_repaint_watcher(ctx));
+    });
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn start_repaint_watcher(_ctx: eframe::egui::Context) {}
+
+#[cfg(target_os = "windows")]
 enum RumbleState {
     XInput {
         controller_index: DWORD,
@@ -251,6 +269,26 @@ impl XInputAggregateState {
         if (self.buttons & XINPUT_GAMEPAD_Y) != 0 {
             raw_held.insert(InputAction::Sort);
         }
+    }
+
+    fn has_repaint_activity(&self) -> bool {
+        self.buttons != 0 || self.up || self.down || self.left || self.right
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn run_xinput_repaint_watcher(ctx: egui::Context) {
+    let Ok(xinput) = XInput::new() else {
+        return;
+    };
+
+    loop {
+        let aggregate = XInputAggregateState::from_states(&xinput.get_states());
+        if aggregate.has_repaint_activity() && !crate::launch::current_app_window_is_background() {
+            ctx.request_repaint();
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(16));
     }
 }
 

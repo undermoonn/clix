@@ -1,14 +1,16 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::input::FOCUS_COOLDOWN_MS;
 
 pub const HOLD_TO_OPEN_HOME_MENU_MS: f32 = 500.0;
 pub const HOLD_TO_FORCE_CLOSE_GAME_MS: f32 = 2000.0;
 pub const HOLD_TO_SHUTDOWN_MS: f32 = 500.0;
+pub const INPUT_IDLE_AFTER: Duration = Duration::from_millis(1500);
 
 pub struct RuntimeState {
     had_focus: bool,
     focus_cooldown_until: Option<Instant>,
+    last_effective_input_at: Instant,
     home_hold_started_at: Option<Instant>,
     home_hold_consumed: bool,
     shutdown_hold_started_at: Option<Instant>,
@@ -28,6 +30,7 @@ pub struct FocusUpdate {
 
 pub struct HomeHoldUpdate {
     pub trigger_menu: bool,
+    pub should_repaint: bool,
 }
 
 pub struct ForceCloseHoldUpdate {
@@ -45,6 +48,7 @@ impl RuntimeState {
         Self {
             had_focus: true,
             focus_cooldown_until: None,
+            last_effective_input_at: Instant::now(),
             home_hold_started_at: None,
             home_hold_consumed: false,
             shutdown_hold_started_at: None,
@@ -106,12 +110,18 @@ impl RuntimeState {
                 self.suppress_home_hold_until_release = false;
             }
 
-            return HomeHoldUpdate { trigger_menu: false };
+            return HomeHoldUpdate {
+                trigger_menu: false,
+                should_repaint: guide_held,
+            };
         }
 
         if process_input && !home_menu_open && guide_held {
             if self.home_hold_consumed {
-                return HomeHoldUpdate { trigger_menu: false };
+                return HomeHoldUpdate {
+                    trigger_menu: false,
+                    should_repaint: false,
+                };
             }
 
             let started_at = self.home_hold_started_at.get_or_insert(now);
@@ -120,15 +130,32 @@ impl RuntimeState {
             if held_ms >= HOLD_TO_OPEN_HOME_MENU_MS {
                 self.home_hold_consumed = true;
                 self.suppress_home_hold_until_release = true;
-                HomeHoldUpdate { trigger_menu: true }
+                HomeHoldUpdate {
+                    trigger_menu: true,
+                    should_repaint: false,
+                }
             } else {
-                HomeHoldUpdate { trigger_menu: false }
+                HomeHoldUpdate {
+                    trigger_menu: false,
+                    should_repaint: true,
+                }
             }
         } else {
             self.home_hold_started_at = None;
             self.home_hold_consumed = false;
-            HomeHoldUpdate { trigger_menu: false }
+            HomeHoldUpdate {
+                trigger_menu: false,
+                should_repaint: false,
+            }
         }
+    }
+
+    pub fn record_effective_input(&mut self, now: Instant) {
+        self.last_effective_input_at = now;
+    }
+
+    pub fn input_is_idle(&self, now: Instant) -> bool {
+        now.duration_since(self.last_effective_input_at) >= INPUT_IDLE_AFTER
     }
 
     pub fn update_force_close_hold(
@@ -295,5 +322,30 @@ mod tests {
         assert!(!reset.trigger_shutdown);
         assert!(!reset.should_repaint);
         assert_eq!(runtime.shutdown_hold_progress(), 0.0);
+    }
+
+    #[test]
+    fn home_hold_requests_repaint_while_counting_down() {
+        let mut runtime = RuntimeState::new();
+        let start = Instant::now();
+
+        let first = runtime.update_home_hold(true, false, true, start);
+        assert!(!first.trigger_menu);
+        assert!(first.should_repaint);
+
+        let done = runtime.update_home_hold(true, false, true, start + Duration::from_millis(500));
+        assert!(done.trigger_menu);
+        assert!(!done.should_repaint);
+    }
+
+    #[test]
+    fn input_becomes_idle_after_one_and_a_half_seconds() {
+        let mut runtime = RuntimeState::new();
+        let start = Instant::now();
+
+        runtime.record_effective_input(start);
+
+        assert!(!runtime.input_is_idle(start + Duration::from_millis(1499)));
+        assert!(runtime.input_is_idle(start + Duration::from_millis(1500)));
     }
 }

@@ -7,7 +7,7 @@ mod state;
 
 use eframe::egui;
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::i18n::AppLanguage;
 use crate::input::{self, InputController};
@@ -25,6 +25,8 @@ use self::game_icons::GameIconState;
 use self::install_size::InstallSizeState;
 use self::playtime::PlaytimeState;
 use self::state::{PageState, PowerAction, ResolutionPreset, RuntimeState};
+
+const IDLE_REPAINT_INTERVAL: Duration = Duration::from_secs(1);
 
 pub struct LauncherApp {
     language: AppLanguage,
@@ -49,6 +51,8 @@ pub struct LauncherApp {
 
 impl LauncherApp {
     pub fn new(language: AppLanguage, ctx: &egui::Context) -> Self {
+        #[cfg(target_os = "windows")]
+        input::start_repaint_watcher(ctx.clone());
         #[cfg(target_os = "windows")]
         input::xbox_home::start(ctx.clone());
         #[cfg(not(target_os = "windows"))]
@@ -156,6 +160,18 @@ impl LauncherApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     }
 
+    fn schedule_input_repaint(&self, ctx: &egui::Context, has_focus: bool, now: Instant) {
+        if !has_focus {
+            return;
+        }
+
+        if self.runtime.input_is_idle(now) {
+            ctx.request_repaint_after(IDLE_REPAINT_INTERVAL);
+        } else {
+            ctx.request_repaint();
+        }
+    }
+
     fn apply_power_action(
         &mut self,
         action: PowerAction,
@@ -195,18 +211,16 @@ impl eframe::App for LauncherApp {
         let focus = self.runtime.update_focus(has_focus, now);
 
         if focus.did_gain_focus {
+            self.runtime.record_effective_input(now);
             self.refresh_selected_playtime(&ctx);
             self.refresh_selected_install_size(&ctx);
         }
 
         if input::xbox_home::take_wake_request() {
+            self.runtime.record_effective_input(now);
             self.page.prepare_wake_animation();
             self.wake_focus_pending = true;
             self.runtime.suppress_home_hold_until_release();
-            ctx.request_repaint();
-        }
-
-        if has_focus {
             ctx.request_repaint();
         }
 
@@ -239,6 +253,9 @@ impl eframe::App for LauncherApp {
             input::xbox_home::guide_held(),
             now,
         );
+        if home_hold.should_repaint {
+            ctx.request_repaint();
+        }
         let can_force_close = !self.page.show_achievement_panel();
         let force_close_hold = self.runtime.update_force_close_hold(
             process_input && can_force_close,
@@ -247,12 +264,14 @@ impl eframe::App for LauncherApp {
             now,
         );
         if home_hold.trigger_menu {
+            self.runtime.record_effective_input(now);
             self.resolution_options = display_mode::detect_resolution_options();
             self.launch_on_startup_enabled = startup::is_enabled();
             self.page.open_home_menu();
             ctx.request_repaint();
         }
         if force_close_hold.trigger_force_close {
+            self.runtime.record_effective_input(now);
             if let Some(state) = self.running_games.get_mut(&self.page.selected()) {
                 if launch::close_running_game(state) {
                     ctx.request_repaint();
@@ -270,6 +289,7 @@ impl eframe::App for LauncherApp {
             now,
         );
         if shutdown_hold.trigger_shutdown {
+            self.runtime.record_effective_input(now);
             self.apply_power_action(PowerAction::Shutdown, &ctx, frame);
         }
         if shutdown_hold.should_repaint {
@@ -297,6 +317,10 @@ impl eframe::App for LauncherApp {
                 && self
                     .achievements
                     .can_refresh_for_selected(self.games.get(self.page.selected()));
+
+            if result.effective_input {
+                self.runtime.record_effective_input(now);
+            }
 
             if result.selected_changed
                 || result.open_achievement_panel
@@ -530,6 +554,8 @@ impl eframe::App for LauncherApp {
                     self.page.wake_anim(),
                 );
             });
+
+        self.schedule_input_repaint(&ctx, has_focus, now);
 
         if !visible_achievement_icon_urls.is_empty() {
             self.achievements

@@ -74,6 +74,7 @@ unsafe fn run_xinput_watcher(ctx: egui::Context) {
 
     loop {
         let mut any_held = false;
+        let app_is_background = crate::launch::current_app_window_is_background();
 
         for i in 0..4u32 {
             let mut state: XINPUT_STATE = std::mem::zeroed();
@@ -83,10 +84,11 @@ unsafe fn run_xinput_watcher(ctx: egui::Context) {
                     any_held = true;
                 }
                 if pressed && !prev_guide[i as usize] {
-                    if crate::launch::current_app_window_is_background() {
+                    if app_is_background {
                         HOME_WAKE_PENDING.store(true, Ordering::Release);
-                        ctx.request_repaint();
                     }
+
+                    ctx.request_repaint();
                 }
                 prev_guide[i as usize] = pressed;
             } else {
@@ -95,6 +97,9 @@ unsafe fn run_xinput_watcher(ctx: egui::Context) {
         }
 
         HOME_GUIDE_HELD.store(any_held, Ordering::Release);
+        if any_held && !app_is_background {
+            ctx.request_repaint();
+        }
         std::thread::sleep(std::time::Duration::from_millis(16));
     }
 }
