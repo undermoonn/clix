@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use crate::cache;
@@ -61,6 +62,17 @@ struct GlobalAchievementPercentageEntry {
     percent: f32,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct CachedGlobalAchievementPercentages {
+    fetched_at_unix_secs: u64,
+    percentages: HashMap<String, f32>,
+}
+
+const GLOBAL_ACHIEVEMENT_PERCENTAGES_CACHE_TTL_SECS: u64 = 12 * 60 * 60;
+
+static GLOBAL_ACHIEVEMENT_PERCENTAGES_REFRESHES: OnceLock<Mutex<HashSet<u32>>> = OnceLock::new();
+static GLOBAL_ACHIEVEMENT_PERCENTAGES_UPDATED: OnceLock<Mutex<Vec<u32>>> = OnceLock::new();
+
 fn deserialize_percent_value<'de, D>(deserializer: D) -> Result<f32, D::Error>
 where
     D: Deserializer<'de>,
@@ -91,6 +103,61 @@ fn achievement_cache_path(app_id: u32, language: AppLanguage) -> PathBuf {
 
 fn achievement_diagnostics_log_path() -> PathBuf {
     cache::cache_subdir("achievement_cache").join("diagnostics.log")
+}
+
+fn global_achievement_percentages_cache_dir() -> PathBuf {
+    let dir = cache::cache_subdir("achievement_cache").join("global_percentages");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+fn global_achievement_percentages_cache_path(app_id: u32) -> PathBuf {
+    global_achievement_percentages_cache_dir().join(format!("{}.json", app_id))
+}
+
+fn current_unix_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn global_achievement_percentages_cache_is_fresh(fetched_at_unix_secs: u64) -> bool {
+    current_unix_secs().saturating_sub(fetched_at_unix_secs)
+        < GLOBAL_ACHIEVEMENT_PERCENTAGES_CACHE_TTL_SECS
+}
+
+fn load_cached_global_achievement_percentages(
+    app_id: u32,
+) -> Option<CachedGlobalAchievementPercentages> {
+    let bytes = std::fs::read(global_achievement_percentages_cache_path(app_id)).ok()?;
+    serde_json::from_slice::<CachedGlobalAchievementPercentages>(&bytes).ok()
+}
+
+fn store_cached_global_achievement_percentages(app_id: u32, percentages: &HashMap<String, f32>) {
+    let payload = CachedGlobalAchievementPercentages {
+        fetched_at_unix_secs: current_unix_secs(),
+        percentages: percentages.clone(),
+    };
+
+    if let Ok(bytes) = serde_json::to_vec(&payload) {
+        let _ = std::fs::write(global_achievement_percentages_cache_path(app_id), bytes);
+    }
+}
+
+fn global_achievement_percentage_refreshes() -> &'static Mutex<HashSet<u32>> {
+    GLOBAL_ACHIEVEMENT_PERCENTAGES_REFRESHES.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn global_achievement_percentage_updates() -> &'static Mutex<Vec<u32>> {
+    GLOBAL_ACHIEVEMENT_PERCENTAGES_UPDATED.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+pub fn take_updated_global_achievement_percentages() -> Vec<u32> {
+    let Ok(mut updated) = global_achievement_percentage_updates().lock() else {
+        return Vec::new();
+    };
+    updated.drain(..).collect()
 }
 
 fn log_achievement_request_failure(app_id: u32, url: &str, detail: &str) {
@@ -128,6 +195,17 @@ pub fn load_cached_achievement_summary(
         return None;
     }
     Some(cached.summary)
+}
+
+pub fn load_cached_achievement_overview(
+    app_id: u32,
+    language: AppLanguage,
+) -> Option<AchievementSummary> {
+    load_cached_achievement_summary(app_id, language).map(|summary| AchievementSummary {
+        unlocked: summary.unlocked,
+        total: summary.total,
+        items: Vec::new(),
+    })
 }
 
 pub fn store_cached_achievement_summary(
@@ -1161,7 +1239,7 @@ fn load_schema_icon_urls(
     map
 }
 
-fn load_global_achievement_percentages(app_id: u32) -> HashMap<String, f32> {
+fn fetch_global_achievement_percentages(app_id: u32) -> Option<HashMap<String, f32>> {
     let request_timeout = Duration::from_secs(5);
     let max_attempts = 2;
     let url = format!(
@@ -1183,7 +1261,7 @@ fn load_global_achievement_percentages(app_id: u32) -> HashMap<String, f32> {
                     &url,
                     &format!("status={}, attempt={}/{}", status, attempt, max_attempts),
                 );
-                return HashMap::new();
+                return None;
             }
             Err(err) => {
                 if should_retry_achievement_request(&err) && attempt < max_attempts {
@@ -1196,7 +1274,7 @@ fn load_global_achievement_percentages(app_id: u32) -> HashMap<String, f32> {
                     &url,
                     &format!("error={}, attempt={}/{}", err, attempt, max_attempts),
                 );
-                return HashMap::new();
+                return None;
             }
         }
     };
@@ -1209,11 +1287,11 @@ fn load_global_achievement_percentages(app_id: u32) -> HashMap<String, f32> {
         .read_to_end(&mut bytes)
     {
         let _ = err;
-        return HashMap::new();
+        return None;
     }
 
     let Ok(payload) = serde_json::from_slice::<GlobalAchievementPercentagesResponse>(&bytes) else {
-        return HashMap::new();
+        return None;
     };
 
     let percentages: HashMap<String, f32> = payload
@@ -1224,6 +1302,52 @@ fn load_global_achievement_percentages(app_id: u32) -> HashMap<String, f32> {
         .map(|entry| (entry.name, entry.percent))
         .collect();
 
+    Some(percentages)
+}
+
+fn refresh_global_achievement_percentages_in_background(app_id: u32) {
+    let should_start = {
+        let Ok(mut in_flight) = global_achievement_percentage_refreshes().lock() else {
+            return;
+        };
+        in_flight.insert(app_id)
+    };
+
+    if !should_start {
+        return;
+    }
+
+    std::thread::spawn(move || {
+        if let Some(percentages) = fetch_global_achievement_percentages(app_id) {
+            store_cached_global_achievement_percentages(app_id, &percentages);
+            if let Ok(mut updated) = global_achievement_percentage_updates().lock() {
+                updated.push(app_id);
+            }
+        }
+
+        if let Ok(mut in_flight) = global_achievement_percentage_refreshes().lock() {
+            in_flight.remove(&app_id);
+        }
+    });
+}
+
+fn load_global_achievement_percentages(app_id: u32) -> HashMap<String, f32> {
+    if let Some(cached) = load_cached_global_achievement_percentages(app_id) {
+        if global_achievement_percentages_cache_is_fresh(cached.fetched_at_unix_secs) {
+            return cached.percentages;
+        }
+
+        if !cached.percentages.is_empty() {
+            refresh_global_achievement_percentages_in_background(app_id);
+            return cached.percentages;
+        }
+    }
+
+    let Some(percentages) = fetch_global_achievement_percentages(app_id) else {
+        return HashMap::new();
+    };
+
+    store_cached_global_achievement_percentages(app_id, &percentages);
     percentages
 }
 

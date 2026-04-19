@@ -1,6 +1,7 @@
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use crate::cover;
 use crate::i18n::AppLanguage;
@@ -30,17 +31,31 @@ struct HiddenRevealState {
     progress: f32,
 }
 
-type PendingAchievementResult = (u32, Option<AchievementSummary>);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PendingAchievementKind {
+    Overview,
+    Details,
+}
+
+type PendingAchievementResult = (PendingAchievementKind, u32, Option<AchievementSummary>);
 type PendingAchievementIcon = (u64, String, Option<Vec<u8>>);
+
+const MIN_REFRESH_RING_DURATION: Duration = Duration::from_millis(1000);
 
 pub struct AchievementState {
     language: AppLanguage,
-    cache: HashMap<u32, AchievementSummary>,
+    overview_cache: HashMap<u32, AchievementSummary>,
+    displayed_overview_app_id: Option<u32>,
+    previous_overview: Option<AchievementSummary>,
+    previous_overview_reveal: f32,
+    detail_cache: Option<(u32, AchievementSummary)>,
     revealed_hidden: HashMap<u32, HiddenRevealState>,
     sort_order: AchievementSortOrder,
     pending: Arc<Mutex<Vec<PendingAchievementResult>>>,
-    loading: HashSet<u32>,
+    overview_loading: HashSet<u32>,
+    detail_loading: HashSet<u32>,
     refreshing: HashSet<u32>,
+    refresh_indicator_until: HashMap<u32, Instant>,
     no_data: HashSet<u32>,
     icon_cache: HashMap<String, egui::TextureHandle>,
     icon_pending: Arc<Mutex<Vec<PendingAchievementIcon>>>,
@@ -50,19 +65,26 @@ pub struct AchievementState {
     icon_scope_app_id: Option<u32>,
     icon_generation: u64,
     text_reveal: HashMap<u32, f32>,
-    checked_for: Option<u32>,
+    checked_overview_for: Option<u32>,
+    checked_detail_for: Option<u32>,
 }
 
 impl AchievementState {
     pub fn new() -> Self {
         Self {
             language: AppLanguage::English,
-            cache: HashMap::new(),
+            overview_cache: HashMap::new(),
+            displayed_overview_app_id: None,
+            previous_overview: None,
+            previous_overview_reveal: 0.0,
+            detail_cache: None,
             revealed_hidden: HashMap::new(),
             sort_order: AchievementSortOrder::UnlockRateDesc,
             pending: Arc::new(Mutex::new(Vec::new())),
-            loading: HashSet::new(),
+            overview_loading: HashSet::new(),
+            detail_loading: HashSet::new(),
             refreshing: HashSet::new(),
+            refresh_indicator_until: HashMap::new(),
             no_data: HashSet::new(),
             icon_cache: HashMap::new(),
             icon_pending: Arc::new(Mutex::new(Vec::new())),
@@ -72,31 +94,32 @@ impl AchievementState {
             icon_scope_app_id: None,
             icon_generation: 0,
             text_reveal: HashMap::new(),
-            checked_for: None,
+            checked_overview_for: None,
+            checked_detail_for: None,
         }
     }
 
-    pub fn refresh_for_selected(
+    pub fn refresh_summary_for_selected(
         &mut self,
         selected_game: Option<&Game>,
         steam_paths: &[std::path::PathBuf],
         language: AppLanguage,
         ctx: &egui::Context,
     ) {
-        self.refresh_for_selected_inner(selected_game, steam_paths, language, ctx, false);
+        self.refresh_summary_for_selected_inner(selected_game, steam_paths, language, ctx, false);
     }
 
-    pub fn force_refresh_for_selected(
+    pub fn force_refresh_summary_for_selected(
         &mut self,
         selected_game: Option<&Game>,
         steam_paths: &[std::path::PathBuf],
         language: AppLanguage,
         ctx: &egui::Context,
     ) {
-        self.refresh_for_selected_inner(selected_game, steam_paths, language, ctx, true);
+        self.refresh_summary_for_selected_inner(selected_game, steam_paths, language, ctx, true);
     }
 
-    fn refresh_for_selected_inner(
+    fn refresh_summary_for_selected_inner(
         &mut self,
         selected_game: Option<&Game>,
         steam_paths: &[std::path::PathBuf],
@@ -105,37 +128,39 @@ impl AchievementState {
         force_refresh: bool,
     ) {
         let Some(app_id) = selected_game.and_then(|game| game.app_id) else {
-            self.checked_for = None;
+            self.checked_overview_for = None;
+            self.sync_summary_scope(None);
             return;
         };
 
-        if !force_refresh && self.checked_for == Some(app_id) && self.language == language {
+        self.language = language;
+        self.sync_summary_scope(Some(app_id));
+
+        if !force_refresh && self.overview_cache.contains_key(&app_id) {
+            self.no_data.remove(&app_id);
+            self.checked_overview_for = Some(app_id);
             return;
         }
 
-        self.language = language;
-        self.checked_for = Some(app_id);
+        if !force_refresh && self.checked_overview_for == Some(app_id) {
+            return;
+        }
+        self.checked_overview_for = Some(app_id);
 
         if !force_refresh {
-            if let Some(mut summary) = steam::load_cached_achievement_summary(app_id, language) {
-                steam::sort_achievement_items(&mut summary.items, self.sort_order.is_descending());
+            if let Some(summary) = steam::load_cached_achievement_overview(app_id, language) {
                 self.no_data.remove(&app_id);
-                self.cache.insert(app_id, summary);
-                self.text_reveal.insert(app_id, 1.0);
+                self.store_overview_summary(app_id, summary, true);
+                return;
             }
         }
 
         self.no_data.remove(&app_id);
-
-        if force_refresh {
-            self.refreshing.insert(app_id);
-        }
-
-        if self.loading.contains(&app_id) {
+        if self.overview_loading.contains(&app_id) {
             return;
         }
 
-        self.loading.insert(app_id);
+        self.overview_loading.insert(app_id);
         let pending = Arc::clone(&self.pending);
         let paths = steam_paths.to_vec();
         let ctx_clone = ctx.clone();
@@ -143,7 +168,114 @@ impl AchievementState {
         std::thread::spawn(move || {
             let data = steam::load_achievement_summary(app_id, &paths, language);
             if let Ok(mut lock) = pending.lock() {
-                lock.push((app_id, data));
+                lock.push((PendingAchievementKind::Overview, app_id, data));
+            }
+            ctx_clone.request_repaint();
+        });
+    }
+
+    pub fn refresh_after_global_percentage_update(
+        &mut self,
+        selected_game: Option<&Game>,
+        steam_paths: &[std::path::PathBuf],
+        language: AppLanguage,
+        achievement_panel_open: bool,
+        updated_app_ids: &[u32],
+        ctx: &egui::Context,
+    ) {
+        let Some(app_id) = selected_game.and_then(|game| game.app_id) else {
+            return;
+        };
+
+        if !updated_app_ids.contains(&app_id) {
+            return;
+        }
+
+        if achievement_panel_open {
+            self.force_refresh_details_for_selected(selected_game, steam_paths, language, ctx);
+        } else {
+            self.force_refresh_summary_for_selected(selected_game, steam_paths, language, ctx);
+        }
+    }
+
+    pub fn refresh_details_for_selected(
+        &mut self,
+        selected_game: Option<&Game>,
+        steam_paths: &[std::path::PathBuf],
+        language: AppLanguage,
+        ctx: &egui::Context,
+    ) {
+        self.refresh_details_for_selected_inner(selected_game, steam_paths, language, ctx, false);
+    }
+
+    pub fn force_refresh_details_for_selected(
+        &mut self,
+        selected_game: Option<&Game>,
+        steam_paths: &[std::path::PathBuf],
+        language: AppLanguage,
+        ctx: &egui::Context,
+    ) {
+        self.refresh_details_for_selected_inner(selected_game, steam_paths, language, ctx, true);
+    }
+
+    fn refresh_details_for_selected_inner(
+        &mut self,
+        selected_game: Option<&Game>,
+        steam_paths: &[std::path::PathBuf],
+        language: AppLanguage,
+        ctx: &egui::Context,
+        force_refresh: bool,
+    ) {
+        let Some(app_id) = selected_game.and_then(|game| game.app_id) else {
+            self.checked_detail_for = None;
+            self.sync_detail_scope(None);
+            return;
+        };
+
+        self.language = language;
+        self.sync_detail_scope(Some(app_id));
+
+        if !force_refresh
+            && self.checked_detail_for == Some(app_id)
+            && self.detail_cache
+                .as_ref()
+                .is_some_and(|(detail_app_id, summary)| *detail_app_id == app_id && !summary.items.is_empty())
+        {
+            return;
+        }
+
+        self.checked_detail_for = Some(app_id);
+
+        if !force_refresh {
+            if let Some(mut summary) = steam::load_cached_achievement_summary(app_id, language) {
+                steam::sort_achievement_items(&mut summary.items, self.sort_order.is_descending());
+                self.no_data.remove(&app_id);
+                self.store_detail_summary(app_id, summary, false);
+                return;
+            }
+        }
+
+        self.no_data.remove(&app_id);
+
+        if force_refresh {
+            self.refreshing.insert(app_id);
+            self.refresh_indicator_until
+                .insert(app_id, Instant::now() + MIN_REFRESH_RING_DURATION);
+        }
+
+        if self.detail_loading.contains(&app_id) {
+            return;
+        }
+
+        self.detail_loading.insert(app_id);
+        let pending = Arc::clone(&self.pending);
+        let paths = steam_paths.to_vec();
+        let ctx_clone = ctx.clone();
+
+        std::thread::spawn(move || {
+            let data = steam::load_achievement_summary(app_id, &paths, language);
+            if let Ok(mut lock) = pending.lock() {
+                lock.push((PendingAchievementKind::Details, app_id, data));
             }
             ctx_clone.request_repaint();
         });
@@ -159,28 +291,50 @@ impl AchievementState {
 
         let sort_descending = self.sort_order.is_descending();
 
-        for (app_id, summary) in pending_results {
-            self.loading.remove(&app_id);
-            self.refreshing.remove(&app_id);
-            match summary {
-                Some(mut summary) => {
-                    let had_summary = self.cache.contains_key(&app_id);
-                    if let Some(previous_summary) = self.cache.get(&app_id) {
-                        preserve_missing_global_percents(&mut summary, previous_summary);
-                    }
-                    steam::sort_achievement_items(&mut summary.items, sort_descending);
-                    steam::store_cached_achievement_summary(app_id, &summary, self.language);
-                    self.no_data.remove(&app_id);
-                    self.cache.insert(app_id, summary);
-                    if !had_summary {
-                        self.text_reveal.insert(app_id, 0.0);
-                    } else {
-                        self.text_reveal.entry(app_id).or_insert(1.0);
+        for (kind, app_id, summary) in pending_results {
+            match kind {
+                PendingAchievementKind::Overview => {
+                    self.overview_loading.remove(&app_id);
+                    match summary {
+                        Some(summary) => {
+                            steam::store_cached_achievement_summary(app_id, &summary, self.language);
+                            self.no_data.remove(&app_id);
+                            self.store_overview_summary(app_id, overview_from_summary(&summary), true);
+                        }
+                        None => {
+                            if !self.overview_cache.contains_key(&app_id) {
+                                self.no_data.insert(app_id);
+                            }
+                        }
                     }
                 }
-                None => {
-                    if !self.cache.contains_key(&app_id) {
-                        self.no_data.insert(app_id);
+                PendingAchievementKind::Details => {
+                    self.detail_loading.remove(&app_id);
+                    self.refreshing.remove(&app_id);
+                    match summary {
+                        Some(mut summary) => {
+                            let previous_detail = self
+                                .detail_cache
+                                .as_ref()
+                                .filter(|(detail_app_id, _)| *detail_app_id == app_id)
+                                .map(|(_, detail)| detail);
+                            if let Some(previous_summary) = previous_detail {
+                                preserve_missing_global_percents(&mut summary, previous_summary);
+                            }
+                            steam::sort_achievement_items(&mut summary.items, sort_descending);
+                            steam::store_cached_achievement_summary(app_id, &summary, self.language);
+                            self.no_data.remove(&app_id);
+                            self.store_detail_summary(app_id, summary, true);
+                        }
+                        None => {
+                            let has_detail = self
+                                .detail_cache
+                                .as_ref()
+                                .is_some_and(|(detail_app_id, _)| *detail_app_id == app_id);
+                            if !has_detail && !self.overview_cache.contains_key(&app_id) {
+                                self.no_data.insert(app_id);
+                            }
+                        }
                     }
                 }
             }
@@ -189,8 +343,8 @@ impl AchievementState {
 
     pub fn toggle_sort_order(&mut self) {
         self.sort_order = self.sort_order.toggled();
-        let descending = self.sort_order.is_descending();
-        for summary in self.cache.values_mut() {
+        if let Some((_, summary)) = self.detail_cache.as_mut() {
+            let descending = self.sort_order.is_descending();
             steam::sort_achievement_items(&mut summary.items, descending);
         }
     }
@@ -208,8 +362,10 @@ impl AchievementState {
             return false;
         };
         let Some(api_name) = self
-            .cache
-            .get(&app_id)
+            .detail_cache
+            .as_ref()
+            .filter(|(detail_app_id, _)| *detail_app_id == app_id)
+            .map(|(_, summary)| summary)
             .and_then(|summary| summary.items.get(selected_index))
             .filter(|item| item.is_hidden && item.unlocked != Some(true))
             .map(|item| item.api_name.clone())
@@ -329,7 +485,7 @@ impl AchievementState {
             hasher_seed += 1;
             let label = format!("ach_icon_{:x}", hasher.finish());
 
-            if let Some(texture) = cover::bytes_to_texture(ctx, &bytes, label) {
+            if let Some(texture) = cover::bytes_to_achievement_icon_texture(ctx, &bytes, label) {
                 self.icon_reveal.insert(url.clone(), 0.0);
                 self.icon_cache.insert(url, texture);
             } else {
@@ -377,12 +533,54 @@ impl AchievementState {
                 }
             }
         }
+
+        if self.previous_overview_reveal > 0.001 {
+            const ACHIEVEMENT_TEXT_FADE_OUT_SECONDS: f32 = 0.22;
+            self.previous_overview_reveal =
+                (self.previous_overview_reveal - dt / ACHIEVEMENT_TEXT_FADE_OUT_SECONDS).max(0.0);
+            if self.previous_overview_reveal > 0.001 {
+                ctx.request_repaint();
+            } else {
+                self.previous_overview = None;
+                self.previous_overview_reveal = 0.0;
+            }
+        }
+
+        let now = Instant::now();
+        self.refresh_indicator_until.retain(|_, until| {
+            let keep = *until > now;
+            if keep {
+                ctx.request_repaint();
+            }
+            keep
+        });
     }
 
     pub fn summary_for_selected(&self, selected_game: Option<&Game>) -> Option<&AchievementSummary> {
         selected_game
             .and_then(|game| game.app_id)
-            .and_then(|app_id| self.cache.get(&app_id))
+            .and_then(|app_id| self.overview_cache.get(&app_id))
+    }
+
+    pub fn detail_for_selected(&self, selected_game: Option<&Game>) -> Option<&AchievementSummary> {
+        let app_id = selected_game.and_then(|game| game.app_id)?;
+        self.detail_cache
+            .as_ref()
+            .and_then(|(detail_app_id, summary)| (*detail_app_id == app_id).then_some(summary))
+    }
+
+    pub fn detail_len_for_selected(&self, selected_game: Option<&Game>) -> usize {
+        self.detail_for_selected(selected_game)
+            .map(|summary| summary.items.len())
+            .unwrap_or(0)
+    }
+
+    pub fn previous_summary_for_display(&self) -> Option<&AchievementSummary> {
+        self.previous_overview.as_ref()
+    }
+
+    pub fn previous_summary_reveal(&self) -> f32 {
+        self.previous_overview_reveal
     }
 
     pub fn text_reveal_for_selected(&self, selected_game: Option<&Game>) -> f32 {
@@ -396,8 +594,13 @@ impl AchievementState {
         selected_game
             .and_then(|game| game.app_id)
             .map(|app_id| {
-                self.loading.contains(&app_id)
-                    || (!self.cache.contains_key(&app_id) && !self.no_data.contains(&app_id))
+                self.detail_loading.contains(&app_id)
+                    || (self
+                        .detail_cache
+                        .as_ref()
+                        .map(|(detail_app_id, _)| *detail_app_id != app_id)
+                        .unwrap_or(true)
+                        && !self.no_data.contains(&app_id))
             })
             .unwrap_or(false)
     }
@@ -405,8 +608,18 @@ impl AchievementState {
     pub fn refresh_loading_for_selected(&self, selected_game: Option<&Game>) -> bool {
         selected_game
             .and_then(|game| game.app_id)
-            .map(|app_id| self.refreshing.contains(&app_id))
+            .map(|app_id| {
+                self.refreshing.contains(&app_id)
+                    || self
+                        .refresh_indicator_until
+                        .get(&app_id)
+                        .is_some_and(|until| *until > Instant::now())
+            })
             .unwrap_or(false)
+    }
+
+    pub fn can_refresh_for_selected(&self, selected_game: Option<&Game>) -> bool {
+        !self.refresh_loading_for_selected(selected_game)
     }
 
     pub fn has_no_data_for_selected(&self, selected_game: Option<&Game>) -> bool {
@@ -424,6 +637,46 @@ impl AchievementState {
         &self.icon_reveal
     }
 
+    pub fn sync_summary_scope(&mut self, app_id: Option<u32>) {
+        if self.displayed_overview_app_id != app_id {
+            if let Some(previous_app_id) = self.displayed_overview_app_id {
+                if let Some(previous_summary) = self.overview_cache.get(&previous_app_id) {
+                    if previous_summary.total > 0 {
+                        self.previous_overview = Some(previous_summary.clone());
+                        self.previous_overview_reveal = 1.0;
+                    } else {
+                        self.previous_overview = None;
+                        self.previous_overview_reveal = 0.0;
+                    }
+                } else {
+                    self.previous_overview = None;
+                    self.previous_overview_reveal = 0.0;
+                }
+            } else {
+                self.previous_overview = None;
+                self.previous_overview_reveal = 0.0;
+            }
+            self.displayed_overview_app_id = app_id;
+        }
+        if app_id.is_none() {
+            self.displayed_overview_app_id = None;
+            self.checked_overview_for = None;
+        }
+    }
+
+    pub fn sync_detail_scope(&mut self, app_id: Option<u32>) {
+        if self
+            .detail_cache
+            .as_ref()
+            .is_some_and(|(detail_app_id, _)| Some(*detail_app_id) != app_id)
+        {
+            self.detail_cache = None;
+        }
+        if app_id.is_none() {
+            self.checked_detail_for = None;
+        }
+    }
+
     fn reset_icon_scope(&mut self, app_id: Option<u32>) {
         if self.icon_scope_app_id == app_id {
             return;
@@ -435,6 +688,40 @@ impl AchievementState {
         self.icon_loading.clear();
         self.icon_failed.clear();
         self.icon_reveal.clear();
+    }
+
+    fn store_overview_summary(
+        &mut self,
+        app_id: u32,
+        summary: AchievementSummary,
+        animate_reveal: bool,
+    ) {
+        let had_summary = self.overview_cache.contains_key(&app_id);
+        self.overview_cache.insert(app_id, summary);
+        if animate_reveal && !had_summary {
+            self.text_reveal.insert(app_id, 0.0);
+        } else {
+            self.text_reveal.insert(app_id, 1.0);
+        }
+    }
+
+    fn store_detail_summary(
+        &mut self,
+        app_id: u32,
+        summary: AchievementSummary,
+        animate_reveal: bool,
+    ) {
+        let overview = overview_from_summary(&summary);
+        self.detail_cache = Some((app_id, summary));
+        self.store_overview_summary(app_id, overview, animate_reveal);
+    }
+}
+
+fn overview_from_summary(summary: &AchievementSummary) -> AchievementSummary {
+    AchievementSummary {
+        unlocked: summary.unlocked,
+        total: summary.total,
+        items: Vec::new(),
     }
 }
 

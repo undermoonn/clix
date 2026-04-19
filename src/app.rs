@@ -233,9 +233,7 @@ impl eframe::App for LauncherApp {
             let previous_achievement_selected = self.page.achievement_selected();
             let achievement_len = self
                 .achievements
-                .summary_for_selected(self.games.get(self.page.selected()))
-                .map(|summary| summary.items.len())
-                .unwrap_or(0);
+                .detail_len_for_selected(self.games.get(self.page.selected()));
             let result = self.page.handle_action(
                 action,
                 self.games.len(),
@@ -246,10 +244,14 @@ impl eframe::App for LauncherApp {
                 && self.page.show_achievement_panel()
                 && self.page.achievement_selected() != previous_achievement_selected;
             let achievement_panel_closed = previous_achievement_panel && !self.page.show_achievement_panel();
+            let refresh_requested = result.refresh_achievements
+                && self
+                    .achievements
+                    .can_refresh_for_selected(self.games.get(self.page.selected()));
 
             if result.selected_changed
                 || result.open_achievement_panel
-                || result.refresh_achievements
+                || refresh_requested
                 || result.toggle_achievement_sort
                 || achievement_selection_changed
                 || achievement_panel_closed
@@ -259,7 +261,7 @@ impl eframe::App for LauncherApp {
             }
 
             if result.open_achievement_panel {
-                self.achievements.refresh_for_selected(
+                self.achievements.refresh_details_for_selected(
                     self.games.get(self.page.selected()),
                     &self.steam_paths,
                     self.language,
@@ -274,8 +276,8 @@ impl eframe::App for LauncherApp {
             {
                 ctx.request_repaint();
             }
-            if result.refresh_achievements {
-                self.achievements.force_refresh_for_selected(
+            if refresh_requested {
+                self.achievements.force_refresh_details_for_selected(
                     self.games.get(self.page.selected()),
                     &self.steam_paths,
                     self.language,
@@ -327,18 +329,29 @@ impl eframe::App for LauncherApp {
 
         let selected_game = self.games.get(self.page.selected());
         let selected_app_id = selected_game.and_then(|game| game.app_id);
+        let updated_global_percentages = steam::take_updated_global_achievement_percentages();
         let achievement_icon_scope = if self.page.show_achievement_panel() {
             selected_app_id
         } else {
             None
         };
+        self.achievements.sync_summary_scope(selected_app_id);
+        self.achievements.sync_detail_scope(achievement_icon_scope);
         self.achievements.sync_icon_scope(achievement_icon_scope);
+        self.achievements.refresh_after_global_percentage_update(
+            selected_game,
+            &self.steam_paths,
+            self.language,
+            self.page.show_achievement_panel(),
+            &updated_global_percentages,
+            ctx,
+        );
         if self
             .artwork
             .tick_selection(self.page.selected(), selected_app_id, &self.steam_paths, ctx)
         {
             self.achievements
-                .refresh_for_selected(selected_game, &self.steam_paths, self.language, ctx);
+                .refresh_summary_for_selected(selected_game, &self.steam_paths, self.language, ctx);
         }
         self.artwork.drain_pending(selected_app_id, ctx);
 
@@ -348,10 +361,13 @@ impl eframe::App for LauncherApp {
         self.achievements.animate_reveals(ctx, dt);
 
         self.game_icons
-            .ensure_loaded(ctx, &self.steam_paths, &self.games);
+            .ensure_loaded(ctx, &self.steam_paths, &self.games, self.page.selected());
 
         let selected_achievement_summary = self.achievements.summary_for_selected(selected_game);
+        let selected_achievement_detail = self.achievements.detail_for_selected(selected_game);
         let selected_achievement_reveal = self.achievements.text_reveal_for_selected(selected_game);
+        let previous_achievement_summary = self.achievements.previous_summary_for_display();
+        let previous_achievement_reveal = self.achievements.previous_summary_reveal();
         let can_open_achievement_panel = self.can_open_achievement_panel_for_selected();
         let achievement_loading = self.achievements.loading_for_selected(selected_game);
         let achievement_refresh_loading = self.achievements.refresh_loading_for_selected(selected_game);
@@ -392,6 +408,8 @@ impl eframe::App for LauncherApp {
                     self.page.show_achievement_panel(),
                     selected_achievement_summary,
                     selected_achievement_reveal,
+                    previous_achievement_summary,
+                    previous_achievement_reveal,
                     self.page.wake_anim(),
                 );
 
@@ -404,7 +422,7 @@ impl eframe::App for LauncherApp {
                             ui,
                             self.language,
                             game,
-                            selected_achievement_summary,
+                            selected_achievement_detail,
                             achievement_loading,
                             achievement_has_no_data,
                             selected_achievement_reveal,

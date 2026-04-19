@@ -40,17 +40,75 @@ extern "system" {
     ) -> UINT;
 }
 
-pub fn bytes_to_texture(
+pub fn bytes_to_texture_limited(
     ctx: &egui::Context,
     bytes: &[u8],
     label: String,
+    max_size: Option<(usize, usize)>,
 ) -> Option<egui::TextureHandle> {
     let dyn_img = image::load_from_memory(bytes).ok()?;
+    let dyn_img = downscale_to_fit(dyn_img, max_size);
     let rgba = dyn_img.to_rgba8();
     let size = [rgba.width() as usize, rgba.height() as usize];
     let pixels = rgba.into_raw();
     let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
     Some(ctx.load_texture(label, color_image, egui::TextureOptions::LINEAR))
+}
+
+pub fn bytes_to_cover_texture(
+    ctx: &egui::Context,
+    bytes: &[u8],
+    label: String,
+) -> Option<egui::TextureHandle> {
+    bytes_to_texture_limited(ctx, bytes, label, Some((2560, 832)))
+}
+
+pub fn bytes_to_logo_texture(
+    ctx: &egui::Context,
+    bytes: &[u8],
+    label: String,
+) -> Option<egui::TextureHandle> {
+    bytes_to_texture_limited(ctx, bytes, label, Some((1024, 512)))
+}
+
+pub fn bytes_to_game_icon_texture(
+    ctx: &egui::Context,
+    bytes: &[u8],
+    label: String,
+) -> Option<egui::TextureHandle> {
+    bytes_to_texture_limited(ctx, bytes, label, Some((256, 256)))
+}
+
+pub fn bytes_to_achievement_icon_texture(
+    ctx: &egui::Context,
+    bytes: &[u8],
+    label: String,
+) -> Option<egui::TextureHandle> {
+    bytes_to_texture_limited(ctx, bytes, label, Some((128, 128)))
+}
+
+fn downscale_to_fit(
+    dyn_img: image::DynamicImage,
+    max_size: Option<(usize, usize)>,
+) -> image::DynamicImage {
+    let Some((max_width, max_height)) = max_size else {
+        return dyn_img;
+    };
+
+    let width = dyn_img.width() as usize;
+    let height = dyn_img.height() as usize;
+    if width == 0 || height == 0 || (width <= max_width && height <= max_height) {
+        return dyn_img;
+    }
+
+    let scale = (max_width as f32 / width as f32).min(max_height as f32 / height as f32);
+    let resized_width = ((width as f32 * scale).round() as u32).max(1);
+    let resized_height = ((height as f32 * scale).round() as u32).max(1);
+    dyn_img.resize(
+        resized_width,
+        resized_height,
+        image::imageops::FilterType::Triangle,
+    )
 }
 
 fn png_bytes_from_rgba(width: u32, height: u32, rgba: &[u8]) -> Option<Vec<u8>> {

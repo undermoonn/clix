@@ -108,7 +108,7 @@ impl ArtworkState {
                 let mut loaded_any = false;
 
                 self.cover = assets.cover_bytes.and_then(|bytes| {
-                    cover::bytes_to_texture(ctx, &bytes, format!("cover_{}", assets.app_id)).map(
+                    cover::bytes_to_cover_texture(ctx, &bytes, format!("cover_{}", assets.app_id)).map(
                         |texture| {
                             loaded_any = true;
                             (assets.app_id, texture)
@@ -117,7 +117,7 @@ impl ArtworkState {
                 });
 
                 self.logo = assets.logo_bytes.and_then(|bytes| {
-                    cover::bytes_to_texture(ctx, &bytes, format!("logo_{}", assets.app_id)).map(
+                    cover::bytes_to_logo_texture(ctx, &bytes, format!("logo_{}", assets.app_id)).map(
                         |texture| {
                             loaded_any = true;
                             (assets.app_id, texture)
@@ -136,7 +136,14 @@ impl ArtworkState {
     pub fn tick_fade(&mut self, ctx: &egui::Context, dt: f32) {
         if self.transition_ready && self.fade < 1.0 {
             self.fade = (self.fade + dt * 3.0).min(1.0);
+            if self.fade >= 0.999 {
+                self.cover_prev = None;
+                self.logo_prev = None;
+            }
             ctx.request_repaint();
+        } else if self.transition_ready && (self.cover_prev.is_some() || self.logo_prev.is_some()) {
+            self.cover_prev = None;
+            self.logo_prev = None;
         }
     }
 

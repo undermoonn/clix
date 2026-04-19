@@ -228,6 +228,7 @@ struct SelectedGameHeaderContent {
     title_galley: std::sync::Arc<egui::Galley>,
     primary_meta_galley: Option<std::sync::Arc<egui::Galley>>,
     achievement_galley: Option<std::sync::Arc<egui::Galley>>,
+    achievement_prev_galley: Option<std::sync::Arc<egui::Galley>>,
     title_font: egui::FontId,
 }
 
@@ -240,6 +241,11 @@ impl SelectedGameHeaderContent {
             .into_iter()
             .chain(
                 self.achievement_galley
+                    .as_ref()
+                    .map(|galley| galley.size().y),
+            )
+            .chain(
+                self.achievement_prev_galley
                     .as_ref()
                     .map(|galley| galley.size().y),
             )
@@ -261,6 +267,8 @@ fn build_selected_game_header(
     game: &crate::steam::Game,
     summary: Option<&crate::steam::AchievementSummary>,
     achievement_summary_reveal: f32,
+    previous_summary: Option<&crate::steam::AchievementSummary>,
+    previous_summary_reveal: f32,
     title_font: egui::FontId,
     title_color: egui::Color32,
     meta_font_size: f32,
@@ -279,7 +287,15 @@ fn build_selected_game_header(
         .collect::<Vec<_>>()
         .join("  •  ");
     let has_primary_meta = !primary_meta_text.is_empty();
-    let achievement_text = summary.and_then(|achievement_summary| {
+    let current_achievement_text = summary.and_then(|achievement_summary| {
+        (achievement_summary.total > 0).then(|| {
+            language.format_achievement_progress(
+                achievement_summary.unlocked,
+                achievement_summary.total,
+            )
+        })
+    });
+    let previous_achievement_text = previous_summary.and_then(|achievement_summary| {
         (achievement_summary.total > 0).then(|| {
             language.format_achievement_progress(
                 achievement_summary.unlocked,
@@ -288,6 +304,7 @@ fn build_selected_game_header(
         })
     });
     let achievement_meta_reveal = achievement_summary_reveal.clamp(0.0, 1.0);
+    let previous_achievement_meta_reveal = previous_summary_reveal.clamp(0.0, 1.0);
     let meta_font = egui::FontId::proportional(meta_font_size);
     let playtime_color = egui::Color32::from_rgba_unmultiplied(
         180,
@@ -304,19 +321,46 @@ fn build_selected_game_header(
         190,
         (meta_alpha * achievement_meta_reveal).clamp(0.0, 255.0) as u8,
     );
-    let achievement_galley = achievement_text.map(|text| {
+    let previous_achievement_color = egui::Color32::from_rgba_unmultiplied(
+        180,
+        180,
+        190,
+        (meta_alpha * previous_achievement_meta_reveal).clamp(0.0, 255.0) as u8,
+    );
+    let achievement_galley = current_achievement_text.map(|text| {
         let prefixed = if has_primary_meta {
             format!("  •  {}", text)
         } else {
             text
         };
-        build_wrapped_galley(ui, prefixed, meta_font, achievement_color, meta_max_width)
+        build_wrapped_galley(
+            ui,
+            prefixed,
+            meta_font.clone(),
+            achievement_color,
+            meta_max_width,
+        )
+    });
+    let achievement_prev_galley = previous_achievement_text.map(|text| {
+        let prefixed = if has_primary_meta {
+            format!("  •  {}", text)
+        } else {
+            text
+        };
+        build_wrapped_galley(
+            ui,
+            prefixed,
+            meta_font.clone(),
+            previous_achievement_color,
+            meta_max_width,
+        )
     });
 
     SelectedGameHeaderContent {
         title_galley,
         primary_meta_galley,
         achievement_galley,
+        achievement_prev_galley,
         title_font,
     }
 }
@@ -355,12 +399,18 @@ fn draw_selected_game_header(
 
     painter.galley(title_pos, content.title_galley.clone());
 
-    if content.primary_meta_galley.is_some() || content.achievement_galley.is_some() {
+    if content.primary_meta_galley.is_some()
+        || content.achievement_galley.is_some()
+        || content.achievement_prev_galley.is_some()
+    {
         let meta_pos = egui::pos2(title_pos.x, title_pos.y + content.title_galley.size().y + 2.0);
         let mut meta_x = meta_pos.x;
         if let Some(primary_meta_galley) = &content.primary_meta_galley {
             painter.galley(egui::pos2(meta_x, meta_pos.y), primary_meta_galley.clone());
             meta_x += primary_meta_galley.size().x;
+        }
+        if let Some(achievement_prev_galley) = &content.achievement_prev_galley {
+            painter.galley(egui::pos2(meta_x, meta_pos.y), achievement_prev_galley.clone());
         }
         if let Some(achievement_galley) = &content.achievement_galley {
             painter.galley(egui::pos2(meta_x, meta_pos.y), achievement_galley.clone());
@@ -565,6 +615,8 @@ pub fn draw_game_list(
     _achievement_panel_active: bool,
     achievement_summary_for_selected: Option<&crate::steam::AchievementSummary>,
     achievement_summary_reveal_for_selected: f32,
+    previous_achievement_summary: Option<&crate::steam::AchievementSummary>,
+    previous_achievement_summary_reveal: f32,
     wake_anim: f32,
 ) {
     let base_icon_size: f32 = 122.0;
@@ -690,6 +742,8 @@ pub fn draw_game_list(
                 g,
                 achievement_summary_for_selected,
                 achievement_summary_reveal_for_selected,
+                previous_achievement_summary,
+                previous_achievement_summary_reveal,
                 font_id,
                 text_color,
                 selected_size * 0.5,
@@ -955,6 +1009,8 @@ pub fn draw_achievement_page(
         game,
         summary,
         achievement_summary_reveal_for_selected,
+        None,
+        0.0,
         title_font,
         egui::Color32::WHITE,
         15.0,
