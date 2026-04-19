@@ -314,6 +314,12 @@ impl eframe::App for LauncherApp {
 
         let selected_game = self.games.get(self.page.selected());
         let selected_app_id = selected_game.and_then(|game| game.app_id);
+        let achievement_icon_scope = if self.page.show_achievement_panel() {
+            selected_app_id
+        } else {
+            None
+        };
+        self.achievements.sync_icon_scope(achievement_icon_scope);
         if self
             .artwork
             .tick_selection(self.page.selected(), selected_app_id, &self.steam_paths, ctx)
@@ -442,7 +448,7 @@ impl eframe::App for LauncherApp {
 
         if !visible_achievement_icon_urls.is_empty() {
             self.achievements
-                .ensure_icons_for_urls(ctx, &visible_achievement_icon_urls);
+                .ensure_icons_for_urls(achievement_icon_scope, ctx, &visible_achievement_icon_urls);
         }
     }
 }

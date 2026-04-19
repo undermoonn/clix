@@ -30,20 +30,25 @@ struct HiddenRevealState {
     progress: f32,
 }
 
+type PendingAchievementResult = (u32, Option<AchievementSummary>);
+type PendingAchievementIcon = (u64, String, Option<Vec<u8>>);
+
 pub struct AchievementState {
     language: AppLanguage,
     cache: HashMap<u32, AchievementSummary>,
     revealed_hidden: HashMap<u32, HiddenRevealState>,
     sort_order: AchievementSortOrder,
-    pending: Arc<Mutex<Vec<(u32, Option<AchievementSummary>)>>>,
+    pending: Arc<Mutex<Vec<PendingAchievementResult>>>,
     loading: HashSet<u32>,
     refreshing: HashSet<u32>,
     no_data: HashSet<u32>,
     icon_cache: HashMap<String, egui::TextureHandle>,
-    icon_pending: Arc<Mutex<Vec<(String, Option<Vec<u8>>)>>> ,
+    icon_pending: Arc<Mutex<Vec<PendingAchievementIcon>>>,
     icon_loading: HashSet<String>,
     icon_failed: HashSet<String>,
     icon_reveal: HashMap<String, f32>,
+    icon_scope_app_id: Option<u32>,
+    icon_generation: u64,
     text_reveal: HashMap<u32, f32>,
     checked_for: Option<u32>,
 }
@@ -64,6 +69,8 @@ impl AchievementState {
             icon_loading: HashSet::new(),
             icon_failed: HashSet::new(),
             icon_reveal: HashMap::new(),
+            icon_scope_app_id: None,
+            icon_generation: 0,
             text_reveal: HashMap::new(),
             checked_for: None,
         }
@@ -143,13 +150,16 @@ impl AchievementState {
     }
 
     pub fn drain_results(&mut self) {
-        let Ok(mut lock) = self.pending.lock() else {
-            return;
+        let pending_results = {
+            let Ok(mut lock) = self.pending.lock() else {
+                return;
+            };
+            lock.drain(..).collect::<Vec<_>>()
         };
 
         let sort_descending = self.sort_order.is_descending();
 
-        for (app_id, summary) in lock.drain(..) {
+        for (app_id, summary) in pending_results {
             self.loading.remove(&app_id);
             self.refreshing.remove(&app_id);
             match summary {
@@ -244,11 +254,19 @@ impl AchievementState {
             .unwrap_or(0.0)
     }
 
+    pub fn sync_icon_scope(&mut self, app_id: Option<u32>) {
+        self.reset_icon_scope(app_id);
+    }
+
     pub fn ensure_icons_for_urls(
         &mut self,
+        app_id: Option<u32>,
         ctx: &egui::Context,
         visible_icon_urls: &[String],
     ) {
+        self.reset_icon_scope(app_id);
+        let generation = self.icon_generation;
+
         for url in visible_icon_urls {
             if self.icon_cache.contains_key(url)
                 || self.icon_loading.contains(url)
@@ -260,7 +278,7 @@ impl AchievementState {
             if let Some(bytes) = cover::load_cached_achievement_icon_bytes(url) {
                 self.icon_loading.insert(url.clone());
                 if let Ok(mut lock) = self.icon_pending.lock() {
-                    lock.push((url.clone(), Some(bytes)));
+                    lock.push((generation, url.clone(), Some(bytes)));
                 }
                 ctx.request_repaint();
                 continue;
@@ -273,7 +291,7 @@ impl AchievementState {
             std::thread::spawn(move || {
                 let bytes = cover::load_achievement_icon_bytes(&url_clone);
                 if let Ok(mut lock) = pending.lock() {
-                    lock.push((url_clone, bytes));
+                    lock.push((generation, url_clone, bytes));
                 }
                 ctx_clone.request_repaint();
             });
@@ -281,12 +299,19 @@ impl AchievementState {
     }
 
     pub fn drain_icon_results(&mut self, ctx: &egui::Context) {
-        let Ok(mut lock) = self.icon_pending.lock() else {
-            return;
+        let pending_icons = {
+            let Ok(mut lock) = self.icon_pending.lock() else {
+                return;
+            };
+            lock.drain(..).collect::<Vec<_>>()
         };
 
         let mut hasher_seed = self.icon_cache.len();
-        for (url, bytes) in lock.drain(..) {
+        for (generation, url, bytes) in pending_icons {
+            if generation != self.icon_generation {
+                continue;
+            }
+
             self.icon_loading.remove(&url);
             if self.icon_cache.contains_key(&url) {
                 continue;
@@ -397,6 +422,19 @@ impl AchievementState {
 
     pub fn icon_reveal(&self) -> &HashMap<String, f32> {
         &self.icon_reveal
+    }
+
+    fn reset_icon_scope(&mut self, app_id: Option<u32>) {
+        if self.icon_scope_app_id == app_id {
+            return;
+        }
+
+        self.icon_scope_app_id = app_id;
+        self.icon_generation = self.icon_generation.wrapping_add(1);
+        self.icon_cache.clear();
+        self.icon_loading.clear();
+        self.icon_failed.clear();
+        self.icon_reveal.clear();
     }
 }
 

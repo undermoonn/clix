@@ -1659,8 +1659,7 @@ pub fn load_achievement_summary(
         }
     }
 
-    let mut items: Vec<AchievementItem> = items_map.into_values().collect();
-    sort_achievement_items(&mut items, true);
+    let items: Vec<AchievementItem> = items_map.into_values().collect();
 
     Some(AchievementSummary {
         unlocked: unlocked_count,
