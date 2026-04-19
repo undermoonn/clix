@@ -18,6 +18,12 @@ pub(crate) fn dlss_tag_text(game: &Game) -> Option<String> {
     })
 }
 
+pub(crate) fn installed_size_tag_text(language: AppLanguage, game: &Game) -> Option<String> {
+    game.installed_size_bytes
+        .map(|size_bytes| language.format_installed_size(size_bytes))
+        .filter(|text| !text.is_empty())
+}
+
 pub(crate) fn draw_title_tag(
     painter: &egui::Painter,
     text: &str,
@@ -123,12 +129,8 @@ pub(crate) fn build_selected_game_header(
     meta_max_width: f32,
 ) -> SelectedGameHeaderContent {
     let title_galley = painter.layout_no_wrap(game.name.clone(), title_font.clone(), title_color);
-    let installed_size_str = game
-        .installed_size_bytes
-        .map(|size_bytes| language.format_installed_size(size_bytes))
-        .unwrap_or_default();
     let playtime_str = language.format_playtime(game.playtime_minutes);
-    let primary_meta_text = [installed_size_str, playtime_str]
+    let primary_meta_text = [playtime_str]
         .into_iter()
         .filter(|text| !text.is_empty())
         .collect::<Vec<_>>()

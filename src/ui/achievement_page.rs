@@ -9,6 +9,7 @@ use super::assets::HintIcons;
 use super::anim::{lerp_f32, smoothstep01};
 use super::header::{
     build_selected_game_header, dlss_tag_text, draw_selected_game_header, draw_title_tag,
+    installed_size_tag_text,
 };
 use super::text::{
     build_wrapped_galley, color_with_scaled_alpha, format_achievement_status,
@@ -280,14 +281,28 @@ pub fn draw_achievement_page(
     let list_rect = list_base_rect.translate(content_offset);
     let title_pos = title_base_pos + content_offset;
     draw_selected_game_header(&painter, &header, &game.name, title_pos, wake_t);
+    let tag_opacity = panel_t * wake_t;
+    let mut tag_offset = 0.0;
+    if let Some(tag_text) = installed_size_tag_text(language, game) {
+        tag_offset += draw_title_tag(
+            &painter,
+            &tag_text,
+            title_pos,
+            header.title_galley.size(),
+            tag_opacity,
+            tag_offset,
+            egui::Color32::from_rgb(228, 228, 220),
+            egui::Color32::from_rgb(18, 18, 18),
+        ) + 8.0;
+    }
     if let Some(tag_text) = dlss_tag_text(game) {
         let _ = draw_title_tag(
             &painter,
             &tag_text,
             title_pos,
             header.title_galley.size(),
-            panel_t * wake_t,
-            0.0,
+            tag_opacity,
+            tag_offset,
             egui::Color32::from_rgb(228, 228, 220),
             egui::Color32::from_rgb(18, 18, 18),
         );
