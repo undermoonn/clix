@@ -170,7 +170,7 @@ fn draw_hidden_achievement_overlay(
         overlay_rect,
         corner_radius(6.0),
         color_with_scaled_alpha(
-            egui::Color32::from_rgba_unmultiplied(20, 22, 26, 232),
+            egui::Color32::from_rgba_unmultiplied(22, 24, 28, 176),
             overlay_alpha,
         ),
     );
@@ -182,7 +182,7 @@ fn draw_hidden_achievement_overlay(
     let title = painter.layout_no_wrap(
         language.achievement_hidden_text().to_string(),
         egui::FontId::new(16.0, egui::FontFamily::Name("Bold".into())),
-        color_with_scaled_alpha(egui::Color32::from_rgb(236, 239, 242), overlay_alpha),
+        color_with_scaled_alpha(egui::Color32::from_rgb(244, 246, 248), overlay_alpha),
     );
     let title_size = title.size();
     let icon_size = 26.0;
@@ -404,10 +404,10 @@ pub fn draw_achievement_page(
             lerp_f32(unselected_row_shrink_x, 0.0, selection_t),
             0.0,
         ));
-        let content_padding_x = 14.0;
         let content_padding_y = 12.0;
+        let content_padding_x = 22.0;
         let icon_gap = 14.0;
-        let right_padding = 18.0;
+        let right_padding = content_padding_x;
         let hidden_state = item.is_hidden && item.unlocked != Some(true);
         let hidden_revealing = hidden_state
             && revealed_hidden.is_some_and(|revealed_api_name| revealed_api_name == item.api_name);
@@ -433,14 +433,14 @@ pub fn draw_achievement_page(
         if fill_t > 0.001 {
             let fill_color = if item.unlocked == Some(true) {
                 if is_selected {
-                    egui::Color32::from_rgba_unmultiplied(96, 156, 124, 62)
+                    egui::Color32::from_rgba_unmultiplied(118, 182, 146, 92)
                 } else {
-                    egui::Color32::from_rgba_unmultiplied(82, 140, 110, 50)
+                    egui::Color32::from_rgba_unmultiplied(104, 164, 130, 74)
                 }
             } else if is_selected {
-                egui::Color32::from_rgba_unmultiplied(162, 166, 172, 32)
+                egui::Color32::from_rgba_unmultiplied(198, 205, 214, 70)
             } else {
-                egui::Color32::from_rgba_unmultiplied(144, 148, 154, 24)
+                egui::Color32::from_rgba_unmultiplied(182, 189, 198, 56)
             };
             let fill_max_x = lerp_f32(row_rect.min.x, row_rect.max.x, fill_t);
             let fill_clip_rect = egui::Rect::from_min_max(
@@ -454,13 +454,13 @@ pub fn draw_achievement_page(
             );
         }
 
-        let icon_column_width = lerp_f32(48.0, 56.0, selection_t);
+        let icon_column_width = lerp_f32(52.0, 60.0, selection_t);
         let left_content_inset = content_padding_x;
         let text_x = row_rect.min.x + left_content_inset + icon_column_width + icon_gap;
         let right_column_width = 150.0;
         let percent_galley = painter.layout_no_wrap(
             format_achievement_percent(item.global_percent),
-            egui::FontId::new(17.0, egui::FontFamily::Name("Bold".into())),
+            egui::FontId::new(18.0, egui::FontFamily::Name("Bold".into())),
             color_with_scaled_alpha(
                 egui::Color32::from_rgba_unmultiplied(230, 232, 236, 230),
                 wake_t,
@@ -470,14 +470,15 @@ pub fn draw_achievement_page(
         let unlock_time_galley = unlock_time_text.as_ref().map(|text| {
             painter.layout_no_wrap(
                 text.clone(),
-                egui::FontId::proportional(13.0),
+                egui::FontId::proportional(14.0),
                 color_with_scaled_alpha(
                     egui::Color32::from_rgba_unmultiplied(150, 154, 162, 220),
                     wake_t,
                 ),
             )
         });
-        let text_width = (row_rect.width() - (text_x - row_rect.min.x) - right_column_width - 18.0)
+        let text_width =
+            (row_rect.width() - (text_x - row_rect.min.x) - right_column_width - right_padding)
             .max(180.0);
         let name = item
             .display_name
@@ -489,11 +490,11 @@ pub fn draw_achievement_page(
             name.to_string(),
             if is_selected {
                 egui::FontId::new(
-                    lerp_f32(18.0, 20.0, selection_t),
+                    lerp_f32(19.0, 21.0, selection_t),
                     egui::FontFamily::Name("Bold".into()),
                 )
             } else {
-                egui::FontId::proportional(18.0)
+                egui::FontId::proportional(19.0)
             },
             color_with_scaled_alpha(
                 if item.unlocked == Some(true) {
@@ -529,7 +530,7 @@ pub fn draw_achievement_page(
         let description_galley = build_wrapped_galley(
             ui,
             description_text,
-            egui::FontId::proportional(14.0),
+            egui::FontId::proportional(15.0),
             color_with_scaled_alpha(
                 if hidden_masked {
                     egui::Color32::from_rgba_unmultiplied(150, 154, 160, 176)
@@ -540,10 +541,10 @@ pub fn draw_achievement_page(
             ),
             text_width,
         );
-        let text_block_height = title_galley.size().y + 6.0 + description_galley.size().y;
+        let text_block_height = title_galley.size().y + 5.0 + description_galley.size().y;
         let icon_size = text_block_height
             .min(row_rect.height() - content_padding_y * 2.0)
-            .clamp(40.0, icon_column_width);
+            .clamp(44.0, icon_column_width);
         let content_top = row_rect.min.y + (row_rect.height() - text_block_height.max(icon_size)) * 0.5;
         let icon_rect = egui::Rect::from_min_size(
             egui::pos2(
@@ -580,7 +581,7 @@ pub fn draw_achievement_page(
             );
         } else {
             let fill = if hidden_state {
-                egui::Color32::from_rgb(102, 106, 112)
+                egui::Color32::from_rgb(120, 126, 134)
             } else {
                 match item.unlocked {
                     Some(true) => egui::Color32::from_rgb(86, 172, 132),
@@ -601,13 +602,13 @@ pub fn draw_achievement_page(
             title_galley.clone(),
             egui::Color32::WHITE,
         );
-        let description_pos = egui::pos2(text_x, text_top + title_galley.size().y + 6.0);
+        let description_pos = egui::pos2(text_x, text_top + title_galley.size().y + 5.0);
         list_painter.galley(description_pos, description_galley.clone(), egui::Color32::WHITE);
         let right_column_rect = egui::Rect::from_min_max(
             egui::pos2(row_rect.max.x - right_padding - right_column_width, row_rect.min.y),
             egui::pos2(row_rect.max.x - right_padding, row_rect.max.y),
         );
-        let right_block_spacing = 8.0;
+        let right_block_spacing = 6.0;
         let right_block_height = percent_galley.size().y
             + unlock_time_galley
                 .as_ref()
