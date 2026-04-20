@@ -1,16 +1,14 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::input::FOCUS_COOLDOWN_MS;
 
 pub const HOLD_TO_OPEN_HOME_MENU_MS: f32 = 500.0;
 pub const HOLD_TO_FORCE_CLOSE_GAME_MS: f32 = 2000.0;
 pub const HOLD_TO_SHUTDOWN_MS: f32 = 500.0;
-pub const INPUT_IDLE_AFTER: Duration = Duration::from_millis(1500);
 
 pub struct RuntimeState {
     had_focus: bool,
     focus_cooldown_until: Option<Instant>,
-    last_effective_input_at: Instant,
     home_hold_started_at: Option<Instant>,
     home_hold_consumed: bool,
     shutdown_hold_started_at: Option<Instant>,
@@ -48,7 +46,6 @@ impl RuntimeState {
         Self {
             had_focus: true,
             focus_cooldown_until: None,
-            last_effective_input_at: Instant::now(),
             home_hold_started_at: None,
             home_hold_consumed: false,
             shutdown_hold_started_at: None,
@@ -148,14 +145,6 @@ impl RuntimeState {
                 should_repaint: false,
             }
         }
-    }
-
-    pub fn record_effective_input(&mut self, now: Instant) {
-        self.last_effective_input_at = now;
-    }
-
-    pub fn input_is_idle(&self, now: Instant) -> bool {
-        now.duration_since(self.last_effective_input_at) >= INPUT_IDLE_AFTER
     }
 
     pub fn update_force_close_hold(
@@ -338,14 +327,4 @@ mod tests {
         assert!(!done.should_repaint);
     }
 
-    #[test]
-    fn input_becomes_idle_after_one_and_a_half_seconds() {
-        let mut runtime = RuntimeState::new();
-        let start = Instant::now();
-
-        runtime.record_effective_input(start);
-
-        assert!(!runtime.input_is_idle(start + Duration::from_millis(1499)));
-        assert!(runtime.input_is_idle(start + Duration::from_millis(1500)));
-    }
 }

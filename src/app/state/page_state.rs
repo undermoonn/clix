@@ -17,7 +17,6 @@ pub enum PowerAction {
 }
 
 pub struct PageActionResult {
-    pub effective_input: bool,
     pub open_achievement_panel: bool,
     pub reveal_hidden_achievement: bool,
     pub refresh_achievements: bool,
@@ -163,7 +162,6 @@ impl PageState {
         achievement_len: usize,
     ) -> PageActionResult {
         let mut result = PageActionResult {
-            effective_input: false,
             open_achievement_panel: false,
             reveal_hidden_achievement: false,
             refresh_achievements: false,
@@ -186,7 +184,6 @@ impl PageState {
                         .move_selection(self.home_menu_selected, HomeMenuMove::Left);
                     if next != self.home_menu_selected {
                         self.home_menu_selected = next;
-                        result.effective_input = true;
                     }
                 }
                 ControllerAction::Right => {
@@ -195,7 +192,6 @@ impl PageState {
                         .move_selection(self.home_menu_selected, HomeMenuMove::Right);
                     if next != self.home_menu_selected {
                         self.home_menu_selected = next;
-                        result.effective_input = true;
                     }
                 }
                 ControllerAction::Up => {
@@ -204,7 +200,6 @@ impl PageState {
                         .move_selection(self.home_menu_selected, HomeMenuMove::Up);
                     if next != self.home_menu_selected {
                         self.home_menu_selected = next;
-                        result.effective_input = true;
                     }
                 }
                 ControllerAction::Down => {
@@ -213,44 +208,36 @@ impl PageState {
                         .move_selection(self.home_menu_selected, HomeMenuMove::Down);
                     if next != self.home_menu_selected {
                         self.home_menu_selected = next;
-                        result.effective_input = true;
                     }
                 }
                 ControllerAction::Launch => {
                     match self.home_menu_layout.option_at(self.home_menu_selected) {
                         Some(HomeMenuOption::ExternalApp(kind)) => {
                             self.close_home_menu();
-                            result.effective_input = true;
                             result.launch_external_app = Some(kind);
                         }
                         Some(HomeMenuOption::MinimizeApp) => {
                             self.close_home_menu();
-                            result.effective_input = true;
                             result.send_app_to_background = true;
                         }
                         Some(HomeMenuOption::CloseApp) => {
                             self.close_home_menu();
-                            result.effective_input = true;
                             result.close_frame = true;
                         }
                         Some(HomeMenuOption::Sleep) => {
                             self.close_home_menu();
-                            result.effective_input = true;
                             result.power_action = Some(PowerAction::Sleep);
                         }
                         Some(HomeMenuOption::Shutdown) => {}
                         Some(HomeMenuOption::HalfMaxRefresh) => {
                             self.close_home_menu();
-                            result.effective_input = true;
                             result.set_resolution = Some(ResolutionPreset::HalfMaxRefresh);
                         }
                         Some(HomeMenuOption::MaxRefresh) => {
                             self.close_home_menu();
-                            result.effective_input = true;
                             result.set_resolution = Some(ResolutionPreset::MaxRefresh);
                         }
                         Some(HomeMenuOption::LaunchOnStartup) => {
-                            result.effective_input = true;
                             result.toggle_launch_on_startup = true;
                         }
                         None => {}
@@ -258,7 +245,6 @@ impl PageState {
                 }
                 ControllerAction::Quit => {
                     self.close_home_menu();
-                    result.effective_input = true;
                 }
                 _ => {}
             }
@@ -270,33 +256,26 @@ impl PageState {
                 ControllerAction::Up => {
                     if self.achievement_selected > 0 {
                         self.achievement_selected -= 1;
-                        result.effective_input = true;
                     } else {
                         self.close_achievement_panel();
-                        result.effective_input = true;
                     }
                 }
                 ControllerAction::Down => {
                     if self.achievement_selected + 1 < achievement_len {
                         self.achievement_selected += 1;
-                        result.effective_input = true;
                     }
                 }
                 ControllerAction::Quit => {
                     self.close_achievement_panel();
-                    result.effective_input = true;
                 }
                 ControllerAction::Launch => {
-                    result.effective_input = true;
                     result.reveal_hidden_achievement = true;
                 }
                 ControllerAction::Refresh => {
-                    result.effective_input = true;
                     result.refresh_achievements = true;
                 }
                 ControllerAction::Sort => {
                     self.reset_achievement_selection();
-                    result.effective_input = true;
                     result.toggle_achievement_sort = true;
                 }
                 _ => {}
@@ -310,7 +289,6 @@ impl PageState {
                     self.selected -= 1;
                     self.cover_nav_dir = -1.0;
                     self.reset_achievement_selection();
-                    result.effective_input = true;
                     result.selected_changed = true;
                 }
             }
@@ -319,7 +297,6 @@ impl PageState {
                     self.selected += 1;
                     self.cover_nav_dir = 1.0;
                     self.reset_achievement_selection();
-                    result.effective_input = true;
                     result.selected_changed = true;
                 }
             }
@@ -327,12 +304,10 @@ impl PageState {
                 if can_open_achievement_panel {
                     self.show_achievement_panel = true;
                     self.reset_achievement_selection();
-                    result.effective_input = true;
                     result.open_achievement_panel = true;
                 }
             }
             ControllerAction::Launch => {
-                result.effective_input = true;
                 result.launch_selected = true;
             }
             ControllerAction::Refresh => {}
@@ -588,9 +563,7 @@ mod tests {
         page.open_home_menu(home_menu_layout());
 
         let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
-        let result = page.handle_action(&ControllerAction::Right, 3, true, 4);
-
-        assert!(result.effective_input);
+        let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
 
         let launch_result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
         assert!(launch_result.toggle_launch_on_startup);

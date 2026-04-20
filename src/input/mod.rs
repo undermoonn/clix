@@ -162,6 +162,10 @@ impl RawHeldState {
     fn contains(&self, action: InputAction) -> bool {
         (self.0 & action.bit()) != 0
     }
+
+    fn has_any(&self) -> bool {
+        self.0 != 0
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -175,6 +179,7 @@ pub struct InputFrame {
     pub actions: Vec<ControllerAction>,
     pub launch_held: bool,
     pub force_close_held: bool,
+    pub has_input_activity: bool,
 }
 
 pub struct InputController {
@@ -429,6 +434,7 @@ impl InputController {
             actions,
             launch_held: raw_held.contains(InputAction::Launch),
             force_close_held: raw_held.contains(InputAction::ForceClose),
+            has_input_activity: raw_held.has_any(),
         }
     }
 

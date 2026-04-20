@@ -236,15 +236,20 @@ impl LauncherApp {
         self.page.open_home_menu(self.home_menu_layout());
     }
 
-    fn schedule_input_repaint(&self, ctx: &egui::Context, has_focus: bool, now: Instant) {
+    fn schedule_input_repaint(
+        &self,
+        ctx: &egui::Context,
+        has_focus: bool,
+        has_input_activity: bool,
+    ) {
         if !has_focus {
             return;
         }
 
-        if self.runtime.input_is_idle(now) {
-            ctx.request_repaint_after(IDLE_REPAINT_INTERVAL);
-        } else {
+        if has_input_activity {
             ctx.request_repaint();
+        } else {
+            ctx.request_repaint_after(IDLE_REPAINT_INTERVAL);
         }
     }
 
@@ -286,13 +291,11 @@ impl eframe::App for LauncherApp {
         let focus = self.runtime.update_focus(has_focus, now);
 
         if focus.did_gain_focus {
-            self.runtime.record_effective_input(now);
             self.refresh_selected_playtime(&ctx);
             self.refresh_selected_install_size(&ctx);
         }
 
         if input::xbox_home::take_wake_request() {
-            self.runtime.record_effective_input(now);
             self.page.prepare_wake_animation();
             self.wake_focus_pending = true;
             self.runtime.suppress_home_hold_until_release();
@@ -309,6 +312,8 @@ impl eframe::App for LauncherApp {
             process_input,
             self.page.show_achievement_panel() || self.page.show_home_menu(),
         );
+        let guide_held = input::xbox_home::guide_held();
+        let has_controller_activity = input_frame.has_input_activity || guide_held;
 
         if self.pending_send_to_background {
             if input_frame.launch_held {
@@ -325,7 +330,7 @@ impl eframe::App for LauncherApp {
         let home_hold = self.runtime.update_home_hold(
             process_input,
             self.page.show_home_menu(),
-            input::xbox_home::guide_held(),
+            guide_held,
             now,
         );
         if home_hold.should_repaint {
@@ -339,12 +344,10 @@ impl eframe::App for LauncherApp {
             now,
         );
         if home_hold.trigger_menu {
-            self.runtime.record_effective_input(now);
             self.refresh_home_menu_state();
             ctx.request_repaint();
         }
         if force_close_hold.trigger_force_close {
-            self.runtime.record_effective_input(now);
             if let Some(state) = self.running_games.get_mut(&self.page.selected()) {
                 if launch::close_running_game(state) {
                     ctx.request_repaint();
@@ -362,7 +365,6 @@ impl eframe::App for LauncherApp {
             now,
         );
         if shutdown_hold.trigger_shutdown {
-            self.runtime.record_effective_input(now);
             self.apply_power_action(PowerAction::Shutdown, &ctx, frame);
         }
         if shutdown_hold.should_repaint {
@@ -390,10 +392,6 @@ impl eframe::App for LauncherApp {
                 && self
                     .achievements
                     .can_refresh_for_selected(self.games.get(self.page.selected()));
-
-            if result.effective_input {
-                self.runtime.record_effective_input(now);
-            }
 
             if result.selected_changed
                 || result.open_achievement_panel
@@ -645,7 +643,7 @@ impl eframe::App for LauncherApp {
                 );
             });
 
-        self.schedule_input_repaint(&ctx, has_focus, now);
+        self.schedule_input_repaint(&ctx, has_focus, has_controller_activity);
 
         if !visible_achievement_icon_urls.is_empty() {
             self.achievements
