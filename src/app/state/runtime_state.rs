@@ -24,6 +24,7 @@ pub struct FocusUpdate {
     pub should_clear_input: bool,
     pub in_cooldown: bool,
     pub did_gain_focus: bool,
+    pub did_lose_focus: bool,
 }
 
 pub struct HomeHoldUpdate {
@@ -61,6 +62,7 @@ impl RuntimeState {
     pub fn update_focus(&mut self, has_focus: bool, now: Instant) -> FocusUpdate {
         let mut should_clear_input = false;
         let did_gain_focus = has_focus && !self.had_focus;
+        let did_lose_focus = !has_focus && self.had_focus;
 
         if has_focus {
             if !self.had_focus {
@@ -89,6 +91,7 @@ impl RuntimeState {
             should_clear_input,
             in_cooldown,
             did_gain_focus,
+            did_lose_focus,
         }
     }
 
@@ -325,6 +328,21 @@ mod tests {
         let done = runtime.update_home_hold(true, false, true, start + Duration::from_millis(500));
         assert!(done.trigger_menu);
         assert!(!done.should_repaint);
+    }
+
+    #[test]
+    fn focus_update_reports_focus_loss_once() {
+        let mut runtime = RuntimeState::new();
+        let start = Instant::now();
+
+        let lost = runtime.update_focus(false, start);
+        assert!(lost.did_lose_focus);
+        assert!(lost.should_clear_input);
+        assert!(!lost.did_gain_focus);
+
+        let still_unfocused = runtime.update_focus(false, start + Duration::from_millis(16));
+        assert!(!still_unfocused.did_lose_focus);
+        assert!(still_unfocused.should_clear_input);
     }
 
 }

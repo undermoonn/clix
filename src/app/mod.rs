@@ -53,6 +53,8 @@ pub struct LauncherApp {
     home_menu_external_apps: Vec<ExternalApp>,
     wake_focus_pending: bool,
     pending_send_to_background: bool,
+    send_to_background_after_frame: bool,
+    send_to_background_commit_pending: bool,
 }
 
 impl LauncherApp {
@@ -89,6 +91,8 @@ impl LauncherApp {
             home_menu_external_apps,
             wake_focus_pending: false,
             pending_send_to_background: false,
+            send_to_background_after_frame: false,
+            send_to_background_commit_pending: false,
         };
         app.refresh_selected_install_size(ctx);
         app
@@ -233,6 +237,14 @@ impl eframe::App for LauncherApp {
         let ctx = ui.ctx().clone();
         ctx.output_mut(|output| output.cursor_icon = egui::CursorIcon::None);
 
+        if self.send_to_background_commit_pending {
+            self.send_to_background_commit_pending = false;
+            self.send_to_background_after_frame = false;
+            if launch::send_current_app_to_background() {
+                return;
+            }
+        }
+
         if self.wake_focus_pending {
             self.wake_focus_pending = false;
             self.page.start_wake_animation();
@@ -244,8 +256,15 @@ impl eframe::App for LauncherApp {
         let focus = self.runtime.update_focus(has_focus, now);
 
         if focus.did_gain_focus {
+            self.page.start_wake_animation();
             self.refresh_selected_playtime(&ctx);
             self.refresh_selected_install_size(&ctx);
+            ctx.request_repaint();
+        }
+
+        if focus.did_lose_focus {
+            self.page.prepare_wake_animation();
+            ctx.request_repaint();
         }
 
         if input::xbox_home::take_wake_request() {
@@ -274,7 +293,9 @@ impl eframe::App for LauncherApp {
             } else {
                 self.pending_send_to_background = false;
                 self.input.clear_held();
-                let _ = launch::send_current_app_to_background();
+                self.page.prepare_wake_animation();
+                self.send_to_background_after_frame = true;
+                ctx.request_repaint();
             }
         }
 
@@ -324,102 +345,105 @@ impl eframe::App for LauncherApp {
             ctx.request_repaint();
         }
 
-        for action in &actions {
-            let previous_game = self.games.get(self.page.selected());
-            let previous_achievement_panel = self.page.show_achievement_panel();
-            let previous_achievement_selected = self.page.achievement_selected();
-            let achievement_len = self
-                .achievements
-                .detail_len_for_selected(self.games.get(self.page.selected()));
-            let result = self.page.handle_action(
-                action,
-                self.games.len(),
-                self.can_open_achievement_panel_for_selected(),
-                achievement_len,
-            );
-            let achievement_selection_changed = previous_achievement_panel
-                && self.page.show_achievement_panel()
-                && self.page.achievement_selected() != previous_achievement_selected;
-            let achievement_panel_closed = previous_achievement_panel && !self.page.show_achievement_panel();
-            let refresh_requested = result.refresh_achievements
-                && self
+        if !self.send_to_background_after_frame {
+            for action in &actions {
+                let previous_game = self.games.get(self.page.selected());
+                let previous_achievement_panel = self.page.show_achievement_panel();
+                let previous_achievement_selected = self.page.achievement_selected();
+                let achievement_len = self
                     .achievements
-                    .can_refresh_for_selected(self.games.get(self.page.selected()));
-
-            if result.selected_changed
-                || result.open_achievement_panel
-                || refresh_requested
-                || result.toggle_achievement_sort
-                || achievement_selection_changed
-                || achievement_panel_closed
-            {
-                self.achievements
-                    .clear_revealed_hidden_for_selected(previous_game);
-            }
-
-            if result.open_achievement_panel {
-                self.achievements.refresh_details_for_selected(
-                    self.games.get(self.page.selected()),
-                    &self.steam_paths,
-                    self.language,
-                    &ctx,
+                    .detail_len_for_selected(self.games.get(self.page.selected()));
+                let result = self.page.handle_action(
+                    action,
+                    self.games.len(),
+                    self.can_open_achievement_panel_for_selected(),
+                    achievement_len,
                 );
-            }
-            if result.reveal_hidden_achievement
-                && self.achievements.reveal_hidden_description_for_selected(
-                    self.games.get(self.page.selected()),
-                    self.page.achievement_selected(),
-                )
-            {
-                ctx.request_repaint();
-            }
-            if refresh_requested {
-                self.achievements.force_refresh_details_for_selected(
-                    self.games.get(self.page.selected()),
-                    &self.steam_paths,
-                    self.language,
-                    &ctx,
-                );
-            }
-            if result.toggle_achievement_sort {
-                self.achievements.toggle_sort_order();
-                ctx.request_repaint();
-            }
-            if result.toggle_launch_on_startup {
-                if startup::set_enabled(!self.launch_on_startup_enabled) {
-                    self.launch_on_startup_enabled = !self.launch_on_startup_enabled;
-                } else {
-                    self.launch_on_startup_enabled = startup::is_enabled();
+                let achievement_selection_changed = previous_achievement_panel
+                    && self.page.show_achievement_panel()
+                    && self.page.achievement_selected() != previous_achievement_selected;
+                let achievement_panel_closed =
+                    previous_achievement_panel && !self.page.show_achievement_panel();
+                let refresh_requested = result.refresh_achievements
+                    && self
+                        .achievements
+                        .can_refresh_for_selected(self.games.get(self.page.selected()));
+
+                if result.selected_changed
+                    || result.open_achievement_panel
+                    || refresh_requested
+                    || result.toggle_achievement_sort
+                    || achievement_selection_changed
+                    || achievement_panel_closed
+                {
+                    self.achievements
+                        .clear_revealed_hidden_for_selected(previous_game);
                 }
-                ctx.request_repaint();
-            }
-            if achievement_selection_changed {
-                self.input.pulse_selection_change();
-            }
-            if result.selected_changed {
-                self.input.pulse_selection_change();
-                self.refresh_selected_playtime(&ctx);
-                self.refresh_selected_install_size(&ctx);
-            }
-            if result.launch_selected && !self.selected_launch_pending() {
-                self.launch_selected();
-            }
-            if let Some(kind) = result.launch_external_app {
-                let _ = external_apps::launch(kind, &self.home_menu_external_apps);
-            }
-            if result.send_app_to_background {
-                self.pending_send_to_background = true;
-                self.input.clear_held();
-                ctx.request_repaint();
-            }
-            if let Some(preset) = result.set_resolution {
-                self.apply_resolution_preset(preset);
-            }
-            if let Some(power_action) = result.power_action {
-                self.apply_power_action(power_action, &ctx, frame);
-            }
-            if result.close_frame {
-                self.close_root_viewport(&ctx);
+
+                if result.open_achievement_panel {
+                    self.achievements.refresh_details_for_selected(
+                        self.games.get(self.page.selected()),
+                        &self.steam_paths,
+                        self.language,
+                        &ctx,
+                    );
+                }
+                if result.reveal_hidden_achievement
+                    && self.achievements.reveal_hidden_description_for_selected(
+                        self.games.get(self.page.selected()),
+                        self.page.achievement_selected(),
+                    )
+                {
+                    ctx.request_repaint();
+                }
+                if refresh_requested {
+                    self.achievements.force_refresh_details_for_selected(
+                        self.games.get(self.page.selected()),
+                        &self.steam_paths,
+                        self.language,
+                        &ctx,
+                    );
+                }
+                if result.toggle_achievement_sort {
+                    self.achievements.toggle_sort_order();
+                    ctx.request_repaint();
+                }
+                if result.toggle_launch_on_startup {
+                    if startup::set_enabled(!self.launch_on_startup_enabled) {
+                        self.launch_on_startup_enabled = !self.launch_on_startup_enabled;
+                    } else {
+                        self.launch_on_startup_enabled = startup::is_enabled();
+                    }
+                    ctx.request_repaint();
+                }
+                if achievement_selection_changed {
+                    self.input.pulse_selection_change();
+                }
+                if result.selected_changed {
+                    self.input.pulse_selection_change();
+                    self.refresh_selected_playtime(&ctx);
+                    self.refresh_selected_install_size(&ctx);
+                }
+                if result.launch_selected && !self.selected_launch_pending() {
+                    self.launch_selected();
+                }
+                if let Some(kind) = result.launch_external_app {
+                    let _ = external_apps::launch(kind, &self.home_menu_external_apps);
+                }
+                if result.send_app_to_background {
+                    self.pending_send_to_background = true;
+                    self.input.clear_held();
+                    ctx.request_repaint();
+                }
+                if let Some(preset) = result.set_resolution {
+                    self.apply_resolution_preset(preset);
+                }
+                if let Some(power_action) = result.power_action {
+                    self.apply_power_action(power_action, &ctx, frame);
+                }
+                if result.close_frame {
+                    self.close_root_viewport(&ctx);
+                }
             }
         }
 
@@ -482,6 +506,11 @@ impl eframe::App for LauncherApp {
             .launch_state
             .as_ref()
             .map(|state| (state.game_index, state.elapsed_seconds()));
+        let render_wake_anim = if has_focus && !self.send_to_background_after_frame {
+            self.page.wake_anim()
+        } else {
+            0.0
+        };
         let mut visible_achievement_icon_urls = Vec::new();
 
         egui::Frame::new()
@@ -496,7 +525,7 @@ impl eframe::App for LauncherApp {
                     self.artwork.fade(),
                     self.page.cover_nav_dir(),
                     self.page.achievement_panel_anim(),
-                    self.page.wake_anim(),
+                    render_wake_anim,
                 );
 
                 ui::draw_game_list(
@@ -515,7 +544,7 @@ impl eframe::App for LauncherApp {
                     selected_achievement_reveal,
                     previous_achievement_summary,
                     previous_achievement_reveal,
-                    self.page.wake_anim(),
+                    render_wake_anim,
                 );
 
                 if self.page.achievement_panel_anim() > 0.001 {
@@ -538,7 +567,7 @@ impl eframe::App for LauncherApp {
                             self.page.select_anim(),
                             self.page.scroll_offset(),
                             self.page.achievement_scroll_offset(),
-                            self.page.wake_anim(),
+                            render_wake_anim,
                             game_icon,
                             self.hint_icons.as_ref(),
                             self.achievements.revealed_hidden_for_selected(selected_game),
@@ -563,7 +592,7 @@ impl eframe::App for LauncherApp {
                         achievement_refresh_loading,
                         selected_running,
                         self.runtime.force_close_hold_progress(),
-                        self.page.wake_anim(),
+                        render_wake_anim,
                     );
                 }
 
@@ -582,9 +611,15 @@ impl eframe::App for LauncherApp {
                     startup::supported(),
                     self.page.home_menu_anim(),
                     self.page.home_menu_scroll_offset(),
-                    self.page.wake_anim(),
+                    render_wake_anim,
                 );
             });
+
+        if self.send_to_background_after_frame {
+            self.send_to_background_after_frame = false;
+            self.send_to_background_commit_pending = true;
+            ctx.request_repaint();
+        }
 
         self.schedule_input_repaint(&ctx, has_focus, has_controller_activity);
 
