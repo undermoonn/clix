@@ -48,12 +48,8 @@ fn draw_running_status_dot(painter: &egui::Painter, icon_rect: egui::Rect) {
     let radius = (icon_rect.width().min(icon_rect.height()) * 0.055).clamp(4.0, 7.0);
     let inset = (radius * 0.9).clamp(6.0, 10.0);
     let center = egui::pos2(icon_rect.max.x - inset - radius, icon_rect.min.y + inset + radius);
-    let time = painter.ctx().input(|input| input.time) as f32;
-    let pulse = smoothstep01((time * 3.1).sin() * 0.5 + 0.5);
-    let flash = pulse * pulse;
-    let fill_alpha = (110.0 + flash * 145.0).round() as u8;
-    let halo_alpha = (28.0 + flash * 140.0).round() as u8;
-    let halo_radius = radius + 2.0 + flash * 2.6;
+    let halo_alpha = 84;
+    let halo_radius = radius + 3.4;
 
     painter.circle_filled(
         center,
@@ -63,7 +59,7 @@ fn draw_running_status_dot(painter: &egui::Painter, icon_rect: egui::Rect) {
     painter.circle_filled(
         center,
         radius,
-        egui::Color32::from_rgba_unmultiplied(78, 201, 108, fill_alpha),
+        egui::Color32::from_rgba_unmultiplied(78, 201, 108, 220),
     );
 }
 
@@ -107,7 +103,7 @@ pub fn draw_game_list(
     let anchor_x = padded_rect.min.x + 24.0;
     let painter = ui.painter().with_clip_rect(panel_rect);
 
-    if !running_indices.is_empty() || launch_feedback.is_some() {
+    if launch_feedback.is_some() {
         ui.ctx().request_repaint();
     }
 
