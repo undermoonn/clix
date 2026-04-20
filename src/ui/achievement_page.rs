@@ -433,14 +433,14 @@ pub fn draw_achievement_page(
         if fill_t > 0.001 {
             let fill_color = if item.unlocked == Some(true) {
                 if is_selected {
-                    egui::Color32::from_rgba_unmultiplied(118, 182, 146, 92)
+                    egui::Color32::from_rgba_unmultiplied(148, 212, 176, 132)
                 } else {
-                    egui::Color32::from_rgba_unmultiplied(104, 164, 130, 74)
+                    egui::Color32::from_rgba_unmultiplied(132, 194, 160, 112)
                 }
             } else if is_selected {
-                egui::Color32::from_rgba_unmultiplied(198, 205, 214, 70)
+                egui::Color32::from_rgba_unmultiplied(224, 230, 238, 108)
             } else {
-                egui::Color32::from_rgba_unmultiplied(182, 189, 198, 56)
+                egui::Color32::from_rgba_unmultiplied(206, 214, 224, 88)
             };
             let fill_max_x = lerp_f32(row_rect.min.x, row_rect.max.x, fill_t);
             let fill_clip_rect = egui::Rect::from_min_max(
