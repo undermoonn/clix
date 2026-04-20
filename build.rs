@@ -3,7 +3,6 @@ use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use dotenvy::from_filename_override;
 use ico::{IconDir, IconDirEntry, IconImage, ResourceType};
 use image::codecs::png::PngEncoder;
 use image::ImageEncoder;
@@ -13,42 +12,13 @@ const ICON_SIZES: [u32; 6] = [16, 32, 48, 64, 128, 256];
 const SVG_PATH: &str = "assets/app-icon.svg";
 const PNG_FILE_NAME: &str = "app-icon-256.png";
 const ICO_FILE_NAME: &str = "app-icon.ico";
-const GA4_MEASUREMENT_ID_ENV: &str = "GA4_MEASUREMENT_ID";
-const GA4_API_SECRET_ENV: &str = "GA4_API_SECRET";
-const GA4_ENABLED_ENV: &str = "GA4_ENABLED";
 
 fn main() {
     println!("cargo:rerun-if-changed={}", SVG_PATH);
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=.env");
-    println!("cargo:rerun-if-env-changed={}", GA4_MEASUREMENT_ID_ENV);
-    println!("cargo:rerun-if-env-changed={}", GA4_API_SECRET_ENV);
-    println!("cargo:rerun-if-env-changed={}", GA4_ENABLED_ENV);
-
-    load_local_dotenv();
-    emit_compile_time_env(GA4_MEASUREMENT_ID_ENV);
-    emit_compile_time_env(GA4_API_SECRET_ENV);
-    emit_compile_time_env(GA4_ENABLED_ENV);
 
     if let Err(error) = build_icon_assets() {
         panic!("failed to generate app icon assets: {error}");
-    }
-}
-
-fn load_local_dotenv() {
-    if env::var_os(GA4_MEASUREMENT_ID_ENV).is_some()
-        || env::var_os(GA4_API_SECRET_ENV).is_some()
-        || env::var_os(GA4_ENABLED_ENV).is_some()
-    {
-        return;
-    }
-
-    let _ = from_filename_override(".env");
-}
-
-fn emit_compile_time_env(key: &str) {
-    if let Some(value) = env::var_os(key) {
-        println!("cargo:rustc-env={}={}", key, value.to_string_lossy());
     }
 }
 

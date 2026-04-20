@@ -26,17 +26,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Check project
-        env:
-          GA4_MEASUREMENT_ID: ${{ secrets.GA4_MEASUREMENT_ID }}
-          GA4_API_SECRET: ${{ secrets.GA4_API_SECRET }}
-          GA4_ENABLED: ${{ vars.GA4_ENABLED }}
         run: cargo check --locked
 
       - name: Build release binary
-        env:
-          GA4_MEASUREMENT_ID: ${{ secrets.GA4_MEASUREMENT_ID }}
-          GA4_API_SECRET: ${{ secrets.GA4_API_SECRET }}
-          GA4_ENABLED: ${{ vars.GA4_ENABLED }}
         run: cargo build --release --locked
 
       - name: Package release archive

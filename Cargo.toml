@@ -26,7 +26,6 @@ crc32fast = "1"
 raw-window-handle = "0.6"
 
 [build-dependencies]
-dotenvy = "0.15"
 ico = "0.5"
 image = { version = "0.24", default-features = false, features = ["png"] }
 resvg = "0.47"
