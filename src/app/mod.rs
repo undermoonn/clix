@@ -201,7 +201,6 @@ impl eframe::App for LauncherApp {
 
         if self.wake_focus_pending {
             self.wake_focus_pending = false;
-            let _ = crate::launch::focus_current_app_window();
             self.page.start_wake_animation();
             ctx.request_repaint();
         }

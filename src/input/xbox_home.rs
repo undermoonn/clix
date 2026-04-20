@@ -86,6 +86,7 @@ unsafe fn run_xinput_watcher(ctx: egui::Context) {
                 if pressed && !prev_guide[i as usize] {
                     if app_is_background {
                         HOME_WAKE_PENDING.store(true, Ordering::Release);
+                        let _ = crate::launch::focus_current_app_window();
                     }
 
                     ctx.request_repaint();

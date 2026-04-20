@@ -14,6 +14,8 @@ use std::sync::Arc;
 
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
+#[cfg(target_os = "windows")]
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 fn load_app_icon() -> Option<egui::IconData> {
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/app-icon-256.png"));
@@ -95,6 +97,22 @@ fn configure_fonts(ctx: &egui::Context, language: i18n::AppLanguage) {
 #[cfg(not(target_os = "windows"))]
 fn configure_fonts(_ctx: &egui::Context, _language: i18n::AppLanguage) {}
 
+#[cfg(target_os = "windows")]
+fn cache_root_window_handle(cc: &eframe::CreationContext<'_>) {
+    let Ok(window_handle) = cc.window_handle() else {
+        return;
+    };
+
+    let RawWindowHandle::Win32(handle) = window_handle.as_raw() else {
+        return;
+    };
+
+    crate::launch::set_current_app_hwnd(handle.hwnd.get());
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cache_root_window_handle(_cc: &eframe::CreationContext<'_>) {}
+
 fn main() {
     let language = i18n::AppLanguage::detect_system();
     let viewport = if let Some(icon) = load_app_icon() {
@@ -113,6 +131,7 @@ fn main() {
         language.window_title(),
         options,
         Box::new(move |cc| {
+            cache_root_window_handle(cc);
             configure_fonts(&cc.egui_ctx, language);
             Ok(Box::new(app::LauncherApp::new(language, &cc.egui_ctx)))
         }),

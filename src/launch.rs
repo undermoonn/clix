@@ -3,6 +3,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+#[cfg(target_os = "windows")]
+use std::sync::atomic::{AtomicIsize, Ordering};
+
 use crate::steam::Game;
 
 pub struct LaunchState {
@@ -286,6 +289,8 @@ use winapi::um::winuser::{
 const ALIGN_TOP_LEFT_APP_ID: u32 = 601150;
 #[cfg(target_os = "windows")]
 const WINDOW_TRANSITION_MS: u64 = 100;
+#[cfg(target_os = "windows")]
+static CURRENT_APP_HWND: AtomicIsize = AtomicIsize::new(0);
 
 #[cfg(target_os = "windows")]
 struct WindowTransition {
@@ -384,6 +389,20 @@ fn collect_visible_windows() -> Vec<(HWND, u32)> {
 }
 
 #[cfg(target_os = "windows")]
+pub fn set_current_app_hwnd(hwnd: isize) {
+    CURRENT_APP_HWND.store(hwnd, Ordering::Release);
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn set_current_app_hwnd(_hwnd: isize) {}
+
+#[cfg(target_os = "windows")]
+fn cached_current_app_window() -> Option<HWND> {
+    let hwnd = CURRENT_APP_HWND.load(Ordering::Acquire);
+    (hwnd != 0).then_some(hwnd as HWND)
+}
+
+#[cfg(target_os = "windows")]
 fn window_title(hwnd: HWND) -> String {
     unsafe {
         let len = GetWindowTextLengthW(hwnd);
@@ -402,8 +421,8 @@ fn window_title(hwnd: HWND) -> String {
 #[cfg(target_os = "windows")]
 fn bring_window_to_foreground(hwnd: HWND) {
     unsafe {
-        ShowWindow(hwnd, SW_RESTORE);
         SetForegroundWindow(hwnd);
+        ShowWindow(hwnd, SW_RESTORE);
     }
 }
 
@@ -564,10 +583,7 @@ pub fn send_current_app_to_background() -> bool {
 
 #[cfg(target_os = "windows")]
 fn find_current_app_window() -> Option<HWND> {
-    let current_pid = unsafe { GetCurrentProcessId() } as u32;
-    collect_visible_windows()
-        .into_iter()
-        .find_map(|(hwnd, pid)| (pid == current_pid).then_some(hwnd))
+    cached_current_app_window()
 }
 
 #[cfg(target_os = "windows")]

@@ -23,6 +23,7 @@ sys-locale = "0.3"
 winapi = { version = "0.3", features = ["winuser", "wingdi", "shellapi", "xinput", "psapi", "processthreadsapi", "handleapi", "winver", "libloaderapi"] }
 libloading = "0.7"
 crc32fast = "1"
+raw-window-handle = "0.6"
 
 [build-dependencies]
 ico = "0.5"
