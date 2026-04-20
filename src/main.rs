@@ -98,7 +98,7 @@ fn configure_fonts(ctx: &egui::Context, language: i18n::AppLanguage) {
 fn configure_fonts(_ctx: &egui::Context, _language: i18n::AppLanguage) {}
 
 #[cfg(target_os = "windows")]
-fn cache_root_window_handle(cc: &eframe::CreationContext<'_>) {
+fn configure_root_window(cc: &eframe::CreationContext<'_>, title: &str) {
     let Ok(window_handle) = cc.window_handle() else {
         return;
     };
@@ -107,14 +107,16 @@ fn cache_root_window_handle(cc: &eframe::CreationContext<'_>) {
         return;
     };
 
+    crate::system::app_identity::configure_root_window(handle.hwnd.get(), title);
     crate::launch::set_current_app_hwnd(handle.hwnd.get());
 }
 
 #[cfg(not(target_os = "windows"))]
-fn cache_root_window_handle(_cc: &eframe::CreationContext<'_>) {}
+fn configure_root_window(_cc: &eframe::CreationContext<'_>, _title: &str) {}
 
 fn main() {
     let language = i18n::AppLanguage::detect_system();
+    let title = language.window_title();
     let viewport = if let Some(icon) = load_app_icon() {
         egui::ViewportBuilder::default()
             .with_fullscreen(true)
@@ -128,10 +130,10 @@ fn main() {
         ..Default::default()
     };
     let _ = eframe::run_native(
-        language.window_title(),
+        title,
         options,
         Box::new(move |cc| {
-            cache_root_window_handle(cc);
+            configure_root_window(cc, title);
             configure_fonts(&cc.egui_ctx, language);
             Ok(Box::new(app::LauncherApp::new(language, &cc.egui_ctx)))
         }),
