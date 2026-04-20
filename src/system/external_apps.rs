@@ -47,18 +47,14 @@ mod imp {
     use std::os::windows::ffi::OsStrExt;
     use std::path::{Path, PathBuf};
 
-    use walkdir::WalkDir;
     use winapi::um::shellapi::ShellExecuteW;
     use winapi::um::winuser::SW_SHOWNORMAL;
     use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
     use winreg::RegKey;
 
-    const APP_PATHS_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\App Paths";
+    const DLSS_SWAPPER_UNINSTALL_KEY: &str =
+        r"Software\Microsoft\Windows\CurrentVersion\Uninstall\DLSS Swapper";
     const NVIDIA_NVAPP_KEY: &str = r"SOFTWARE\NVIDIA Corporation\Global\NvApp";
-    const UNINSTALL_KEYS: &[&str] = &[
-        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-        r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
-    ];
 
     pub fn detect_installed() -> Vec<ExternalApp> {
         let mut apps = Vec::new();
@@ -99,21 +95,11 @@ mod imp {
     }
 
     fn find_dlss_swapper() -> Option<PathBuf> {
-        find_registered_application(
-            &["DLSS Swapper.exe", "dlss swapper.exe"],
-            &["dlss swapper"],
-        )
+        find_uninstall_display_icon_path(DLSS_SWAPPER_UNINSTALL_KEY)
     }
 
     fn find_nvidia_app() -> Option<PathBuf> {
-        if let Some(path) = find_nvidia_full_path() {
-            return Some(path);
-        }
-
-        find_registered_application(
-            &["NVIDIA app.exe", "NVIDIA App.exe"],
-            &["nvidia app"],
-        )
+        find_nvidia_full_path()
     }
 
     fn find_nvidia_full_path() -> Option<PathBuf> {
@@ -142,137 +128,30 @@ mod imp {
         None
     }
 
-    fn find_named_file(roots: &[Option<PathBuf>], names: &[&str], max_depth: usize) -> Option<PathBuf> {
-        for root in roots.iter().flatten() {
-            if !root.exists() {
-                continue;
-            }
-
-            for entry in WalkDir::new(root)
-                .follow_links(false)
-                .max_depth(max_depth)
-                .into_iter()
-                .filter_map(|entry| entry.ok())
-            {
-                if !entry.file_type().is_file() {
-                    continue;
-                }
-
-                let file_name = entry.file_name().to_string_lossy();
-                if names
-                    .iter()
-                    .any(|candidate| file_name.eq_ignore_ascii_case(candidate))
-                {
-                    return Some(entry.path().to_path_buf());
-                }
-            }
-        }
-
-        None
-    }
-
-    fn find_registered_application(exe_names: &[&str], display_names: &[&str]) -> Option<PathBuf> {
-        find_registered_app_path(exe_names).or_else(|| find_registered_uninstall_entry(exe_names, display_names))
-    }
-
-    fn find_registered_app_path(exe_names: &[&str]) -> Option<PathBuf> {
+    fn find_uninstall_display_icon_path(key_path: &str) -> Option<PathBuf> {
         let registry_roots = [
             RegKey::predef(HKEY_CURRENT_USER),
             RegKey::predef(HKEY_LOCAL_MACHINE),
         ];
 
         for root in registry_roots {
-            let Ok(app_paths_key) = root.open_subkey(APP_PATHS_KEY) else {
+            let Ok(subkey) = root.open_subkey(key_path) else {
                 continue;
             };
 
-            for exe_name in exe_names {
-                let Ok(exe_key) = app_paths_key.open_subkey(exe_name) else {
-                    continue;
-                };
-
-                let registered: String = exe_key.get_value("").unwrap_or_default();
-                let path = PathBuf::from(registered.trim_matches('"').trim());
-                if path.is_file() {
-                    return Some(path);
-                }
+            let Ok(display_icon) = subkey.get_value::<String, _>("DisplayIcon") else {
+                continue;
+            };
+            let Some(path) = parse_icon_location(&display_icon) else {
+                continue;
+            };
+            if path.is_file() {
+                return Some(path);
             }
         }
 
         None
     }
-
-    fn find_registered_uninstall_entry(exe_names: &[&str], display_names: &[&str]) -> Option<PathBuf> {
-        let registry_roots = [
-            RegKey::predef(HKEY_CURRENT_USER),
-            RegKey::predef(HKEY_LOCAL_MACHINE),
-        ];
-        let display_needles = display_names
-            .iter()
-            .map(|name| name.to_ascii_lowercase())
-            .collect::<Vec<_>>();
-
-        for root in registry_roots {
-            for uninstall_key in UNINSTALL_KEYS {
-                let Ok(uninstall_root) = root.open_subkey(uninstall_key) else {
-                    continue;
-                };
-
-                for subkey_name in uninstall_root.enum_keys().filter_map(Result::ok) {
-                    let Ok(subkey) = uninstall_root.open_subkey(&subkey_name) else {
-                        continue;
-                    };
-
-                    let display_name: String = subkey.get_value("DisplayName").unwrap_or_default();
-                    let display_name_lower = display_name.to_ascii_lowercase();
-                    if display_needles
-                        .iter()
-                        .all(|needle| !display_name_lower.contains(needle))
-                    {
-                        continue;
-                    }
-
-                    if let Some(path) = registered_install_location_path(&subkey, exe_names) {
-                        return Some(path);
-                    }
-
-                    if let Some(path) = registered_display_icon_path(&subkey) {
-                        return Some(path);
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
-    fn registered_display_icon_path(subkey: &RegKey) -> Option<PathBuf> {
-        let display_icon: String = subkey.get_value("DisplayIcon").ok()?;
-        let path = parse_icon_location(&display_icon)?;
-        path.extension()
-            .and_then(|value| value.to_str())
-            .map(|value| value.eq_ignore_ascii_case("exe"))
-            .unwrap_or(false)
-            .then_some(path)
-    }
-
-    fn registered_install_location_path(subkey: &RegKey, exe_names: &[&str]) -> Option<PathBuf> {
-        let install_location: String = subkey.get_value("InstallLocation").ok()?;
-        let install_path = PathBuf::from(install_location.trim_matches('"').trim());
-        if !install_path.is_dir() {
-            return None;
-        }
-
-        for exe_name in exe_names {
-            let candidate = install_path.join(exe_name);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-
-        find_named_file(&[Some(install_path)], exe_names, 4)
-    }
-
     fn parse_icon_location(value: &str) -> Option<PathBuf> {
         let trimmed = value.trim();
         if trimmed.is_empty() {
@@ -281,24 +160,24 @@ mod imp {
 
         if let Some(stripped) = trimmed.strip_prefix('"') {
             let end = stripped.find('"')?;
-            let path = PathBuf::from(&stripped[..end]);
-            return path.is_file().then_some(path);
+            return Some(PathBuf::from(&stripped[..end]));
         }
 
-        let split_index = trimmed.char_indices().rev().find_map(|(index, ch)| {
+        let mut split_index = None;
+        for (index, ch) in trimmed.char_indices().rev() {
             if ch == ',' {
-                Some(index)
-            } else if ch == '\\' || ch == '/' {
-                None
-            } else {
-                None
+                split_index = Some(index);
+                break;
             }
-        });
+            if ch == '\\' || ch == '/' {
+                break;
+            }
+        }
 
-        let path = split_index
-            .map(|index| PathBuf::from(trimmed[..index].trim()))
-            .unwrap_or_else(|| PathBuf::from(trimmed));
-        path.is_file().then_some(path)
+        Some(match split_index {
+            Some(index) => PathBuf::from(trimmed[..index].trim()),
+            None => PathBuf::from(trimmed),
+        })
     }
 
     fn wide(value: &str) -> Vec<u16> {
