@@ -966,7 +966,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("clix_{}_{}", label, unique))
+        std::env::temp_dir().join(format!("big_screen_launcher_{}_{}", label, unique))
     }
 
     #[test]

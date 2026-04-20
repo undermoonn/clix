@@ -1,4 +1,4 @@
-# Project Clix
+# Big Screen Launcher
 
 A controller-first launcher designed to deliver a console-like user experience for Windows built with Rust and eframe (egui).
 
@@ -11,11 +11,11 @@ Controller input currently supports XInput devices only.
 
 Examples of the current UI are shown below:
 
-![Clix Home Screen](./screenshots/Big%20Screen%20Launcher%202026_4_18%2021_50_58.png)
+![Home Screen](./screenshots/Big%20Screen%20Launcher%202026_4_18%2021_50_58.png)
 
-![Clix Settings Screen](./screenshots/Big%20Screen%20Launcher%202026_4_18%2021_51_23.png)
+![Settings Screen](./screenshots/Big%20Screen%20Launcher%202026_4_18%2021_51_23.png)
 
-![Clix Achievements Screen](./screenshots/Big%20Screen%20Launcher%202026_4_18%2021_51_13.png)
+![Achievements Screen](./screenshots/Big%20Screen%20Launcher%202026_4_18%2021_51_13.png)
 
 ## License
 

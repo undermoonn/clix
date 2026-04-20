@@ -526,7 +526,7 @@ mod tests {
 
     fn unique_temp_dir(name: &str) -> std::path::PathBuf {
         let unique = format!(
-            "clix_{}_{}_{}",
+            "big_screen_launcher_{}_{}_{}",
             name,
             std::process::id(),
             std::time::SystemTime::now()

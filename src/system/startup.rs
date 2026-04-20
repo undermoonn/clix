@@ -20,9 +20,12 @@ mod imp {
     use winreg::RegKey;
 
     const RUN_KEY_PATH: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-    const RUN_VALUE_NAME: &str = "Clix";
+    const RUN_VALUE_NAME: &str = "BigScreenLauncher";
+    const LEGACY_RUN_VALUE_NAMES: &[&str] = &["Clix"];
 
     pub fn is_enabled() -> bool {
+        clear_legacy_run_values();
+
         let Some(current_exe) = current_exe_path() else {
             return false;
         };
@@ -39,17 +42,15 @@ mod imp {
             return false;
         };
 
+        clear_legacy_run_values_for_key(&key);
+
         if enabled {
             let Some(command) = current_startup_command() else {
                 return false;
             };
             key.set_value(RUN_VALUE_NAME, &command).is_ok()
         } else {
-            match key.delete_value(RUN_VALUE_NAME) {
-                Ok(()) => true,
-                Err(err) if err.kind() == io::ErrorKind::NotFound => true,
-                Err(_) => false,
-            }
+            delete_run_value(&key, RUN_VALUE_NAME)
         }
     }
 
@@ -68,6 +69,29 @@ mod imp {
         let key = hkcu.open_subkey_with_flags(RUN_KEY_PATH, KEY_READ).ok()?;
         let command: String = key.get_value(RUN_VALUE_NAME).ok()?;
         parse_command_path(&command).map(normalize_path)
+    }
+
+    fn delete_run_value(key: &RegKey, value_name: &str) -> bool {
+        match key.delete_value(value_name) {
+            Ok(()) => true,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => true,
+            Err(_) => false,
+        }
+    }
+
+    fn clear_legacy_run_values() {
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let Ok((key, _)) = hkcu.create_subkey(RUN_KEY_PATH) else {
+            return;
+        };
+
+        clear_legacy_run_values_for_key(&key);
+    }
+
+    fn clear_legacy_run_values_for_key(key: &RegKey) {
+        for value_name in LEGACY_RUN_VALUE_NAMES {
+            let _ = delete_run_value(key, value_name);
+        }
     }
 }
 
@@ -118,31 +142,39 @@ mod tests {
 
     #[test]
     fn parse_command_path_reads_quoted_executable() {
-        let path = parse_command_path(r#"\"C:\Program Files\Clix\big-screen-launcher.exe\" --background"#);
+        let path = parse_command_path(
+            r#"\"C:\Program Files\Big Screen Launcher\big-screen-launcher.exe\" --background"#,
+        );
 
         assert_eq!(
             path,
-            Some(PathBuf::from(r"C:\Program Files\Clix\big-screen-launcher.exe"))
+            Some(PathBuf::from(
+                r"C:\Program Files\Big Screen Launcher\big-screen-launcher.exe",
+            ))
         );
     }
 
     #[test]
     fn parse_command_path_reads_plain_quoted_executable() {
-        let path = parse_command_path(r#""C:\Program Files\Clix\big-screen-launcher.exe" --background"#);
+        let path = parse_command_path(
+            r#""C:\Program Files\Big Screen Launcher\big-screen-launcher.exe" --background"#,
+        );
 
         assert_eq!(
             path,
-            Some(PathBuf::from(r"C:\Program Files\Clix\big-screen-launcher.exe"))
+            Some(PathBuf::from(
+                r"C:\Program Files\Big Screen Launcher\big-screen-launcher.exe",
+            ))
         );
     }
 
     #[test]
     fn parse_command_path_reads_unquoted_executable() {
-        let path = parse_command_path(r"C:\Clix\big-screen-launcher.exe --background");
+        let path = parse_command_path(r"C:\BigScreenLauncher\big-screen-launcher.exe --background");
 
         assert_eq!(
             path,
-            Some(PathBuf::from(r"C:\Clix\big-screen-launcher.exe"))
+            Some(PathBuf::from(r"C:\BigScreenLauncher\big-screen-launcher.exe"))
         );
     }
 }

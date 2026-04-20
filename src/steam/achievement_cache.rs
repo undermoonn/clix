@@ -145,7 +145,7 @@ fn log_achievement_request_failure(app_id: u32, url: &str, detail: &str) {
     {
         let _ = writeln!(
             file,
-            "[clix] app {}: global achievement percentage request failed: url={}, {}",
+            "[big-screen-launcher] app {}: global achievement percentage request failed: url={}, {}",
             app_id,
             url,
             detail
