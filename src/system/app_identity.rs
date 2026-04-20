@@ -17,7 +17,7 @@ mod imp {
     use winapi::um::propsys::IPropertyStore;
     use winapi::um::shellapi::SHGetPropertyStoreForWindow;
 
-    const APP_USER_MODEL_ID: &str = "BigScreenLauncher";
+    const APP_USER_MODEL_ID: &str = "Undermoonn.BigScreenLauncher";
 
     #[link(name = "shell32")]
     extern "system" {
