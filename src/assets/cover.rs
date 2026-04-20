@@ -12,10 +12,15 @@ use walkdir::WalkDir;
 use winapi::shared::minwindef::UINT;
 
 #[cfg(target_os = "windows")]
+use winapi::shared::winerror::HRESULT;
+
+#[cfg(target_os = "windows")]
 use winapi::shared::windef::{HBITMAP, HDC, HGDIOBJ, HICON};
 
 #[cfg(target_os = "windows")]
-use winapi::um::shellapi::ExtractIconExW;
+use winapi::um::shellapi::{
+    ExtractIconExW, SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON,
+};
 
 #[cfg(target_os = "windows")]
 use winapi::um::wingdi::{
@@ -39,6 +44,23 @@ extern "system" {
         flags: UINT,
     ) -> UINT;
 }
+
+#[cfg(target_os = "windows")]
+extern "system" {
+    fn AssocQueryStringW(
+        flags: u32,
+        str: u32,
+        pszAssoc: *const u16,
+        pszExtra: *const u16,
+        pszOut: *mut u16,
+        pcchOut: *mut u32,
+    ) -> HRESULT;
+}
+
+#[cfg(target_os = "windows")]
+const ASSOCF_NONE: u32 = 0;
+#[cfg(target_os = "windows")]
+const ASSOCSTR_DEFAULTICON: u32 = 15;
 
 pub fn bytes_to_texture_limited(
     ctx: &egui::Context,
@@ -700,14 +722,22 @@ fn extract_private_icon_bytes(executable_path: &Path, size: i32) -> Option<Vec<u
 }
 
 #[cfg(target_os = "windows")]
-fn extract_icon_bytes_from_executable(executable_path: &Path) -> Option<Vec<u8>> {
-    use std::os::windows::ffi::OsStrExt;
-
-    if let Some(bytes) = extract_private_icon_bytes(executable_path, 256) {
+fn extract_icon_bytes_from_file(icon_path: &Path) -> Option<Vec<u8>> {
+    if let Some(bytes) = extract_private_icon_bytes(icon_path, 256) {
         return Some(bytes);
     }
 
-    let wide_path = executable_path
+    if let Some(bytes) = extract_shell_file_icon_bytes(icon_path) {
+        return Some(bytes);
+    }
+
+    if let Some(bytes) = extract_associated_default_icon_bytes(icon_path) {
+        return Some(bytes);
+    }
+
+    use std::os::windows::ffi::OsStrExt;
+
+    let wide_path = icon_path
         .as_os_str()
         .encode_wide()
         .chain(std::iter::once(0))
@@ -726,9 +756,155 @@ fn extract_icon_bytes_from_executable(executable_path: &Path) -> Option<Vec<u8>>
 }
 
 #[cfg(target_os = "windows")]
+fn extract_shell_file_icon_bytes(icon_path: &Path) -> Option<Vec<u8>> {
+    use std::os::windows::ffi::OsStrExt;
+
+    let wide_path = icon_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<u16>>();
+
+    unsafe {
+        let mut file_info: SHFILEINFOW = std::mem::zeroed();
+        let result = SHGetFileInfoW(
+            wide_path.as_ptr(),
+            0,
+            &mut file_info,
+            std::mem::size_of::<SHFILEINFOW>() as u32,
+            SHGFI_ICON | SHGFI_LARGEICON,
+        );
+        if result == 0 || file_info.hIcon.is_null() {
+            return None;
+        }
+
+        icon_handle_to_png_bytes(file_info.hIcon)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn extract_associated_default_icon_bytes(icon_path: &Path) -> Option<Vec<u8>> {
+    use std::os::windows::ffi::OsStrExt;
+
+    let extension = icon_path.extension()?.to_str()?;
+    let assoc = format!(".{}", extension);
+    let wide_assoc = std::ffi::OsStr::new(&assoc)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<u16>>();
+
+    unsafe {
+        let mut len: u32 = 0;
+        let _ = AssocQueryStringW(
+            ASSOCF_NONE,
+            ASSOCSTR_DEFAULTICON,
+            wide_assoc.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            &mut len,
+        );
+        if len == 0 {
+            return None;
+        }
+
+        let mut buffer = vec![0_u16; len as usize];
+        let hr = AssocQueryStringW(
+            ASSOCF_NONE,
+            ASSOCSTR_DEFAULTICON,
+            wide_assoc.as_ptr(),
+            std::ptr::null(),
+            buffer.as_mut_ptr(),
+            &mut len,
+        );
+        if hr < 0 {
+            return None;
+        }
+
+        let value_len = buffer.iter().position(|ch| *ch == 0).unwrap_or(buffer.len());
+        let descriptor = String::from_utf16_lossy(&buffer[..value_len]);
+        let (icon_file, icon_index) = parse_icon_location(&descriptor)?;
+        extract_private_icon_bytes(&icon_file, 256)
+            .or_else(|| extract_indexed_icon_bytes(&icon_file, icon_index))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn parse_icon_location(value: &str) -> Option<(PathBuf, i32)> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Some(stripped) = trimmed.strip_prefix('"') {
+        let end = stripped.find('"')?;
+        let path = PathBuf::from(&stripped[..end]);
+        let rest = stripped[end + 1..].trim();
+        let index = rest.strip_prefix(',').and_then(|raw| raw.trim().parse::<i32>().ok()).unwrap_or(0);
+        return Some((path, index));
+    }
+
+    let mut split_index = None;
+    for (index, ch) in trimmed.char_indices().rev() {
+        if ch == ',' {
+            split_index = Some(index);
+            break;
+        }
+        if ch == '\\' || ch == '/' {
+            break;
+        }
+    }
+
+    if let Some(index) = split_index {
+        let path = PathBuf::from(trimmed[..index].trim());
+        let icon_index = trimmed[index + 1..].trim().parse::<i32>().unwrap_or(0);
+        Some((path, icon_index))
+    } else {
+        Some((PathBuf::from(trimmed), 0))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn extract_indexed_icon_bytes(icon_path: &Path, icon_index: i32) -> Option<Vec<u8>> {
+    use std::os::windows::ffi::OsStrExt;
+
+    let wide_path = icon_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<u16>>();
+
+    unsafe {
+        let mut large_icon: HICON = std::ptr::null_mut();
+        if ExtractIconExW(
+            wide_path.as_ptr(),
+            icon_index,
+            &mut large_icon,
+            std::ptr::null_mut(),
+            1,
+        ) == 0
+            || large_icon.is_null()
+        {
+            return None;
+        }
+
+        icon_handle_to_png_bytes(large_icon)
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn load_file_icon_bytes(icon_path: &Path) -> Option<Vec<u8>> {
+    extract_icon_bytes_from_file(icon_path)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn load_file_icon_bytes(_icon_path: &Path) -> Option<Vec<u8>> {
+    None
+}
+
+#[cfg(target_os = "windows")]
 fn load_executable_icon_bytes(game: &crate::steam::Game) -> Option<Vec<u8>> {
     let executable = find_preferred_executable(&game.path, &game.name)?;
-    extract_icon_bytes_from_executable(&executable)
+    load_file_icon_bytes(&executable)
 }
 
 pub fn load_game_icon_bytes(steam_paths: &[PathBuf], game: &crate::steam::Game) -> Option<Vec<u8>> {

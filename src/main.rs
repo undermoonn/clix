@@ -2,6 +2,7 @@
 
 mod app;
 mod assets;
+mod home_menu_structure;
 mod i18n;
 mod input;
 mod launch;

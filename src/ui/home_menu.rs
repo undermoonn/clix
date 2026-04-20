@@ -1,26 +1,159 @@
+use std::borrow::Cow;
+use std::collections::HashMap;
+
 use eframe::egui;
 
+use crate::home_menu_structure::{HomeMenuEntry, HomeMenuLayout, HomeMenuOption};
 use crate::i18n::AppLanguage;
+use crate::system::external_apps::ExternalAppKind;
 
-use super::hint_icons::HintIcons;
 use super::anim::{lerp_f32, smoothstep01};
+use super::hint_icons::HintIcons;
 use super::text::{color_with_scaled_alpha, corner_radius};
+
+fn draw_texture_icon(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    icon_rect: egui::Rect,
+    tint: egui::Color32,
+) {
+    let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+    painter.add(egui::Shape::Rect(
+        egui::epaint::RectShape::filled(icon_rect, corner_radius(8.0), tint)
+            .with_texture(texture.id(), uv),
+    ));
+}
+
+fn draw_external_app_fallback_icon(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    kind: ExternalAppKind,
+    selectedness: f32,
+    opacity: f32,
+) {
+    let tile_fill = match kind {
+        ExternalAppKind::DlssSwapper => egui::Color32::from_rgb(18, 28, 18),
+        ExternalAppKind::NvidiaApp => egui::Color32::from_rgb(20, 44, 22),
+    };
+    let tile_stroke = match kind {
+        ExternalAppKind::DlssSwapper => egui::Color32::from_rgb(120, 208, 120),
+        ExternalAppKind::NvidiaApp => egui::Color32::from_rgb(118, 208, 78),
+    };
+    let highlight_fill = match kind {
+        ExternalAppKind::DlssSwapper => egui::Color32::from_rgb(46, 82, 46),
+        ExternalAppKind::NvidiaApp => egui::Color32::from_rgb(58, 112, 44),
+    };
+    let rounding = corner_radius(16.0);
+
+    painter.rect_filled(
+        rect,
+        rounding,
+        color_with_scaled_alpha(tile_fill, opacity),
+    );
+    painter.rect_stroke(
+        rect,
+        rounding,
+        egui::Stroke::new(
+            lerp_f32(1.2, 2.0, selectedness),
+            color_with_scaled_alpha(tile_stroke, opacity),
+        ),
+        egui::StrokeKind::Middle,
+    );
+
+    if selectedness > 0.01 {
+        let glow_rect = rect.shrink(3.0);
+        painter.rect_stroke(
+            glow_rect,
+            corner_radius(13.0),
+            egui::Stroke::new(
+                2.0,
+                color_with_scaled_alpha(highlight_fill, opacity * selectedness),
+            ),
+            egui::StrokeKind::Middle,
+        );
+    }
+
+    match kind {
+        ExternalAppKind::DlssSwapper => {
+            let stroke = egui::Stroke::new(
+                3.2,
+                color_with_scaled_alpha(egui::Color32::from_rgb(146, 236, 126), opacity),
+            );
+            let left = rect.left() + rect.width() * 0.24;
+            let right = rect.right() - rect.width() * 0.24;
+            let top = rect.top() + rect.height() * 0.35;
+            let bottom = rect.bottom() - rect.height() * 0.35;
+            let arrow = rect.width() * 0.12;
+
+            painter.line_segment([egui::pos2(left, top), egui::pos2(right - arrow, top)], stroke);
+            painter.line_segment(
+                [egui::pos2(right - arrow, top - arrow * 0.6), egui::pos2(right, top)],
+                stroke,
+            );
+            painter.line_segment(
+                [egui::pos2(right - arrow, top + arrow * 0.6), egui::pos2(right, top)],
+                stroke,
+            );
+
+            painter.line_segment(
+                [egui::pos2(right, bottom), egui::pos2(left + arrow, bottom)],
+                stroke,
+            );
+            painter.line_segment(
+                [egui::pos2(left + arrow, bottom - arrow * 0.6), egui::pos2(left, bottom)],
+                stroke,
+            );
+            painter.line_segment(
+                [egui::pos2(left + arrow, bottom + arrow * 0.6), egui::pos2(left, bottom)],
+                stroke,
+            );
+        }
+        ExternalAppKind::NvidiaApp => {
+            let inner = rect.shrink(rect.width() * 0.19);
+            let accent = color_with_scaled_alpha(egui::Color32::from_rgb(118, 208, 78), opacity);
+            let white = color_with_scaled_alpha(egui::Color32::WHITE, opacity);
+
+            painter.rect_filled(inner, corner_radius(12.0), accent);
+
+            let left = inner.left() + inner.width() * 0.2;
+            let right = inner.right() - inner.width() * 0.2;
+            let top = inner.top() + inner.height() * 0.18;
+            let bottom = inner.bottom() - inner.height() * 0.18;
+            let middle = inner.center().x;
+            let stroke = egui::Stroke::new(4.2, white);
+
+            painter.line_segment([egui::pos2(left, bottom), egui::pos2(left, top)], stroke);
+            painter.line_segment([egui::pos2(left, top), egui::pos2(right, bottom)], stroke);
+            painter.line_segment([egui::pos2(right, bottom), egui::pos2(right, top)], stroke);
+            painter.line_segment(
+                [egui::pos2(middle - 1.0, inner.center().y), egui::pos2(right, top)],
+                stroke,
+            );
+        }
+    }
+}
 
 pub fn draw_home_menu(
     ui: &mut egui::Ui,
     language: AppLanguage,
+    layout: &HomeMenuLayout,
+    external_app_icons: &HashMap<ExternalAppKind, egui::TextureHandle>,
     icons: Option<&HintIcons>,
     current_mode_label: &str,
     half_refresh_label: &str,
     max_refresh_label: &str,
-    show_power_options: bool,
+    _show_power_options: bool,
     shutdown_hold_progress: f32,
     launch_on_startup_enabled: bool,
-    show_launch_on_startup: bool,
+    _show_launch_on_startup: bool,
     menu_anim: f32,
     selected_option_t: f32,
     wake_anim: f32,
 ) {
+    if layout.is_empty() {
+        return;
+    }
+
     let wake_t = smoothstep01(wake_anim);
     let menu_t = smoothstep01(menu_anim) * wake_t;
     if menu_t <= 0.001 {
@@ -91,6 +224,52 @@ pub fn draw_home_menu(
     let content_padding = 28.0;
     let section_font = egui::FontId::new(24.0, egui::FontFamily::Name("Bold".into()));
     let current_mode_font = egui::FontId::new(20.0, egui::FontFamily::Proportional);
+    let external_entries: Vec<_> = layout
+        .entries()
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, entry)| matches!(entry.option, HomeMenuOption::ExternalApp(_)))
+        .collect();
+    let primary_entries: Vec<_> = layout
+        .entries()
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, entry)| {
+            matches!(
+                entry.option,
+                HomeMenuOption::MinimizeApp | HomeMenuOption::CloseApp
+            )
+        })
+        .collect();
+    let power_entries: Vec<_> = layout
+        .entries()
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, entry)| matches!(entry.option, HomeMenuOption::Sleep | HomeMenuOption::Shutdown))
+        .collect();
+    let resolution_entries: Vec<_> = layout
+        .entries()
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, entry)| {
+            matches!(
+                entry.option,
+                HomeMenuOption::HalfMaxRefresh | HomeMenuOption::MaxRefresh
+            )
+        })
+        .collect();
+    let startup_entry = layout
+        .entries()
+        .iter()
+        .copied()
+        .enumerate()
+        .find(|(_, entry)| matches!(entry.option, HomeMenuOption::LaunchOnStartup));
+    let show_power_options = !power_entries.is_empty();
+    let has_external_apps = !external_entries.is_empty();
     let power_section_text = show_power_options.then(|| {
         painter.layout_no_wrap(
             language.power_text().to_string(),
@@ -98,13 +277,20 @@ pub fn draw_home_menu(
             color_with_scaled_alpha(egui::Color32::from_rgb(150, 158, 170), sheet_t),
         )
     });
-    let resolution_section_text = painter.layout_no_wrap(
-        language.set_display_resolution_text().to_string(),
+    let primary_section_text = painter.layout_no_wrap(
+        "Big Screen Launcher".to_string(),
         section_font.clone(),
         color_with_scaled_alpha(egui::Color32::from_rgb(150, 158, 170), sheet_t),
     );
-    let startup_section_text = painter.layout_no_wrap(
-        language.startup_settings_text().to_string(),
+    let external_section_text = has_external_apps.then(|| {
+        painter.layout_no_wrap(
+            language.apps_text().to_string(),
+            section_font.clone(),
+            color_with_scaled_alpha(egui::Color32::from_rgb(150, 158, 170), sheet_t),
+        )
+    });
+    let resolution_section_text = painter.layout_no_wrap(
+        language.set_display_resolution_text().to_string(),
         section_font.clone(),
         color_with_scaled_alpha(egui::Color32::from_rgb(150, 158, 170), sheet_t),
     );
@@ -122,11 +308,17 @@ pub fn draw_home_menu(
         .as_ref()
         .map(|text| text.size().y)
         .unwrap_or(0.0);
+    let primary_section_text_height = primary_section_text.size().y;
+    let external_section_text_height = external_section_text
+        .as_ref()
+        .map(|text| text.size().y)
+        .unwrap_or(0.0);
     let resolution_section_text_height = resolution_section_text.size().y;
-    let startup_section_text_height = startup_section_text.size().y;
     let current_mode_text_height = current_mode_text.size().y;
     let current_mode_text_width = current_mode_text.size().x;
-    let content_height = option_height
+    let content_height = primary_section_text_height
+        + section_gap
+        + option_height
         + if show_power_options {
             row_gap + power_section_text_height + section_gap + option_height
         } else {
@@ -136,8 +328,8 @@ pub fn draw_home_menu(
         + resolution_section_text_height
         + section_gap
         + option_height
-        + if show_launch_on_startup {
-            row_gap + startup_section_text_height + section_gap + option_height
+        + if has_external_apps {
+            row_gap + external_section_text_height + section_gap + option_height
         } else {
             0.0
         };
@@ -165,101 +357,89 @@ pub fn draw_home_menu(
         egui::vec2(content_width, content_height),
     );
     let option_width = (content_rect.width() - option_gap) * 0.5;
+    let startup_option_width = option_width * 0.62;
     let option_inner_padding = 20.0;
-    let top_row_y = content_rect.min.y;
-    let power_section_y = top_row_y + option_height + row_gap;
+    let primary_section_y = content_rect.min.y;
+    let primary_row_y = primary_section_y + primary_section_text_height + section_gap;
+    let power_section_y = primary_row_y + option_height + row_gap;
     let power_row_y = power_section_y + power_section_text_height + section_gap;
     let resolution_section_y = if show_power_options {
         power_row_y + option_height + row_gap
     } else {
-        top_row_y + option_height + row_gap
+        primary_row_y + option_height + row_gap
     };
     let resolution_row_y = resolution_section_y + resolution_section_text_height + section_gap;
-    let startup_section_y = resolution_row_y + option_height + row_gap;
-    let startup_row_y = startup_section_y + startup_section_text_height + section_gap;
-    let startup_index = show_launch_on_startup.then_some(if show_power_options { 6 } else { 4 });
-    let shutdown_index = show_power_options.then_some(3usize);
-    let option_phase_t = |index: usize| -> f32 {
-        let (row_index, column_index) = if startup_index == Some(index) {
-            (3, 0)
-        } else {
-            (index / 2, index % 2)
-        };
-        let start = 0.14 + row_index as f32 * 0.14 + column_index as f32 * 0.08;
+    let external_section_y = resolution_row_y + option_height + row_gap;
+    let external_row_y = external_section_y + external_section_text_height + section_gap;
+    let startup_row_y = if has_external_apps {
+        external_row_y
+    } else {
+        resolution_row_y
+    };
+    let option_phase_t = |entry: HomeMenuEntry| -> f32 {
+        let start = 0.14 + entry.row as f32 * 0.14 + entry.column as f32 * 0.08;
         phase_t(start, (start + 0.60).min(1.0))
     };
-    let top_row_rects: Vec<_> = primary_option_labels
-        .iter()
-        .enumerate()
-        .map(|(index, _)| {
-            let option_t = option_phase_t(index);
-            let option_offset = egui::vec2(0.0, lerp_f32(12.0, 0.0, option_t));
-            egui::Rect::from_min_size(
-                egui::pos2(
-                    content_rect.min.x + index as f32 * (option_width + option_gap),
-                    top_row_y,
-                ),
-                egui::vec2(option_width, option_height),
-            )
-            .translate(option_offset)
-        })
-        .collect();
-    let power_row_rects: Vec<_> = power_option_labels
-        .iter()
-        .enumerate()
-        .map(|(index, _)| {
-            let option_t = option_phase_t(index + 2);
-            let option_offset = egui::vec2(0.0, lerp_f32(12.0, 0.0, option_t));
-            egui::Rect::from_min_size(
-                egui::pos2(
-                    content_rect.min.x + index as f32 * (option_width + option_gap),
-                    power_row_y,
-                ),
-                egui::vec2(option_width, option_height),
-            )
-            .translate(option_offset)
-        })
-        .collect();
-    let resolution_row_rects: Vec<_> = resolution_option_labels
-        .iter()
-        .enumerate()
-        .map(|(index, _)| {
-            let option_t = option_phase_t(index + if show_power_options { 4 } else { 2 });
-            let option_offset = egui::vec2(0.0, lerp_f32(12.0, 0.0, option_t));
-            egui::Rect::from_min_size(
-                egui::pos2(
-                    content_rect.min.x + index as f32 * (option_width + option_gap),
-                    resolution_row_y,
-                ),
-                egui::vec2(option_width, option_height),
-            )
-            .translate(option_offset)
-        })
-        .collect();
-    let startup_rect = show_launch_on_startup.then(|| {
-        let option_t = option_phase_t(startup_index.unwrap_or_default());
-        let option_offset = egui::vec2(0.0, lerp_f32(12.0, 0.0, option_t));
-        egui::Rect::from_min_size(
-            egui::pos2(content_rect.min.x, startup_row_y),
-            egui::vec2(content_rect.width(), option_height),
-        )
-        .translate(option_offset)
-    });
-    let mut option_rects = Vec::new();
-    option_rects.extend(top_row_rects.iter().copied());
-    if show_power_options {
-        option_rects.extend(power_row_rects.iter().copied());
-    }
-    option_rects.extend(resolution_row_rects.iter().copied());
-    option_rects.extend(startup_rect.iter().copied());
-    let selected_index = selected_option_t
-        .round()
-        .clamp(0.0, option_rects.len().saturating_sub(1) as f32) as usize;
-    let highlight_offset = egui::vec2(0.0, lerp_f32(8.0, 0.0, highlight_t));
-    let selected_rect = option_rects[selected_index].translate(highlight_offset);
 
-    for (index, option_rect) in option_rects.iter().enumerate() {
-        let option_t = option_phase_t(index);
+    let build_row_rects = |entries: &[(usize, HomeMenuEntry)], row_y: f32| -> Vec<_> {
+        entries
+            .iter()
+            .map(|(index, entry)| {
+                let option_t = option_phase_t(*entry);
+                let option_offset = egui::vec2(0.0, lerp_f32(12.0, 0.0, option_t));
+                let size = if entry.wide {
+                    egui::vec2(content_rect.width(), option_height)
+                } else {
+                    egui::vec2(option_width, option_height)
+                };
+                let rect = egui::Rect::from_min_size(
+                    egui::pos2(
+                        content_rect.min.x + entry.column as f32 * (option_width + option_gap),
+                        row_y,
+                    ),
+                    size,
+                )
+                .translate(option_offset);
+                (*index, *entry, rect)
+            })
+            .collect()
+    };
+
+    let mut option_rects = Vec::new();
+    option_rects.extend(build_row_rects(&primary_entries, primary_row_y));
+    if show_power_options {
+        option_rects.extend(build_row_rects(&power_entries, power_row_y));
+    }
+    option_rects.extend(build_row_rects(&resolution_entries, resolution_row_y));
+    if has_external_apps {
+        option_rects.extend(build_row_rects(&external_entries, external_row_y));
+    }
+    if let Some((index, entry)) = startup_entry {
+        let option_t = option_phase_t(entry);
+        let option_offset = egui::vec2(0.0, lerp_f32(12.0, 0.0, option_t));
+        let startup_right = sheet_rect.max.x - 18.0;
+        let startup_x = startup_right - startup_option_width;
+        let startup_rect = egui::Rect::from_min_size(
+            egui::pos2(startup_x, startup_row_y),
+            egui::vec2(startup_option_width, option_height),
+        )
+        .translate(option_offset);
+        option_rects.push((index, entry, startup_rect));
+    }
+
+    let selected_index = layout.clamp_selected(selected_option_t.round().max(0.0) as usize);
+    let highlight_offset = egui::vec2(0.0, lerp_f32(8.0, 0.0, highlight_t));
+    let Some((_, _, selected_rect)) = option_rects
+        .iter()
+        .find(|(index, _, _)| *index == selected_index)
+        .copied()
+    else {
+        return;
+    };
+    let selected_rect = selected_rect.translate(highlight_offset);
+
+    for (_, entry, option_rect) in &option_rects {
+        let option_t = option_phase_t(*entry);
         painter.rect_filled(
             *option_rect,
             corner_radius(12.0),
@@ -267,6 +447,11 @@ pub fn draw_home_menu(
         );
     }
 
+    painter.galley(
+        egui::pos2(content_rect.min.x, primary_section_y),
+        primary_section_text,
+        egui::Color32::WHITE,
+    );
     if let Some(power_section_text) = &power_section_text {
         painter.galley(
             egui::pos2(content_rect.min.x, power_section_y),
@@ -287,10 +472,10 @@ pub fn draw_home_menu(
         current_mode_text,
         egui::Color32::WHITE,
     );
-    if show_launch_on_startup {
+    if let Some(external_section_text) = &external_section_text {
         painter.galley(
-            egui::pos2(content_rect.min.x, startup_section_y),
-            startup_section_text,
+            egui::pos2(content_rect.min.x, external_section_y),
+            external_section_text.clone(),
             egui::Color32::WHITE,
         );
     }
@@ -301,31 +486,68 @@ pub fn draw_home_menu(
         color_with_scaled_alpha(egui::Color32::from_rgb(86, 90, 100), highlight_t),
     );
 
-    let mut option_labels = vec![
-        primary_option_labels[0].to_string(),
-        primary_option_labels[1].to_string(),
-    ];
-    if show_power_options {
-        option_labels.push(power_option_labels[0].to_string());
-        option_labels.push(power_option_labels[1].to_string());
-    }
-    option_labels.push(resolution_option_labels[0].to_string());
-    option_labels.push(resolution_option_labels[1].to_string());
-    if show_launch_on_startup {
-        option_labels.push(language.launch_on_startup_text().to_string());
-    }
-    for (index, option_rect) in option_rects.iter().enumerate() {
-        let option_t = option_phase_t(index);
-        let selectedness = if selected_index == index { 1.0 } else { 0.0 };
+    for (index, entry, option_rect) in &option_rects {
+        let option_t = option_phase_t(*entry);
+        let selectedness = if selected_index == *index { 1.0 } else { 0.0 };
         let text_color = egui::Color32::from_rgb(
             lerp_f32(214.0, 248.0, selectedness).round() as u8,
             lerp_f32(218.0, 249.0, selectedness).round() as u8,
             lerp_f32(226.0, 252.0, selectedness).round() as u8,
         );
-        let label = option_labels.get(index).map(String::as_str).unwrap_or_default();
-        if startup_index == Some(index) {
+        if let HomeMenuOption::ExternalApp(kind) = entry.option {
+            let icon_size = (option_rect.height() - option_inner_padding * 2.0).clamp(42.0, 54.0);
+            let icon_rect = egui::Rect::from_min_size(
+                egui::pos2(
+                    option_rect.min.x + option_inner_padding,
+                    option_rect.center().y - icon_size * 0.5,
+                ),
+                egui::vec2(icon_size, icon_size),
+            );
+            if let Some(texture) = external_app_icons.get(&kind) {
+                draw_texture_icon(
+                    &painter,
+                    texture,
+                    icon_rect,
+                    color_with_scaled_alpha(egui::Color32::WHITE, option_t),
+                );
+            } else {
+                draw_external_app_fallback_icon(&painter, icon_rect, kind, selectedness, option_t);
+            }
+
+            let label = match kind {
+                ExternalAppKind::DlssSwapper => language.dlss_swapper_text(),
+                ExternalAppKind::NvidiaApp => language.nvidia_app_text(),
+            };
             let option_text = painter.layout_no_wrap(
                 label.to_string(),
+                option_font.clone(),
+                color_with_scaled_alpha(text_color, option_t),
+            );
+            painter.galley(
+                egui::pos2(
+                    icon_rect.max.x + 16.0,
+                    option_rect.center().y - option_text.size().y * 0.5,
+                ),
+                option_text,
+                egui::Color32::WHITE,
+            );
+            continue;
+        }
+
+        let label = match entry.option {
+            HomeMenuOption::MinimizeApp => Cow::Borrowed(primary_option_labels[0]),
+            HomeMenuOption::CloseApp => Cow::Borrowed(primary_option_labels[1]),
+            HomeMenuOption::Sleep => Cow::Borrowed(power_option_labels[0]),
+            HomeMenuOption::Shutdown => Cow::Borrowed(power_option_labels[1]),
+            HomeMenuOption::HalfMaxRefresh => Cow::Borrowed(resolution_option_labels[0]),
+            HomeMenuOption::MaxRefresh => Cow::Borrowed(resolution_option_labels[1]),
+            HomeMenuOption::LaunchOnStartup => Cow::Borrowed(language.launch_on_startup_text()),
+            HomeMenuOption::ExternalApp(_) => continue,
+        };
+
+        if matches!(entry.option, HomeMenuOption::LaunchOnStartup) {
+            let option_text = painter.layout_no_wrap(
+                label.into_owned(),
                 option_font.clone(),
                 color_with_scaled_alpha(text_color, option_t),
             );
@@ -362,7 +584,7 @@ pub fn draw_home_menu(
             );
         } else {
             let option_text = painter.layout_no_wrap(
-                label.to_string(),
+                label.into_owned(),
                 option_font.clone(),
                 color_with_scaled_alpha(text_color, option_t),
             );
@@ -392,7 +614,7 @@ pub fn draw_home_menu(
             uv,
             color_with_scaled_alpha(egui::Color32::WHITE, highlight_t),
         );
-        if shutdown_index == Some(selected_index) {
+        if layout.is_shutdown_selected(selected_index) {
             draw_progress_ring(
                 painter,
                 icon_rect.center(),

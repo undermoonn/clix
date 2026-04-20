@@ -1,5 +1,6 @@
 mod achievements;
 mod artwork;
+mod external_app_icons;
 mod game_icons;
 mod install_size;
 mod playtime;
@@ -12,8 +13,10 @@ use std::time::{Duration, Instant};
 use crate::i18n::AppLanguage;
 use crate::input::{self, InputController};
 use crate::launch::{self, LaunchState};
+use crate::home_menu_structure::HomeMenuLayout;
 use crate::system::{
     display_mode::{self, ResolutionOptions},
+    external_apps::{self, ExternalApp},
     power, startup,
 };
 use crate::steam::{self, Game};
@@ -21,6 +24,7 @@ use crate::ui;
 
 use self::achievements::AchievementState;
 use self::artwork::ArtworkState;
+use self::external_app_icons::ExternalAppIconState;
 use self::game_icons::GameIconState;
 use self::install_size::InstallSizeState;
 use self::playtime::PlaytimeState;
@@ -37,6 +41,7 @@ pub struct LauncherApp {
     page: PageState,
     hint_icons: Option<ui::HintIcons>,
     game_icons: GameIconState,
+    external_app_icons: ExternalAppIconState,
     launch_state: Option<LaunchState>,
     running_games: HashMap<usize, launch::RunningGameState>,
     achievements: AchievementState,
@@ -45,6 +50,7 @@ pub struct LauncherApp {
     runtime: RuntimeState,
     resolution_options: ResolutionOptions,
     launch_on_startup_enabled: bool,
+    home_menu_external_apps: Vec<ExternalApp>,
     wake_focus_pending: bool,
     pending_send_to_background: bool,
 }
@@ -69,6 +75,7 @@ impl LauncherApp {
             page: PageState::new(),
             hint_icons: ui::load_hint_icons(ctx),
             game_icons: GameIconState::new(),
+            external_app_icons: ExternalAppIconState::new(),
             launch_state: None,
             running_games: HashMap::new(),
             achievements: AchievementState::new(),
@@ -77,6 +84,7 @@ impl LauncherApp {
             runtime: RuntimeState::new(),
             resolution_options: display_mode::detect_resolution_options(),
             launch_on_startup_enabled: startup::is_enabled(),
+            home_menu_external_apps: external_apps::detect_installed(),
             wake_focus_pending: false,
             pending_send_to_background: false,
         };
@@ -158,6 +166,26 @@ impl LauncherApp {
 
     fn close_root_viewport(&self, ctx: &egui::Context) {
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+
+    fn home_menu_layout(&self) -> HomeMenuLayout {
+        let external_app_kinds = self
+            .home_menu_external_apps
+            .iter()
+            .map(ExternalApp::kind)
+            .collect::<Vec<_>>();
+        HomeMenuLayout::new(
+            &external_app_kinds,
+            power::supported(),
+            startup::supported(),
+        )
+    }
+
+    fn refresh_home_menu_state(&mut self) {
+        self.resolution_options = display_mode::detect_resolution_options();
+        self.launch_on_startup_enabled = startup::is_enabled();
+        self.home_menu_external_apps = external_apps::detect_installed();
+        self.page.open_home_menu(self.home_menu_layout());
     }
 
     fn schedule_input_repaint(&self, ctx: &egui::Context, has_focus: bool, now: Instant) {
@@ -264,9 +292,7 @@ impl eframe::App for LauncherApp {
         );
         if home_hold.trigger_menu {
             self.runtime.record_effective_input(now);
-            self.resolution_options = display_mode::detect_resolution_options();
-            self.launch_on_startup_enabled = startup::is_enabled();
-            self.page.open_home_menu();
+            self.refresh_home_menu_state();
             ctx.request_repaint();
         }
         if force_close_hold.trigger_force_close {
@@ -379,6 +405,9 @@ impl eframe::App for LauncherApp {
             if result.launch_selected && !self.selected_launch_pending() {
                 self.launch_selected();
             }
+            if let Some(kind) = result.launch_external_app {
+                let _ = external_apps::launch(kind, &self.home_menu_external_apps);
+            }
             if result.send_app_to_background {
                 self.pending_send_to_background = true;
                 self.input.clear_held();
@@ -437,6 +466,8 @@ impl eframe::App for LauncherApp {
 
         self.game_icons
             .ensure_loaded(&ctx, &self.steam_paths, &self.games, self.page.selected());
+        self.external_app_icons
+            .ensure_loaded(&ctx, &self.home_menu_external_apps);
 
         let selected_achievement_summary = self.achievements.summary_for_selected(selected_game);
         let selected_achievement_detail = self.achievements.detail_for_selected(selected_game);
@@ -540,6 +571,8 @@ impl eframe::App for LauncherApp {
                 ui::draw_home_menu(
                     ui,
                     self.language,
+                    self.page.home_menu_layout(),
+                    self.external_app_icons.textures(),
                     self.hint_icons.as_ref(),
                     &self.resolution_options.current.label,
                     &self.resolution_options.half_refresh.label,

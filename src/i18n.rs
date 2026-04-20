@@ -77,6 +77,13 @@ impl AppLanguage {
         }
     }
 
+    pub fn apps_text(self) -> &'static str {
+        match self {
+            Self::English => "Apps",
+            Self::SimplifiedChinese => "应用",
+        }
+    }
+
     pub fn sleep_text(self) -> &'static str {
         match self {
             Self::English => "Sleep",
@@ -93,8 +100,8 @@ impl AppLanguage {
 
     pub fn set_display_resolution_text(self) -> &'static str {
         match self {
-            Self::English => "Set Display Resolution",
-            Self::SimplifiedChinese => "设置显示分辨率",
+            Self::English => "Display Resolution",
+            Self::SimplifiedChinese => "显示器分辨率",
         }
     }
 
@@ -105,17 +112,24 @@ impl AppLanguage {
         }
     }
 
-    pub fn startup_settings_text(self) -> &'static str {
-        match self {
-            Self::English => "Startup",
-            Self::SimplifiedChinese => "启动",
-        }
-    }
-
     pub fn launch_on_startup_text(self) -> &'static str {
         match self {
             Self::English => "Launch on Startup",
             Self::SimplifiedChinese => "开机自启",
+        }
+    }
+
+    pub fn dlss_swapper_text(self) -> &'static str {
+        match self {
+            Self::English => "DLSS Swapper",
+            Self::SimplifiedChinese => "DLSS Swapper",
+        }
+    }
+
+    pub fn nvidia_app_text(self) -> &'static str {
+        match self {
+            Self::English => "NVIDIA App",
+            Self::SimplifiedChinese => "NVIDIA App",
         }
     }
 

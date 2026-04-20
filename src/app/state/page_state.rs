@@ -1,17 +1,8 @@
 use eframe::egui;
 
+use crate::home_menu_structure::{HomeMenuLayout, HomeMenuMove, HomeMenuOption};
 use crate::input::ControllerAction;
-
-#[cfg(target_os = "windows")]
-const HOME_MENU_HAS_POWER_OPTIONS: bool = true;
-#[cfg(not(target_os = "windows"))]
-const HOME_MENU_HAS_POWER_OPTIONS: bool = false;
-
-#[cfg(target_os = "windows")]
-const HOME_MENU_OPTION_COUNT: usize = 7;
-#[cfg(not(target_os = "windows"))]
-const HOME_MENU_OPTION_COUNT: usize = 4;
-const HOME_MENU_COLUMNS: usize = 2;
+use crate::system::external_apps::ExternalAppKind;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResolutionPreset {
@@ -33,6 +24,7 @@ pub struct PageActionResult {
     pub toggle_achievement_sort: bool,
     pub toggle_launch_on_startup: bool,
     pub launch_selected: bool,
+    pub launch_external_app: Option<ExternalAppKind>,
     pub selected_changed: bool,
     pub close_frame: bool,
     pub send_app_to_background: bool,
@@ -51,6 +43,7 @@ pub struct PageState {
     show_home_menu: bool,
     home_menu_anim: f32,
     home_menu_selected: usize,
+    home_menu_layout: HomeMenuLayout,
     home_menu_scroll_offset: f32,
     show_achievement_panel: bool,
     achievement_panel_anim: f32,
@@ -73,6 +66,7 @@ impl PageState {
             show_home_menu: false,
             home_menu_anim: 0.0,
             home_menu_selected: 0,
+            home_menu_layout: HomeMenuLayout::default(),
             home_menu_scroll_offset: 0.0,
             show_achievement_panel: false,
             achievement_panel_anim: 0.0,
@@ -119,8 +113,12 @@ impl PageState {
         self.home_menu_scroll_offset
     }
 
+    pub fn home_menu_layout(&self) -> &HomeMenuLayout {
+        &self.home_menu_layout
+    }
+
     pub fn home_menu_shutdown_selected(&self) -> bool {
-        HOME_MENU_HAS_POWER_OPTIONS && self.show_home_menu && self.home_menu_selected == 3
+        self.show_home_menu && self.home_menu_layout.is_shutdown_selected(self.home_menu_selected)
     }
 
     pub fn achievement_panel_anim(&self) -> f32 {
@@ -148,9 +146,11 @@ impl PageState {
         self.wake_anim_running = true;
     }
 
-    pub fn open_home_menu(&mut self) {
+    pub fn open_home_menu(&mut self, layout: HomeMenuLayout) {
+        let default_selected = layout.default_selected();
+        self.home_menu_layout = layout;
         self.home_menu_anim = 0.0;
-        self.home_menu_selected = 0;
+        self.home_menu_selected = default_selected;
         self.home_menu_scroll_offset = 0.0;
         self.show_home_menu = true;
     }
@@ -170,6 +170,7 @@ impl PageState {
             toggle_achievement_sort: false,
             toggle_launch_on_startup: false,
             launch_selected: false,
+            launch_external_app: None,
             selected_changed: false,
             close_frame: false,
             send_app_to_background: false,
@@ -180,92 +181,79 @@ impl PageState {
         if self.show_home_menu {
             match action {
                 ControllerAction::Left => {
-                    if self.home_menu_selected % HOME_MENU_COLUMNS > 0 {
-                        self.home_menu_selected -= 1;
+                    let next = self
+                        .home_menu_layout
+                        .move_selection(self.home_menu_selected, HomeMenuMove::Left);
+                    if next != self.home_menu_selected {
+                        self.home_menu_selected = next;
                         result.effective_input = true;
                     }
                 }
                 ControllerAction::Right => {
-                    if self.home_menu_selected % HOME_MENU_COLUMNS + 1 < HOME_MENU_COLUMNS
-                        && self.home_menu_selected + 1 < HOME_MENU_OPTION_COUNT
-                    {
-                        self.home_menu_selected += 1;
+                    let next = self
+                        .home_menu_layout
+                        .move_selection(self.home_menu_selected, HomeMenuMove::Right);
+                    if next != self.home_menu_selected {
+                        self.home_menu_selected = next;
                         result.effective_input = true;
                     }
                 }
                 ControllerAction::Up => {
-                    if self.home_menu_selected >= HOME_MENU_COLUMNS {
-                        self.home_menu_selected -= HOME_MENU_COLUMNS;
+                    let next = self
+                        .home_menu_layout
+                        .move_selection(self.home_menu_selected, HomeMenuMove::Up);
+                    if next != self.home_menu_selected {
+                        self.home_menu_selected = next;
                         result.effective_input = true;
                     }
                 }
                 ControllerAction::Down => {
-                    let target = self.home_menu_selected + HOME_MENU_COLUMNS;
-                    if target < HOME_MENU_OPTION_COUNT {
-                        self.home_menu_selected = target;
+                    let next = self
+                        .home_menu_layout
+                        .move_selection(self.home_menu_selected, HomeMenuMove::Down);
+                    if next != self.home_menu_selected {
+                        self.home_menu_selected = next;
                         result.effective_input = true;
                     }
                 }
                 ControllerAction::Launch => {
-                    let selected_option = self.home_menu_selected;
-                    if HOME_MENU_HAS_POWER_OPTIONS {
-                        match selected_option {
-                            0 => {
-                                self.close_home_menu();
-                                result.effective_input = true;
-                                result.send_app_to_background = true;
-                            }
-                            1 => {
-                                self.close_home_menu();
-                                result.effective_input = true;
-                                result.close_frame = true;
-                            }
-                            2 => {
-                                self.close_home_menu();
-                                result.effective_input = true;
-                                result.power_action = Some(PowerAction::Sleep);
-                            }
-                            3 => {}
-                            4 => {
-                                self.close_home_menu();
-                                result.effective_input = true;
-                                result.set_resolution = Some(ResolutionPreset::HalfMaxRefresh);
-                            }
-                            5 => {
-                                self.close_home_menu();
-                                result.effective_input = true;
-                                result.set_resolution = Some(ResolutionPreset::MaxRefresh);
-                            }
-                            6 => {
-                                result.effective_input = true;
-                                result.toggle_launch_on_startup = true;
-                            }
-                            _ => {}
+                    match self.home_menu_layout.option_at(self.home_menu_selected) {
+                        Some(HomeMenuOption::ExternalApp(kind)) => {
+                            self.close_home_menu();
+                            result.effective_input = true;
+                            result.launch_external_app = Some(kind);
                         }
-                    } else {
-                        match selected_option {
-                            0 => {
-                                self.close_home_menu();
-                                result.effective_input = true;
-                                result.send_app_to_background = true;
-                            }
-                            1 => {
-                                self.close_home_menu();
-                                result.effective_input = true;
-                                result.close_frame = true;
-                            }
-                            2 => {
-                                self.close_home_menu();
-                                result.effective_input = true;
-                                result.set_resolution = Some(ResolutionPreset::HalfMaxRefresh);
-                            }
-                            3 => {
-                                self.close_home_menu();
-                                result.effective_input = true;
-                                result.set_resolution = Some(ResolutionPreset::MaxRefresh);
-                            }
-                            _ => {}
+                        Some(HomeMenuOption::MinimizeApp) => {
+                            self.close_home_menu();
+                            result.effective_input = true;
+                            result.send_app_to_background = true;
                         }
+                        Some(HomeMenuOption::CloseApp) => {
+                            self.close_home_menu();
+                            result.effective_input = true;
+                            result.close_frame = true;
+                        }
+                        Some(HomeMenuOption::Sleep) => {
+                            self.close_home_menu();
+                            result.effective_input = true;
+                            result.power_action = Some(PowerAction::Sleep);
+                        }
+                        Some(HomeMenuOption::Shutdown) => {}
+                        Some(HomeMenuOption::HalfMaxRefresh) => {
+                            self.close_home_menu();
+                            result.effective_input = true;
+                            result.set_resolution = Some(ResolutionPreset::HalfMaxRefresh);
+                        }
+                        Some(HomeMenuOption::MaxRefresh) => {
+                            self.close_home_menu();
+                            result.effective_input = true;
+                            result.set_resolution = Some(ResolutionPreset::MaxRefresh);
+                        }
+                        Some(HomeMenuOption::LaunchOnStartup) => {
+                            result.effective_input = true;
+                            result.toggle_launch_on_startup = true;
+                        }
+                        None => {}
                     }
                 }
                 ControllerAction::Quit => {
@@ -444,7 +432,7 @@ impl PageState {
     fn close_home_menu(&mut self) {
         self.show_home_menu = false;
         self.home_menu_anim = 0.0;
-        self.home_menu_selected = 0;
+        self.home_menu_selected = self.home_menu_layout.clamp_selected(0);
         self.home_menu_scroll_offset = 0.0;
     }
 }
@@ -452,7 +440,19 @@ impl PageState {
 #[cfg(test)]
 mod tests {
     use super::{PageState, PowerAction, ResolutionPreset};
+    use crate::home_menu_structure::HomeMenuLayout;
     use crate::input::ControllerAction;
+    use crate::system::external_apps::ExternalAppKind;
+
+    #[cfg(target_os = "windows")]
+    fn home_menu_layout() -> HomeMenuLayout {
+        HomeMenuLayout::new(&[], true, true)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn home_menu_layout() -> HomeMenuLayout {
+        HomeMenuLayout::new(&[], false, false)
+    }
 
     #[test]
     fn up_on_first_achievement_returns_to_game_list() {
@@ -483,7 +483,7 @@ mod tests {
     #[test]
     fn quit_on_home_menu_closes_immediately_without_animation() {
         let mut page = PageState::new();
-        page.open_home_menu();
+        page.open_home_menu(home_menu_layout());
 
         let _ = page.handle_action(&ControllerAction::Quit, 3, true, 4);
 
@@ -494,7 +494,7 @@ mod tests {
     #[test]
     fn home_menu_navigates_to_close_app_option_with_right() {
         let mut page = PageState::new();
-        page.open_home_menu();
+        page.open_home_menu(home_menu_layout());
 
         let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
 
@@ -502,9 +502,58 @@ mod tests {
     }
 
     #[test]
+    fn home_menu_defaults_to_minimize_when_external_icons_exist() {
+        let mut page = PageState::new();
+        page.open_home_menu(HomeMenuLayout::new(
+            &[ExternalAppKind::DlssSwapper],
+            cfg!(target_os = "windows"),
+            cfg!(target_os = "windows"),
+        ));
+
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert!(result.send_app_to_background);
+        assert_eq!(result.launch_external_app, None);
+    }
+
+    #[test]
+    fn left_from_minimize_selects_external_icon() {
+        let mut page = PageState::new();
+        page.open_home_menu(HomeMenuLayout::new(
+            &[ExternalAppKind::DlssSwapper],
+            cfg!(target_os = "windows"),
+            cfg!(target_os = "windows"),
+        ));
+
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        #[cfg(target_os = "windows")]
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert_eq!(result.launch_external_app, Some(ExternalAppKind::DlssSwapper));
+    }
+
+    #[test]
+    fn up_from_minimize_does_not_jump_to_external_icon() {
+        let mut page = PageState::new();
+        page.open_home_menu(HomeMenuLayout::new(
+            &[ExternalAppKind::DlssSwapper],
+            cfg!(target_os = "windows"),
+            cfg!(target_os = "windows"),
+        ));
+
+        let _ = page.handle_action(&ControllerAction::Up, 3, true, 4);
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert!(result.send_app_to_background);
+        assert_eq!(result.launch_external_app, None);
+    }
+
+    #[test]
     fn launch_on_close_app_option_closes_frame() {
         let mut page = PageState::new();
-        page.open_home_menu();
+        page.open_home_menu(home_menu_layout());
         let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
 
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
@@ -519,11 +568,12 @@ mod tests {
     #[test]
     fn launch_on_startup_option_toggles_without_closing_menu() {
         let mut page = PageState::new();
-        page.open_home_menu();
+        page.open_home_menu(home_menu_layout());
 
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
-        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
 
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
 
@@ -531,12 +581,26 @@ mod tests {
         assert!(page.show_home_menu());
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn right_from_close_app_selects_startup_option() {
+        let mut page = PageState::new();
+        page.open_home_menu(home_menu_layout());
+
+        let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
+        let result = page.handle_action(&ControllerAction::Right, 3, true, 4);
+
+        assert!(result.effective_input);
+
+        let launch_result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+        assert!(launch_result.toggle_launch_on_startup);
+    }
+
     #[test]
     fn home_menu_selection_stops_at_last_option() {
         let mut page = PageState::new();
-        page.open_home_menu();
+        page.open_home_menu(home_menu_layout());
 
-        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
@@ -554,7 +618,7 @@ mod tests {
     #[test]
     fn down_moves_home_menu_selection_to_power_row() {
         let mut page = PageState::new();
-        page.open_home_menu();
+        page.open_home_menu(home_menu_layout());
 
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
 
@@ -565,7 +629,7 @@ mod tests {
     #[test]
     fn second_down_moves_home_menu_selection_to_resolution_row() {
         let mut page = PageState::new();
-        page.open_home_menu();
+        page.open_home_menu(home_menu_layout());
 
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
@@ -577,7 +641,7 @@ mod tests {
     #[test]
     fn down_moves_home_menu_selection_to_resolution_row() {
         let mut page = PageState::new();
-        page.open_home_menu();
+        page.open_home_menu(home_menu_layout());
 
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
 
@@ -587,7 +651,7 @@ mod tests {
     #[test]
     fn up_returns_home_menu_selection_to_top_row() {
         let mut page = PageState::new();
-        page.open_home_menu();
+        page.open_home_menu(home_menu_layout());
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Up, 3, true, 4);
 
@@ -597,7 +661,7 @@ mod tests {
     #[test]
     fn launch_on_default_home_menu_option_sends_app_to_background() {
         let mut page = PageState::new();
-        page.open_home_menu();
+        page.open_home_menu(home_menu_layout());
 
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
 
@@ -611,7 +675,7 @@ mod tests {
     #[test]
     fn launch_on_sleep_option_requests_sleep() {
         let mut page = PageState::new();
-        page.open_home_menu();
+        page.open_home_menu(home_menu_layout());
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
 
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
@@ -626,7 +690,7 @@ mod tests {
     #[test]
     fn launch_on_shutdown_option_waits_for_hold() {
         let mut page = PageState::new();
-        page.open_home_menu();
+        page.open_home_menu(home_menu_layout());
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
 
@@ -642,7 +706,7 @@ mod tests {
     #[test]
     fn launch_on_half_refresh_option_requests_resolution_change() {
         let mut page = PageState::new();
-        page.open_home_menu();
+        page.open_home_menu(home_menu_layout());
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
 
@@ -662,7 +726,7 @@ mod tests {
     #[test]
     fn launch_on_half_refresh_option_requests_resolution_change() {
         let mut page = PageState::new();
-        page.open_home_menu();
+        page.open_home_menu(home_menu_layout());
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
 
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
@@ -680,7 +744,7 @@ mod tests {
     #[test]
     fn launch_on_max_refresh_option_requests_resolution_change() {
         let mut page = PageState::new();
-        page.open_home_menu();
+        page.open_home_menu(home_menu_layout());
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
@@ -701,7 +765,7 @@ mod tests {
     #[test]
     fn launch_on_max_refresh_option_requests_resolution_change() {
         let mut page = PageState::new();
-        page.open_home_menu();
+        page.open_home_menu(home_menu_layout());
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
 
@@ -714,6 +778,46 @@ mod tests {
         assert!(!result.send_app_to_background);
         assert!(!result.close_frame);
         assert!(!page.show_home_menu());
+    }
+
+    #[test]
+    fn single_external_app_is_reachable_from_left_of_main_menu() {
+        let mut page = PageState::new();
+        page.open_home_menu(HomeMenuLayout::new(
+            &[ExternalAppKind::DlssSwapper],
+            cfg!(target_os = "windows"),
+            cfg!(target_os = "windows"),
+        ));
+
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        #[cfg(target_os = "windows")]
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert_eq!(result.launch_external_app, Some(ExternalAppKind::DlssSwapper));
+        assert!(!page.show_home_menu());
+    }
+
+    #[test]
+    fn right_column_does_not_jump_to_missing_external_slot() {
+        let mut page = PageState::new();
+        page.open_home_menu(HomeMenuLayout::new(
+            &[ExternalAppKind::DlssSwapper],
+            cfg!(target_os = "windows"),
+            cfg!(target_os = "windows"),
+        ));
+
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        #[cfg(target_os = "windows")]
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
+
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert_eq!(result.launch_external_app, Some(ExternalAppKind::DlssSwapper));
     }
 
     #[test]
