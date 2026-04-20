@@ -13,8 +13,6 @@ const ICON_SIZES: [u32; 6] = [16, 32, 48, 64, 128, 256];
 const SVG_PATH: &str = "assets/app-icon.svg";
 const PNG_FILE_NAME: &str = "app-icon-256.png";
 const ICO_FILE_NAME: &str = "app-icon.ico";
-const APP_DISPLAY_NAME: &str = "Big Screen Launcher";
-const APP_BINARY_NAME: &str = "big-screen-launcher.exe";
 const GA4_MEASUREMENT_ID_ENV: &str = "GA4_MEASUREMENT_ID";
 const GA4_API_SECRET_ENV: &str = "GA4_API_SECRET";
 const GA4_ENABLED_ENV: &str = "GA4_ENABLED";
@@ -109,10 +107,6 @@ fn render_svg(svg: &str, size: u32) -> Result<Vec<u8>, Box<dyn Error>> {
 #[cfg(target_os = "windows")]
 fn compile_windows_resource(icon_path: &Path) -> Result<(), Box<dyn Error>> {
     let mut resource = winres::WindowsResource::new();
-    resource.set("FileDescription", APP_DISPLAY_NAME);
-    resource.set("ProductName", APP_DISPLAY_NAME);
-    resource.set("InternalName", APP_BINARY_NAME);
-    resource.set("OriginalFilename", APP_BINARY_NAME);
     resource.set_icon(
         icon_path
             .to_str()

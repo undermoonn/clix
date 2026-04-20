@@ -20,7 +20,7 @@ chrono = { version = "0.4", default-features = true, features = ["clock"] }
 sys-locale = "0.3"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["winuser", "wingdi", "shellapi", "xinput", "psapi", "processthreadsapi", "handleapi", "winver", "libloaderapi", "propsys", "propkey", "propidl", "combaseapi"] }
+winapi = { version = "0.3", features = ["winuser", "wingdi", "shellapi", "xinput", "psapi", "processthreadsapi", "handleapi", "winver", "libloaderapi"] }
 libloading = "0.7"
 crc32fast = "1"
 raw-window-handle = "0.6"
