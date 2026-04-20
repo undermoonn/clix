@@ -42,6 +42,18 @@ impl LaunchState {
     pub fn elapsed_seconds(&self) -> f32 {
         self.started_at.elapsed().as_secs_f32()
     }
+
+    pub fn game_name(&self) -> &str {
+        &self.game_name
+    }
+
+    pub fn app_id(&self) -> Option<u32> {
+        self.launch_app_id
+    }
+
+    pub fn is_focus_transition(&self) -> bool {
+        self.awaiting_launch_release
+    }
 }
 
 impl RunningGameState {

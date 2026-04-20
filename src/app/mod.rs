@@ -10,6 +10,7 @@ use eframe::egui;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use crate::analytics::Analytics;
 use crate::i18n::AppLanguage;
 use crate::input::{self, InputController};
 use crate::launch::{self, LaunchState};
@@ -48,6 +49,7 @@ pub struct LauncherApp {
     playtime: PlaytimeState,
     install_size: InstallSizeState,
     runtime: RuntimeState,
+    analytics: Analytics,
     resolution_options: ResolutionOptions,
     launch_on_startup_enabled: bool,
     home_menu_external_apps: Vec<ExternalApp>,
@@ -66,6 +68,8 @@ impl LauncherApp {
 
         let steam_paths = steam::find_steam_paths();
         let games = steam::scan_games_with_paths(&steam_paths);
+        let launch_on_startup_enabled = startup::is_enabled();
+        let home_menu_external_apps = external_apps::detect_installed();
         let mut app = LauncherApp {
             language,
             games,
@@ -82,13 +86,19 @@ impl LauncherApp {
             playtime: PlaytimeState::new(),
             install_size: InstallSizeState::new(),
             runtime: RuntimeState::new(),
+            analytics: Analytics::new(language_tag(language)),
             resolution_options: display_mode::detect_resolution_options(),
-            launch_on_startup_enabled: startup::is_enabled(),
-            home_menu_external_apps: external_apps::detect_installed(),
+            launch_on_startup_enabled,
+            home_menu_external_apps,
             wake_focus_pending: false,
             pending_send_to_background: false,
         };
         app.refresh_selected_install_size(ctx);
+        app.analytics.track_app_open(
+            app.games.len(),
+            app.home_menu_external_apps.len(),
+            app.launch_on_startup_enabled,
+        );
         app
     }
 
@@ -103,19 +113,33 @@ impl LauncherApp {
             .unwrap_or(false)
     }
 
-
     fn launch_selected(&mut self) {
         let selected = self.page.selected();
         if let Some(state) = self.running_games.get(&selected) {
+            if let Some(game) = self.games.get(selected) {
+                self.analytics
+                    .track_game_launch_request(&game.name, game.app_id, "resume");
+            }
             if let Some(focus_state) = launch::begin_focus_transition(selected, state) {
                 self.launch_state = Some(focus_state);
             } else {
-                let _ = launch::focus_running_game(state);
+                let focused = launch::focus_running_game(state);
+                if let Some(game) = self.games.get(selected) {
+                    self.analytics.track_game_launch_result(
+                        &game.name,
+                        game.app_id,
+                        if focused { "ready" } else { "failed" },
+                        "resume",
+                        0,
+                    );
+                }
             }
             return;
         }
 
         if let Some(game) = self.games.get(selected) {
+            self.analytics
+                .track_game_launch_request(&game.name, game.app_id, "cold_start");
             self.launch_state =
                 launch::begin_launch(selected, game, &self.steam_paths);
         }
@@ -127,10 +151,34 @@ impl LauncherApp {
             match launch::tick_launch_progress(state, launch_held) {
                 launch::LaunchTickResult::Pending => {}
                 launch::LaunchTickResult::Ready(running_game) => {
+                    let launch_source = if state.is_focus_transition() {
+                        "resume"
+                    } else {
+                        "cold_start"
+                    };
+                    self.analytics.track_game_launch_result(
+                        state.game_name(),
+                        state.app_id(),
+                        "ready",
+                        launch_source,
+                        (state.elapsed_seconds() * 1000.0).round() as u64,
+                    );
                     self.running_games.insert(running_game.game_index, running_game);
                     self.launch_state = None;
                 }
                 launch::LaunchTickResult::TimedOut => {
+                    let launch_source = if state.is_focus_transition() {
+                        "resume"
+                    } else {
+                        "cold_start"
+                    };
+                    self.analytics.track_game_launch_result(
+                        state.game_name(),
+                        state.app_id(),
+                        "timeout",
+                        launch_source,
+                        (state.elapsed_seconds() * 1000.0).round() as u64,
+                    );
                     self.launch_state = None;
                 }
             }
@@ -359,6 +407,10 @@ impl eframe::App for LauncherApp {
             }
 
             if result.open_achievement_panel {
+                if let Some(game) = self.games.get(self.page.selected()) {
+                    self.analytics
+                        .track_achievement_panel_open(&game.name, game.app_id);
+                }
                 self.achievements.refresh_details_for_selected(
                     self.games.get(self.page.selected()),
                     &self.steam_paths,
@@ -392,6 +444,8 @@ impl eframe::App for LauncherApp {
                 } else {
                     self.launch_on_startup_enabled = startup::is_enabled();
                 }
+                self.analytics
+                    .track_launch_on_startup_toggle(self.launch_on_startup_enabled);
                 ctx.request_repaint();
             }
             if achievement_selection_changed {
@@ -406,7 +460,9 @@ impl eframe::App for LauncherApp {
                 self.launch_selected();
             }
             if let Some(kind) = result.launch_external_app {
-                let _ = external_apps::launch(kind, &self.home_menu_external_apps);
+                let launched = external_apps::launch(kind, &self.home_menu_external_apps);
+                self.analytics
+                    .track_external_app_launch(external_app_name(kind), launched);
             }
             if result.send_app_to_background {
                 self.pending_send_to_background = true;
@@ -415,6 +471,8 @@ impl eframe::App for LauncherApp {
             }
             if let Some(preset) = result.set_resolution {
                 self.apply_resolution_preset(preset);
+                self.analytics
+                    .track_display_resolution_change(resolution_preset_name(preset));
             }
             if let Some(power_action) = result.power_action {
                 self.apply_power_action(power_action, &ctx, frame);
@@ -605,6 +663,27 @@ fn achievement_panel_scope_app_id(
         selected_app_id
     } else {
         None
+    }
+}
+
+fn language_tag(language: AppLanguage) -> &'static str {
+    match language {
+        AppLanguage::English => "en",
+        AppLanguage::SimplifiedChinese => "zh-CN",
+    }
+}
+
+fn external_app_name(kind: external_apps::ExternalAppKind) -> &'static str {
+    match kind {
+        external_apps::ExternalAppKind::DlssSwapper => "dlss_swapper",
+        external_apps::ExternalAppKind::NvidiaApp => "nvidia_app",
+    }
+}
+
+fn resolution_preset_name(preset: ResolutionPreset) -> &'static str {
+    match preset {
+        ResolutionPreset::HalfMaxRefresh => "half_max_refresh",
+        ResolutionPreset::MaxRefresh => "max_refresh",
     }
 }
 

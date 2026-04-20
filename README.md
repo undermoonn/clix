@@ -6,6 +6,7 @@ A controller-first launcher designed to deliver a console-like user experience f
 
 Detects locally installed Steam games and supports displaying achievement lists.
 Controller input currently supports XInput devices only.
+On Windows, outbound requests also follow the system proxy configuration.
 
 ## Screenshots
 
