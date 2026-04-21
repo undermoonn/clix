@@ -19,7 +19,7 @@ pub const NAV_REPEAT_ACCEL_STAGE1_AFTER_MS: u128 = 500;
 pub const NAV_REPEAT_ACCEL_STAGE2_AFTER_MS: u128 = 1300;
 pub const NAV_REPEAT_INTERVAL_STAGE1_MS: u128 = 80;
 pub const NAV_REPEAT_INTERVAL_STAGE2_MS: u128 = 45;
-pub const FOCUS_COOLDOWN_MS: u128 = 500;
+pub const FOCUS_COOLDOWN_MS: u128 = 100;
 
 #[cfg(target_os = "windows")]
 pub fn start_watchers(ctx: egui::Context) {
