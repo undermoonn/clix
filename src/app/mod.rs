@@ -398,6 +398,7 @@ impl eframe::App for LauncherApp {
                         self.language,
                         &ctx,
                     );
+                    self.refresh_selected_install_size(&ctx);
                 }
                 if result.reveal_hidden_achievement
                     && self.achievements.reveal_hidden_description_for_selected(
@@ -433,7 +434,6 @@ impl eframe::App for LauncherApp {
                 if result.selected_changed {
                     self.input.pulse_selection_change();
                     self.refresh_selected_playtime(&ctx);
-                    self.refresh_selected_install_size(&ctx);
                 }
                 if result.launch_selected && !self.selected_launch_pending() {
                     self.launch_selected();
