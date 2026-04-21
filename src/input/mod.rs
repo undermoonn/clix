@@ -57,7 +57,6 @@ pub enum ControllerAction {
     Right,
     Launch,
     Refresh,
-    Sort,
     Quit,
 }
 
@@ -69,13 +68,12 @@ enum InputAction {
     Right,
     Launch,
     Refresh,
-    Sort,
     Quit,
     ForceClose,
 }
 
 impl InputAction {
-    const COUNT: usize = 9;
+    const COUNT: usize = 8;
     const ALL: [Self; Self::COUNT] = [
         Self::Up,
         Self::Down,
@@ -83,27 +81,24 @@ impl InputAction {
         Self::Right,
         Self::Launch,
         Self::Refresh,
-        Self::Sort,
         Self::Quit,
         Self::ForceClose,
     ];
-    const POLLABLE_ACTIONS: [Self; 7] = [
+    const POLLABLE_ACTIONS: [Self; 6] = [
         Self::Up,
         Self::Down,
         Self::Left,
         Self::Right,
         Self::Launch,
         Self::Refresh,
-        Self::Sort,
     ];
-    const POLLABLE_ACTIONS_WITH_QUIT: [Self; 8] = [
+    const POLLABLE_ACTIONS_WITH_QUIT: [Self; 7] = [
         Self::Up,
         Self::Down,
         Self::Left,
         Self::Right,
         Self::Launch,
         Self::Refresh,
-        Self::Sort,
         Self::Quit,
     ];
 
@@ -123,7 +118,6 @@ impl InputAction {
             "right" => Some(Self::Right),
             "launch" => Some(Self::Launch),
             "refresh" => Some(Self::Refresh),
-            "sort" => Some(Self::Sort),
             "quit" => Some(Self::Quit),
             "force_close" => Some(Self::ForceClose),
             _ => None,
@@ -146,14 +140,13 @@ impl InputAction {
             Self::Right => Some(ControllerAction::Right),
             Self::Launch => Some(ControllerAction::Launch),
             Self::Refresh => Some(ControllerAction::Refresh),
-            Self::Sort => Some(ControllerAction::Sort),
             Self::Quit => Some(ControllerAction::Quit),
             Self::ForceClose => None,
         }
     }
 
     fn repeats(self) -> bool {
-        !matches!(self, Self::Refresh | Self::Sort)
+        !matches!(self, Self::Refresh)
     }
 
     fn pollable_actions(include_quit_action: bool) -> &'static [Self] {
@@ -240,9 +233,6 @@ impl InputAggregateState {
         if self.buttons.intersects(Buttons::X) {
             raw_held.insert(InputAction::Refresh);
             raw_held.insert(InputAction::ForceClose);
-        }
-        if self.buttons.intersects(Buttons::Y) {
-            raw_held.insert(InputAction::Sort);
         }
     }
 
@@ -683,27 +673,27 @@ mod tests {
     }
 
     #[test]
-    fn refresh_and_sort_do_not_repeat_while_held() {
+    fn refresh_does_not_repeat_while_held() {
         let mut input = InputController::new();
         let now = Instant::now();
         let held_until = now + Duration::from_millis((NAV_REPEAT_ACCEL_STAGE1_AFTER_MS + 250) as u64);
 
         let first = input.poll_with_raw_held(
-            raw_held(&[InputAction::Refresh, InputAction::Sort]),
+            raw_held(&[InputAction::Refresh]),
             true,
             false,
             None,
             now,
         );
         let held = input.poll_with_raw_held(
-            raw_held(&[InputAction::Refresh, InputAction::Sort]),
+            raw_held(&[InputAction::Refresh]),
             true,
             false,
             None,
             held_until,
         );
 
-        assert!(matches!(first.actions.as_slice(), [ControllerAction::Refresh, ControllerAction::Sort]));
+        assert!(matches!(first.actions.as_slice(), [ControllerAction::Refresh]));
         assert!(held.actions.is_empty());
     }
 

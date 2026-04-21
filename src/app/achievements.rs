@@ -7,25 +7,6 @@ use crate::assets::cover;
 use crate::i18n::AppLanguage;
 use crate::steam::{self, AchievementSummary, Game};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AchievementSortOrder {
-    UnlockRateDesc,
-    UnlockRateAsc,
-}
-
-impl AchievementSortOrder {
-    pub fn is_descending(self) -> bool {
-        matches!(self, Self::UnlockRateDesc)
-    }
-
-    fn toggled(self) -> Self {
-        match self {
-            Self::UnlockRateDesc => Self::UnlockRateAsc,
-            Self::UnlockRateAsc => Self::UnlockRateDesc,
-        }
-    }
-}
-
 struct HiddenRevealState {
     api_name: String,
     progress: f32,
@@ -50,7 +31,6 @@ pub struct AchievementState {
     previous_overview_reveal: f32,
     detail_cache: Option<(u32, AchievementSummary)>,
     revealed_hidden: HashMap<u32, HiddenRevealState>,
-    sort_order: AchievementSortOrder,
     pending: Arc<Mutex<Vec<PendingAchievementResult>>>,
     overview_loading: HashSet<u32>,
     detail_loading: HashSet<u32>,
@@ -62,6 +42,7 @@ pub struct AchievementState {
     icon_loading: HashSet<String>,
     icon_failed: HashSet<String>,
     icon_reveal: HashMap<String, f32>,
+    percent_reveal: HashMap<String, f32>,
     icon_scope_app_id: Option<u32>,
     icon_generation: u64,
     text_reveal: HashMap<u32, f32>,
@@ -79,7 +60,6 @@ impl AchievementState {
             previous_overview_reveal: 0.0,
             detail_cache: None,
             revealed_hidden: HashMap::new(),
-            sort_order: AchievementSortOrder::UnlockRateDesc,
             pending: Arc::new(Mutex::new(Vec::new())),
             overview_loading: HashSet::new(),
             detail_loading: HashSet::new(),
@@ -91,6 +71,7 @@ impl AchievementState {
             icon_loading: HashSet::new(),
             icon_failed: HashSet::new(),
             icon_reveal: HashMap::new(),
+            percent_reveal: HashMap::new(),
             icon_scope_app_id: None,
             icon_generation: 0,
             text_reveal: HashMap::new(),
@@ -166,7 +147,7 @@ impl AchievementState {
         let ctx_clone = ctx.clone();
 
         std::thread::spawn(move || {
-            let data = steam::load_achievement_summary(app_id, &paths, language);
+            let data = steam::load_achievement_summary(app_id, &paths, language, false);
             if let Ok(mut lock) = pending.lock() {
                 lock.push((PendingAchievementKind::Overview, app_id, data));
             }
@@ -235,6 +216,10 @@ impl AchievementState {
         self.language = language;
         self.sync_detail_scope(Some(app_id));
 
+        if !force_refresh {
+            steam::request_global_achievement_percentages_refresh(app_id);
+        }
+
         if !force_refresh
             && self.checked_detail_for == Some(app_id)
             && self.detail_cache
@@ -248,7 +233,7 @@ impl AchievementState {
 
         if !force_refresh {
             if let Some(mut summary) = steam::load_cached_achievement_summary(app_id, language) {
-                steam::sort_achievement_items(&mut summary.items, self.sort_order.is_descending());
+                steam::sort_achievement_items(&mut summary.items);
                 self.no_data.remove(&app_id);
                 self.store_detail_summary(app_id, summary, false);
                 return;
@@ -271,9 +256,15 @@ impl AchievementState {
         let pending = Arc::clone(&self.pending);
         let paths = steam_paths.to_vec();
         let ctx_clone = ctx.clone();
+        let allow_global_percentage_refresh = force_refresh;
 
         std::thread::spawn(move || {
-            let data = steam::load_achievement_summary(app_id, &paths, language);
+            let data = steam::load_achievement_summary(
+                app_id,
+                &paths,
+                language,
+                allow_global_percentage_refresh,
+            );
             if let Ok(mut lock) = pending.lock() {
                 lock.push((PendingAchievementKind::Details, app_id, data));
             }
@@ -288,8 +279,6 @@ impl AchievementState {
             };
             lock.drain(..).collect::<Vec<_>>()
         };
-
-        let sort_descending = self.sort_order.is_descending();
 
         for (kind, app_id, summary) in pending_results {
             match kind {
@@ -321,7 +310,7 @@ impl AchievementState {
                             if let Some(previous_summary) = previous_detail {
                                 preserve_missing_global_percents(&mut summary, previous_summary);
                             }
-                            steam::sort_achievement_items(&mut summary.items, sort_descending);
+                            steam::sort_achievement_items(&mut summary.items);
                             steam::store_cached_achievement_summary(app_id, &summary, self.language);
                             self.no_data.remove(&app_id);
                             self.store_detail_summary(app_id, summary, true);
@@ -339,18 +328,6 @@ impl AchievementState {
                 }
             }
         }
-    }
-
-    pub fn toggle_sort_order(&mut self) {
-        self.sort_order = self.sort_order.toggled();
-        if let Some((_, summary)) = self.detail_cache.as_mut() {
-            let descending = self.sort_order.is_descending();
-            steam::sort_achievement_items(&mut summary.items, descending);
-        }
-    }
-
-    pub fn sort_order(&self) -> AchievementSortOrder {
-        self.sort_order
     }
 
     pub fn reveal_hidden_description_for_selected(
@@ -511,6 +488,21 @@ impl AchievementState {
             }
         });
 
+        self.percent_reveal.retain(|_, progress| {
+            if *progress >= 0.999 {
+                return false;
+            }
+
+            const ACHIEVEMENT_PERCENT_FADE_IN_SECONDS: f32 = 0.3;
+            *progress = (*progress + dt / ACHIEVEMENT_PERCENT_FADE_IN_SECONDS).min(1.0);
+            if *progress < 0.999 {
+                ctx.request_repaint();
+                true
+            } else {
+                false
+            }
+        });
+
         self.revealed_hidden.retain(|_, state| {
             if state.progress >= 0.999 {
                 return true;
@@ -637,6 +629,10 @@ impl AchievementState {
         &self.icon_reveal
     }
 
+    pub fn percent_reveal(&self) -> &HashMap<String, f32> {
+        &self.percent_reveal
+    }
+
     pub fn sync_summary_scope(&mut self, app_id: Option<u32>) {
         if self.displayed_overview_app_id != app_id {
             if let Some(previous_app_id) = self.displayed_overview_app_id {
@@ -671,9 +667,11 @@ impl AchievementState {
             .is_some_and(|(detail_app_id, _)| Some(*detail_app_id) != app_id)
         {
             self.detail_cache = None;
+            self.percent_reveal.clear();
         }
         if app_id.is_none() {
             self.checked_detail_for = None;
+            self.percent_reveal.clear();
         }
     }
 
@@ -711,9 +709,50 @@ impl AchievementState {
         summary: AchievementSummary,
         animate_reveal: bool,
     ) {
+        let previous_percents: HashMap<String, f32> = self
+            .detail_cache
+            .as_ref()
+            .filter(|(detail_app_id, _)| *detail_app_id == app_id)
+            .map(|(_, detail)| {
+                detail
+                    .items
+                    .iter()
+                    .filter_map(|item| item.global_percent.map(|percent| (item.api_name.clone(), percent)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.update_percent_reveal(&summary, &previous_percents, animate_reveal);
         let overview = overview_from_summary(&summary);
         self.detail_cache = Some((app_id, summary));
         self.store_overview_summary(app_id, overview, animate_reveal);
+    }
+
+    fn update_percent_reveal(
+        &mut self,
+        summary: &AchievementSummary,
+        previous_percents: &HashMap<String, f32>,
+        animate_reveal: bool,
+    ) {
+        let mut next_reveal = HashMap::new();
+        for item in &summary.items {
+            let Some(_) = item.global_percent else {
+                continue;
+            };
+
+            let progress = if previous_percents.contains_key(&item.api_name) {
+                self.percent_reveal
+                    .get(&item.api_name)
+                    .copied()
+                    .unwrap_or(1.0)
+            } else if animate_reveal {
+                0.0
+            } else {
+                1.0
+            };
+            next_reveal.insert(item.api_name.clone(), progress);
+        }
+
+        self.percent_reveal = next_reveal;
     }
 }
 

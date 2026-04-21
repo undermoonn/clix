@@ -20,7 +20,6 @@ pub struct PageActionResult {
     pub open_achievement_panel: bool,
     pub reveal_hidden_achievement: bool,
     pub refresh_achievements: bool,
-    pub toggle_achievement_sort: bool,
     pub toggle_launch_on_startup: bool,
     pub launch_selected: bool,
     pub launch_external_app: Option<ExternalAppKind>,
@@ -165,7 +164,6 @@ impl PageState {
             open_achievement_panel: false,
             reveal_hidden_achievement: false,
             refresh_achievements: false,
-            toggle_achievement_sort: false,
             toggle_launch_on_startup: false,
             launch_selected: false,
             launch_external_app: None,
@@ -274,10 +272,6 @@ impl PageState {
                 ControllerAction::Refresh => {
                     result.refresh_achievements = true;
                 }
-                ControllerAction::Sort => {
-                    self.reset_achievement_selection();
-                    result.toggle_achievement_sort = true;
-                }
                 _ => {}
             }
             return result;
@@ -311,7 +305,6 @@ impl PageState {
                 result.launch_selected = true;
             }
             ControllerAction::Refresh => {}
-            ControllerAction::Sort => {}
             ControllerAction::Quit => {}
             ControllerAction::Up => {}
         }
@@ -804,18 +797,4 @@ mod tests {
         assert!(!result.launch_selected);
     }
 
-    #[test]
-    fn achievement_panel_sort_resets_selection_to_top() {
-        let mut page = PageState::new();
-        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
-        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
-        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
-
-        assert_eq!(page.achievement_selected(), 2);
-
-        let result = page.handle_action(&ControllerAction::Sort, 3, true, 4);
-
-        assert!(result.toggle_achievement_sort);
-        assert_eq!(page.achievement_selected(), 0);
-    }
 }

@@ -6,7 +6,6 @@ pub struct HintIcons {
     pub btn_a: egui::TextureHandle,
     pub btn_b: egui::TextureHandle,
     pub btn_x: egui::TextureHandle,
-    pub btn_y: egui::TextureHandle,
     pub dpad_down: egui::TextureHandle,
     pub guide: egui::TextureHandle,
 }
@@ -24,13 +23,12 @@ fn png_bytes_to_texture(
 }
 
 pub fn load_hint_icons(ctx: &egui::Context, theme: PromptIconTheme) -> Option<HintIcons> {
-    let (btn_a_bytes, btn_b_bytes, btn_x_bytes, btn_y_bytes, dpad_down_bytes, guide_bytes, label_prefix) =
+    let (btn_a_bytes, btn_b_bytes, btn_x_bytes, dpad_down_bytes, guide_bytes, label_prefix) =
         match theme {
             PromptIconTheme::Xbox => (
                 include_bytes!("../icons/Xbox Series/xbox_button_a_outline.png") as &[u8],
                 include_bytes!("../icons/Xbox Series/xbox_button_b_outline.png") as &[u8],
                 include_bytes!("../icons/Xbox Series/xbox_button_x_outline.png") as &[u8],
-                include_bytes!("../icons/Xbox Series/xbox_button_y_outline.png") as &[u8],
                 include_bytes!("../icons/Xbox Series/xbox_dpad_down_outline.png") as &[u8],
                 include_bytes!("../icons/Xbox Series/xbox_guide_outline.png") as &[u8],
                 "xbox_series",
@@ -39,7 +37,6 @@ pub fn load_hint_icons(ctx: &egui::Context, theme: PromptIconTheme) -> Option<Hi
                 include_bytes!("../icons/PlayStation Series/playstation_button_cross_outline.png") as &[u8],
                 include_bytes!("../icons/PlayStation Series/playstation_button_circle_outline.png") as &[u8],
                 include_bytes!("../icons/PlayStation Series/playstation_button_square_outline.png") as &[u8],
-                include_bytes!("../icons/PlayStation Series/playstation_button_triangle_outline.png") as &[u8],
                 include_bytes!("../icons/PlayStation Series/playstation_dpad_down_outline.png") as &[u8],
                 include_bytes!("../icons/PlayStation Series/playstation_home.png") as &[u8],
                 "playstation_series",
@@ -49,7 +46,6 @@ pub fn load_hint_icons(ctx: &egui::Context, theme: PromptIconTheme) -> Option<Hi
     let btn_a = png_bytes_to_texture(ctx, btn_a_bytes, &format!("{}_icon_btn_a", label_prefix))?;
     let btn_b = png_bytes_to_texture(ctx, btn_b_bytes, &format!("{}_icon_btn_b", label_prefix))?;
     let btn_x = png_bytes_to_texture(ctx, btn_x_bytes, &format!("{}_icon_btn_x", label_prefix))?;
-    let btn_y = png_bytes_to_texture(ctx, btn_y_bytes, &format!("{}_icon_btn_y", label_prefix))?;
     let dpad_down = png_bytes_to_texture(
         ctx,
         dpad_down_bytes,
@@ -60,7 +56,6 @@ pub fn load_hint_icons(ctx: &egui::Context, theme: PromptIconTheme) -> Option<Hi
         btn_a,
         btn_b,
         btn_x,
-        btn_y,
         dpad_down,
         guide,
     })

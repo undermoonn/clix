@@ -383,7 +383,6 @@ impl eframe::App for LauncherApp {
                 if result.selected_changed
                     || result.open_achievement_panel
                     || refresh_requested
-                    || result.toggle_achievement_sort
                     || achievement_selection_changed
                     || achievement_panel_closed
                 {
@@ -415,10 +414,6 @@ impl eframe::App for LauncherApp {
                         self.language,
                         &ctx,
                     );
-                }
-                if result.toggle_achievement_sort {
-                    self.achievements.toggle_sort_order();
-                    ctx.request_repaint();
                 }
                 if result.toggle_launch_on_startup {
                     if startup::set_enabled(!self.launch_on_startup_enabled) {
@@ -583,9 +578,9 @@ impl eframe::App for LauncherApp {
                             self.hint_icons.as_ref(),
                             self.achievements.revealed_hidden_for_selected(selected_game),
                             self.achievements.hidden_reveal_progress_for_selected(selected_game),
-                            self.achievements.sort_order().is_descending(),
                             self.achievements.icon_cache(),
                             self.achievements.icon_reveal(),
+                            self.achievements.percent_reveal(),
                         )
                         .into_iter()
                         .for_each(|url| visible_achievement_icon_urls.push(url));

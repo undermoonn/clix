@@ -40,7 +40,7 @@ struct CachedGlobalAchievementPercentages {
     percentages: HashMap<String, f32>,
 }
 
-const GLOBAL_ACHIEVEMENT_PERCENTAGES_CACHE_TTL_SECS: u64 = 12 * 60 * 60;
+const GLOBAL_ACHIEVEMENT_PERCENTAGES_CACHE_TTL_SECS: u64 = 60 * 60;
 
 static GLOBAL_ACHIEVEMENT_PERCENTAGES_REFRESHES: OnceLock<Mutex<HashSet<u32>>> = OnceLock::new();
 static GLOBAL_ACHIEVEMENT_PERCENTAGES_UPDATED: OnceLock<Mutex<Vec<u32>>> = OnceLock::new();
@@ -290,9 +290,26 @@ fn refresh_global_achievement_percentages_in_background(app_id: u32) {
     });
 }
 
-pub(super) fn load_global_achievement_percentages(app_id: u32) -> HashMap<String, f32> {
+pub fn request_global_achievement_percentages_refresh(app_id: u32) {
     if let Some(cached) = load_cached_global_achievement_percentages(app_id) {
         if global_achievement_percentages_cache_is_fresh(cached.fetched_at_unix_secs) {
+            return;
+        }
+    }
+
+    refresh_global_achievement_percentages_in_background(app_id);
+}
+
+pub(super) fn load_global_achievement_percentages(
+    app_id: u32,
+    allow_network_refresh: bool,
+) -> HashMap<String, f32> {
+    if let Some(cached) = load_cached_global_achievement_percentages(app_id) {
+        if global_achievement_percentages_cache_is_fresh(cached.fetched_at_unix_secs) {
+            return cached.percentages;
+        }
+
+        if !allow_network_refresh {
             return cached.percentages;
         }
 
@@ -300,6 +317,10 @@ pub(super) fn load_global_achievement_percentages(app_id: u32) -> HashMap<String
             refresh_global_achievement_percentages_in_background(app_id);
             return cached.percentages;
         }
+    }
+
+    if !allow_network_refresh {
+        return HashMap::new();
     }
 
     let Some(percentages) = fetch_global_achievement_percentages(app_id) else {

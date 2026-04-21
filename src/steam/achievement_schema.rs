@@ -345,12 +345,14 @@ pub(super) fn load_local_schema_items(
     let metadata = load_schema_achievement_metadata(app_id, steam_paths, language);
     let mut items_map = HashMap::new();
 
-    for entries in bits.values() {
-        for (_, info) in entries {
+    for (group_key, entries) in &bits {
+        for (bit_index, info) in entries {
             let item = items_map
                 .entry(info.api_name.clone())
                 .or_insert_with(|| AchievementItem {
                     api_name: info.api_name.clone(),
+                    group_key: Some(group_key.clone()),
+                    bit_index: Some(*bit_index),
                     display_name: None,
                     description: None,
                     is_hidden: false,
@@ -360,6 +362,8 @@ pub(super) fn load_local_schema_items(
                     icon_url: None,
                     icon_gray_url: None,
                 });
+            item.group_key = item.group_key.clone().or(Some(group_key.clone()));
+            item.bit_index = item.bit_index.or(Some(*bit_index));
             if item.display_name.is_none() {
                 item.display_name = info.display_name.clone();
             }
@@ -389,6 +393,8 @@ pub(super) fn load_local_schema_items(
             .entry(api_name.clone())
             .or_insert_with(|| AchievementItem {
                 api_name,
+                group_key: None,
+                bit_index: None,
                 display_name: None,
                 description: None,
                 is_hidden: false,

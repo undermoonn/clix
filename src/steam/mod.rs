@@ -7,7 +7,8 @@ mod types;
 
 pub use achievement_cache::{
     load_cached_achievement_overview, load_cached_achievement_summary,
-    store_cached_achievement_summary, take_updated_global_achievement_percentages,
+    request_global_achievement_percentages_refresh, store_cached_achievement_summary,
+    take_updated_global_achievement_percentages,
 };
 pub use achievements::{load_achievement_summary, sort_achievement_items};
 pub use library::{

@@ -15,6 +15,10 @@ pub struct Game {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AchievementItem {
     pub api_name: String,
+    #[serde(default)]
+    pub group_key: Option<String>,
+    #[serde(default)]
+    pub bit_index: Option<u32>,
     pub display_name: Option<String>,
     pub description: Option<String>,
     #[serde(default)]

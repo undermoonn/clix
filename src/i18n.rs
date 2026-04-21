@@ -189,17 +189,10 @@ impl AppLanguage {
         }
     }
 
-    pub fn unlock_rate_high_to_low_text(self) -> &'static str {
+    pub fn format_achievement_unlock_rate(self, percent: f32) -> String {
         match self {
-            Self::English => "Rate High-Low",
-            Self::SimplifiedChinese => "解锁率高到低",
-        }
-    }
-
-    pub fn unlock_rate_low_to_high_text(self) -> &'static str {
-        match self {
-            Self::English => "Rate Low-High",
-            Self::SimplifiedChinese => "解锁率低到高",
+            Self::English => format!("Unlocked by {:.1}% of players", percent),
+            Self::SimplifiedChinese => format!("{:.1}%的玩家已解锁", percent),
         }
     }
 

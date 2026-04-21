@@ -7,50 +7,41 @@ use super::achievement_bvdf::load_local_unlock_status;
 use super::achievement_cache::load_global_achievement_percentages;
 use super::achievement_schema::{
     load_local_schema_achievement_names, load_local_schema_items,
-    load_schema_achievement_metadata, load_schema_descriptions,
-    load_schema_display_names, load_schema_icon_urls,
+    load_schema_achievement_metadata, load_schema_descriptions, load_schema_display_names,
+    load_schema_icon_urls,
 };
 use super::types::{AchievementItem, AchievementSummary};
 
-fn achievement_unlock_sort_rank(unlocked: Option<bool>) -> u8 {
-    match unlocked {
-        Some(true) => 0,
-        Some(false) => 1,
-        None => 2,
+fn compare_achievement_api_names(left: &str, right: &str) -> std::cmp::Ordering {
+    match (left.parse::<u32>(), right.parse::<u32>()) {
+        (Ok(left_number), Ok(right_number)) => left_number.cmp(&right_number),
+        _ => left.cmp(right),
     }
 }
 
-fn achievement_percent_sort_value(global_percent: Option<f32>) -> Option<f32> {
-    match global_percent {
-        Some(value) if value.is_finite() => Some(value),
-        _ => None,
+fn compare_optional_group_keys(left: Option<&str>, right: Option<&str>) -> std::cmp::Ordering {
+    match (left, right) {
+        (Some(left), Some(right)) => compare_achievement_api_names(left, right),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
     }
 }
 
-pub fn sort_achievement_items(items: &mut [AchievementItem], descending: bool) {
+fn compare_optional_bit_indices(left: Option<u32>, right: Option<u32>) -> std::cmp::Ordering {
+    match (left, right) {
+        (Some(left), Some(right)) => left.cmp(&right),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    }
+}
+
+pub fn sort_achievement_items(items: &mut [AchievementItem]) {
     items.sort_by(|a, b| {
-        let a_percent = achievement_percent_sort_value(a.global_percent);
-        let b_percent = achievement_percent_sort_value(b.global_percent);
-
-        a_percent
-            .is_none()
-            .cmp(&b_percent.is_none())
-            .then_with(|| match (a_percent, b_percent) {
-                (Some(a_percent), Some(b_percent)) if descending => b_percent.total_cmp(&a_percent),
-                (Some(a_percent), Some(b_percent)) => a_percent.total_cmp(&b_percent),
-                _ => std::cmp::Ordering::Equal,
-            })
-            .then_with(|| {
-                achievement_unlock_sort_rank(a.unlocked)
-                    .cmp(&achievement_unlock_sort_rank(b.unlocked))
-            })
-            .then_with(|| {
-                a.display_name
-                    .as_deref()
-                    .unwrap_or(&a.api_name)
-                    .cmp(b.display_name.as_deref().unwrap_or(&b.api_name))
-            })
-            .then_with(|| a.api_name.cmp(&b.api_name))
+        compare_optional_group_keys(a.group_key.as_deref(), b.group_key.as_deref())
+            .then_with(|| compare_optional_bit_indices(a.bit_index, b.bit_index))
+            .then_with(|| compare_achievement_api_names(&a.api_name, &b.api_name))
     });
 }
 
@@ -58,6 +49,7 @@ pub fn load_achievement_summary(
     app_id: u32,
     steam_paths: &[PathBuf],
     language: AppLanguage,
+    allow_global_percentage_refresh: bool,
 ) -> Option<AchievementSummary> {
     let local_unlocks = load_local_unlock_status(app_id, steam_paths, language);
     let mut items_map = load_local_schema_items(app_id, steam_paths, language);
@@ -77,9 +69,16 @@ pub fn load_achievement_summary(
         return None;
     }
 
-    merge_schema_metadata(app_id, steam_paths, language, &mut items_map);
+    merge_schema_metadata(
+        app_id,
+        steam_paths,
+        language,
+        &mut items_map,
+        allow_global_percentage_refresh,
+    );
 
-    let items: Vec<AchievementItem> = items_map.into_values().collect();
+    let mut items: Vec<AchievementItem> = items_map.into_values().collect();
+    sort_achievement_items(&mut items);
 
     Some(AchievementSummary {
         unlocked: unlocked_count,
@@ -122,12 +121,14 @@ fn merge_schema_metadata(
     steam_paths: &[PathBuf],
     language: AppLanguage,
     items_map: &mut HashMap<String, AchievementItem>,
+    allow_global_percentage_refresh: bool,
 ) {
     let display_names = load_schema_display_names(app_id, steam_paths, language);
     let descriptions = load_schema_descriptions(app_id, steam_paths, language);
     let hidden_flags = load_schema_achievement_metadata(app_id, steam_paths, language);
     let schema_icons = load_schema_icon_urls(app_id, steam_paths, language);
-    let global_percentages = load_global_achievement_percentages(app_id);
+    let global_percentages =
+        load_global_achievement_percentages(app_id, allow_global_percentage_refresh);
 
     for item in items_map.values_mut() {
         if item.display_name.is_none() {
@@ -164,6 +165,8 @@ fn merge_schema_metadata(
 fn empty_achievement_item(api_name: String) -> AchievementItem {
     AchievementItem {
         api_name,
+        group_key: None,
+        bit_index: None,
         display_name: None,
         description: None,
         is_hidden: false,
@@ -177,68 +180,91 @@ fn empty_achievement_item(api_name: String) -> AchievementItem {
 
 #[cfg(test)]
 mod tests {
-    use super::{achievement_percent_sort_value, sort_achievement_items};
+    use super::sort_achievement_items;
     use crate::steam::types::AchievementItem;
 
     #[test]
-    fn achievement_sort_defaults_to_highest_unlock_rate_first() {
+    fn achievement_sort_orders_by_group_then_bit() {
         let mut items = vec![
             AchievementItem {
-                api_name: "unknown".to_string(),
-                unlocked: None,
-                global_percent: Some(2.0),
+                api_name: "33".to_string(),
+                group_key: Some("2".to_string()),
+                bit_index: Some(0),
                 ..AchievementItem::default()
             },
             AchievementItem {
-                api_name: "unlocked".to_string(),
-                unlocked: Some(true),
-                global_percent: Some(1.0),
+                api_name: "2".to_string(),
+                group_key: Some("1".to_string()),
+                bit_index: Some(1),
                 ..AchievementItem::default()
             },
             AchievementItem {
-                api_name: "locked".to_string(),
-                unlocked: Some(false),
-                global_percent: Some(f32::NAN),
+                api_name: "1".to_string(),
+                group_key: Some("1".to_string()),
+                bit_index: Some(0),
+                ..AchievementItem::default()
+            },
+            AchievementItem {
+                api_name: "34".to_string(),
+                group_key: Some("2".to_string()),
+                bit_index: Some(1),
                 ..AchievementItem::default()
             },
         ];
 
-        sort_achievement_items(&mut items, true);
+        sort_achievement_items(&mut items);
 
         let names: Vec<_> = items.iter().map(|item| item.api_name.as_str()).collect();
-        assert_eq!(names, vec!["unknown", "unlocked", "locked"]);
+        assert_eq!(names, vec!["1", "2", "33", "34"]);
     }
 
     #[test]
-    fn achievement_sort_can_switch_to_lowest_unlock_rate_first() {
+    fn achievement_sort_uses_api_name_as_final_tiebreaker() {
         let mut items = vec![
             AchievementItem {
-                api_name: "rare".to_string(),
-                global_percent: Some(1.5),
+                api_name: "10".to_string(),
+                group_key: Some("1".to_string()),
+                bit_index: Some(3),
                 ..AchievementItem::default()
             },
             AchievementItem {
-                api_name: "common".to_string(),
-                global_percent: Some(62.5),
+                api_name: "2".to_string(),
+                group_key: Some("1".to_string()),
+                bit_index: Some(3),
                 ..AchievementItem::default()
             },
             AchievementItem {
-                api_name: "unknown".to_string(),
-                global_percent: None,
+                api_name: "1".to_string(),
+                group_key: Some("1".to_string()),
+                bit_index: Some(3),
                 ..AchievementItem::default()
             },
         ];
 
-        sort_achievement_items(&mut items, false);
+        sort_achievement_items(&mut items);
 
         let names: Vec<_> = items.into_iter().map(|item| item.api_name).collect();
-        assert_eq!(names, vec!["rare", "common", "unknown"]);
+        assert_eq!(names, vec!["1", "2", "10"]);
     }
 
     #[test]
-    fn achievement_percent_sort_value_filters_invalid_values() {
-        assert_eq!(achievement_percent_sort_value(Some(18.2)), Some(18.2));
-        assert_eq!(achievement_percent_sort_value(Some(f32::NAN)), None);
-        assert_eq!(achievement_percent_sort_value(None), None);
+    fn achievement_sort_places_missing_group_after_grouped_items() {
+        let mut items = vec![
+            AchievementItem {
+                api_name: "ungrouped".to_string(),
+                ..AchievementItem::default()
+            },
+            AchievementItem {
+                api_name: "1".to_string(),
+                group_key: Some("1".to_string()),
+                bit_index: Some(0),
+                ..AchievementItem::default()
+            },
+        ];
+
+        sort_achievement_items(&mut items);
+
+        let names: Vec<_> = items.into_iter().map(|item| item.api_name).collect();
+        assert_eq!(names, vec!["1", "ungrouped"]);
     }
 }

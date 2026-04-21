@@ -9,7 +9,7 @@ pub fn app_root_dir() -> PathBuf {
 }
 
 pub fn cache_subdir(name: &str) -> PathBuf {
-    let dir = app_root_dir().join("cache").join(name);
+    let dir = app_root_dir().join("big_screen_launcher_cache").join(name);
 
     let _ = std::fs::create_dir_all(&dir);
     dir
