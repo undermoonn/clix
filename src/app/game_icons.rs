@@ -1,12 +1,10 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use eframe::egui;
 
 use crate::assets::cover;
 use crate::steam::Game;
-
-const ICON_WINDOW_RADIUS: usize = 11;
 
 pub struct GameIconState {
     textures: HashMap<u32, egui::TextureHandle>,
@@ -24,25 +22,14 @@ impl GameIconState {
         ctx: &egui::Context,
         steam_paths: &[PathBuf],
         games: &[Game],
-        selected: usize,
+        _selected: usize,
     ) {
         if games.is_empty() {
             self.textures.clear();
             return;
         }
 
-        let selected = selected.min(games.len().saturating_sub(1));
-        let range_start = selected.saturating_sub(ICON_WINDOW_RADIUS);
-        let range_end = (selected + ICON_WINDOW_RADIUS + 1).min(games.len());
-        let visible_app_ids: HashSet<u32> = games[range_start..range_end]
-            .iter()
-            .filter_map(|game| game.app_id)
-            .collect();
-
-        self.textures
-            .retain(|app_id, _| visible_app_ids.contains(app_id));
-
-        for game in &games[range_start..range_end] {
+        for game in games {
             if let Some(app_id) = game.app_id {
                 if self.textures.contains_key(&app_id) {
                     continue;
