@@ -5,17 +5,17 @@ A controller-first launcher designed to deliver a console-like user experience f
 ## Features
 
 Detects locally installed Steam games and supports displaying achievement lists.
-Controller input currently supports XInput devices only.
+Controller input currently supports XInput and DualSense connected with USB.
 
 ## Screenshots
 
 Examples of the current UI are shown below:
 
-![Home Screen](./screenshots/Big%20Screen%20Launcher%202026_4_18%2021_50_58.png)
+![Home Screen](./screenshots/Big%20Screen%20Launcher%202026_4_21%2018_33_42.png)
 
-![Settings Screen](./screenshots/Big%20Screen%20Launcher%202026_4_18%2021_51_23.png)
+![Settings Screen](./screenshots/Big%20Screen%20Launcher%202026_4_21%2018_33_51.png)
 
-![Achievements Screen](./screenshots/Big%20Screen%20Launcher%202026_4_18%2021_51_13.png)
+![Achievements Screen](./screenshots/Big%20Screen%20Launcher%202026_4_21%2018_33_47.png)
 
 ## License
 
