@@ -2,22 +2,20 @@ use std::time::Instant;
 
 use crate::input::FOCUS_COOLDOWN_MS;
 
-pub const HOLD_TO_OPEN_HOME_MENU_MS: f32 = 500.0;
 pub const HOLD_TO_FORCE_CLOSE_GAME_MS: f32 = 2000.0;
 pub const HOLD_TO_SHUTDOWN_MS: f32 = 500.0;
 
 pub struct RuntimeState {
     had_focus: bool,
     focus_cooldown_until: Option<Instant>,
-    home_hold_started_at: Option<Instant>,
-    home_hold_consumed: bool,
+    home_button_was_held: bool,
     shutdown_hold_started_at: Option<Instant>,
     shutdown_hold_progress: f32,
     shutdown_hold_consumed: bool,
     force_close_hold_started_at: Option<Instant>,
     force_close_hold_progress: f32,
     force_close_hold_consumed: bool,
-    suppress_home_hold_until_release: bool,
+    suppress_home_press_until_release: bool,
 }
 
 pub struct FocusUpdate {
@@ -27,9 +25,8 @@ pub struct FocusUpdate {
     pub did_lose_focus: bool,
 }
 
-pub struct HomeHoldUpdate {
+pub struct HomeButtonUpdate {
     pub trigger_menu: bool,
-    pub should_repaint: bool,
 }
 
 pub struct ForceCloseHoldUpdate {
@@ -47,15 +44,14 @@ impl RuntimeState {
         Self {
             had_focus: true,
             focus_cooldown_until: None,
-            home_hold_started_at: None,
-            home_hold_consumed: false,
+            home_button_was_held: false,
             shutdown_hold_started_at: None,
             shutdown_hold_progress: 0.0,
             shutdown_hold_consumed: false,
             force_close_hold_started_at: None,
             force_close_hold_progress: 0.0,
             force_close_hold_consumed: false,
-            suppress_home_hold_until_release: false,
+            suppress_home_press_until_release: false,
         }
     }
 
@@ -95,59 +91,29 @@ impl RuntimeState {
         }
     }
 
-    pub fn update_home_hold(
+    pub fn update_home_button(
         &mut self,
         process_input: bool,
         home_menu_open: bool,
         guide_held: bool,
-        now: Instant,
-    ) -> HomeHoldUpdate {
-        if self.suppress_home_hold_until_release {
-            if guide_held {
-                self.home_hold_started_at = None;
-                self.home_hold_consumed = false;
-            } else {
-                self.suppress_home_hold_until_release = false;
+    ) -> HomeButtonUpdate {
+        let just_pressed = guide_held && !self.home_button_was_held;
+        self.home_button_was_held = guide_held;
+
+        if self.suppress_home_press_until_release {
+            if !guide_held {
+                self.suppress_home_press_until_release = false;
             }
 
-            return HomeHoldUpdate {
-                trigger_menu: false,
-                should_repaint: guide_held,
-            };
+            return HomeButtonUpdate { trigger_menu: false };
         }
 
-        if process_input && !home_menu_open && guide_held {
-            if self.home_hold_consumed {
-                return HomeHoldUpdate {
-                    trigger_menu: false,
-                    should_repaint: false,
-                };
-            }
-
-            let started_at = self.home_hold_started_at.get_or_insert(now);
-            let held_ms = now.duration_since(*started_at).as_secs_f32() * 1000.0;
-
-            if held_ms >= HOLD_TO_OPEN_HOME_MENU_MS {
-                self.home_hold_consumed = true;
-                self.suppress_home_hold_until_release = true;
-                HomeHoldUpdate {
-                    trigger_menu: true,
-                    should_repaint: false,
-                }
-            } else {
-                HomeHoldUpdate {
-                    trigger_menu: false,
-                    should_repaint: true,
-                }
-            }
-        } else {
-            self.home_hold_started_at = None;
-            self.home_hold_consumed = false;
-            HomeHoldUpdate {
-                trigger_menu: false,
-                should_repaint: false,
-            }
+        if process_input && !home_menu_open && just_pressed {
+            self.suppress_home_press_until_release = true;
+            return HomeButtonUpdate { trigger_menu: true };
         }
+
+        HomeButtonUpdate { trigger_menu: false }
     }
 
     pub fn update_force_close_hold(
@@ -238,7 +204,7 @@ impl RuntimeState {
     }
 
     pub fn suppress_home_hold_until_release(&mut self) {
-        self.suppress_home_hold_until_release = true;
+        self.suppress_home_press_until_release = true;
     }
 
     pub fn shutdown_hold_progress(&self) -> f32 {
@@ -317,17 +283,17 @@ mod tests {
     }
 
     #[test]
-    fn home_hold_requests_repaint_while_counting_down() {
+    fn home_button_opens_menu_on_single_press() {
         let mut runtime = RuntimeState::new();
-        let start = Instant::now();
 
-        let first = runtime.update_home_hold(true, false, true, start);
-        assert!(!first.trigger_menu);
-        assert!(first.should_repaint);
+        let first = runtime.update_home_button(true, false, true);
+        assert!(first.trigger_menu);
 
-        let done = runtime.update_home_hold(true, false, true, start + Duration::from_millis(500));
-        assert!(done.trigger_menu);
-        assert!(!done.should_repaint);
+        let held = runtime.update_home_button(true, false, true);
+        assert!(!held.trigger_menu);
+
+        let released = runtime.update_home_button(true, false, false);
+        assert!(!released.trigger_menu);
     }
 
     #[test]

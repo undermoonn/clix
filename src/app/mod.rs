@@ -316,13 +316,13 @@ impl eframe::App for LauncherApp {
 
         let actions = input_frame.actions;
         let selected_running = self.running_games.contains_key(&self.page.selected());
-        let home_hold = self.runtime.update_home_hold(
+        let home_button = self.runtime.update_home_button(
             process_input,
             self.page.show_home_menu(),
             guide_held,
-            now,
         );
-        if home_hold.should_repaint {
+        if home_button.trigger_menu {
+            self.refresh_home_menu_state();
             ctx.request_repaint();
         }
         let can_force_close = !self.page.show_achievement_panel();
@@ -332,10 +332,6 @@ impl eframe::App for LauncherApp {
             input_frame.force_close_held && can_force_close,
             now,
         );
-        if home_hold.trigger_menu {
-            self.refresh_home_menu_state();
-            ctx.request_repaint();
-        }
         if force_close_hold.trigger_force_close {
             if let Some(state) = self.running_games.get_mut(&self.page.selected()) {
                 if launch::close_running_game(state) {
