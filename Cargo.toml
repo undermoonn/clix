@@ -24,6 +24,7 @@ winapi = { version = "0.3", features = ["winuser", "wingdi", "shellapi", "xinput
 libloading = "0.7"
 crc32fast = "1"
 raw-window-handle = "0.6"
+hidapi = "2"
 
 [build-dependencies]
 ico = "0.5"

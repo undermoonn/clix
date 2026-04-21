@@ -39,6 +39,7 @@ pub struct LauncherApp {
     steam_paths: Vec<std::path::PathBuf>,
     artwork: ArtworkState,
     page: PageState,
+    hint_icon_theme: crate::config::PromptIconTheme,
     hint_icons: Option<ui::HintIcons>,
     game_icons: GameIconState,
     external_app_icons: ExternalAppIconState,
@@ -60,9 +61,7 @@ pub struct LauncherApp {
 impl LauncherApp {
     pub fn new(language: AppLanguage, ctx: &egui::Context) -> Self {
         #[cfg(target_os = "windows")]
-        input::start_repaint_watcher(ctx.clone());
-        #[cfg(target_os = "windows")]
-        input::xbox_home::start(ctx.clone());
+        input::start_watchers(ctx.clone());
         #[cfg(not(target_os = "windows"))]
         let _ = ctx;
 
@@ -70,6 +69,7 @@ impl LauncherApp {
         let games = steam::scan_games_with_paths(&steam_paths);
         let launch_on_startup_enabled = startup::is_enabled();
         let home_menu_external_apps = external_apps::detect_installed();
+        let hint_icon_theme = crate::config::load_hint_icon_theme();
         let mut app = LauncherApp {
             language,
             games,
@@ -77,7 +77,8 @@ impl LauncherApp {
             steam_paths,
             artwork: ArtworkState::new(),
             page: PageState::new(),
-            hint_icons: ui::load_hint_icons(ctx),
+            hint_icon_theme,
+            hint_icons: ui::load_hint_icons(ctx, hint_icon_theme),
             game_icons: GameIconState::new(),
             external_app_icons: ExternalAppIconState::new(),
             launch_state: None,
@@ -96,6 +97,17 @@ impl LauncherApp {
         };
         app.refresh_selected_install_size(ctx);
         app
+    }
+
+    fn set_hint_icon_theme(&mut self, theme: crate::config::PromptIconTheme, ctx: &egui::Context) {
+        if self.hint_icon_theme == theme {
+            return;
+        }
+
+        self.hint_icon_theme = theme;
+        self.hint_icons = ui::load_hint_icons(ctx, theme);
+        crate::config::store_hint_icon_theme(theme);
+        ctx.request_repaint();
     }
 
     fn can_open_achievement_panel_for_selected(&self) -> bool {
@@ -267,7 +279,7 @@ impl eframe::App for LauncherApp {
             ctx.request_repaint();
         }
 
-        if input::xbox_home::take_wake_request() {
+        if input::take_wake_request() {
             self.page.prepare_wake_animation();
             self.wake_focus_pending = true;
             self.runtime.suppress_home_hold_until_release();
@@ -284,7 +296,10 @@ impl eframe::App for LauncherApp {
             process_input,
             self.page.show_achievement_panel() || self.page.show_home_menu(),
         );
-        let guide_held = input::xbox_home::guide_held();
+        if let Some(theme) = input_frame.prompt_icon_theme {
+            self.set_hint_icon_theme(theme, &ctx);
+        }
+        let guide_held = input::home_held();
         let has_controller_activity = input_frame.has_input_activity || guide_held;
 
         if self.pending_send_to_background {

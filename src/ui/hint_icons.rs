@@ -1,5 +1,7 @@
 use eframe::egui;
 
+use crate::config::PromptIconTheme;
+
 pub struct HintIcons {
     pub btn_a: egui::TextureHandle,
     pub btn_b: egui::TextureHandle,
@@ -21,14 +23,28 @@ fn png_bytes_to_texture(
     Some(ctx.load_texture(label, image, egui::TextureOptions::LINEAR))
 }
 
-pub fn load_hint_icons(ctx: &egui::Context) -> Option<HintIcons> {
-    let btn_a_bytes = include_bytes!("../icons/Xbox Series/xbox_button_a_outline.png") as &[u8];
-    let btn_b_bytes = include_bytes!("../icons/Xbox Series/xbox_button_b_outline.png") as &[u8];
-    let btn_x_bytes = include_bytes!("../icons/Xbox Series/xbox_button_x_outline.png") as &[u8];
-    let btn_y_bytes = include_bytes!("../icons/Xbox Series/xbox_button_y_outline.png") as &[u8];
-    let dpad_down_bytes = include_bytes!("../icons/Xbox Series/xbox_dpad_down_outline.png") as &[u8];
-    let guide_bytes = include_bytes!("../icons/Xbox Series/xbox_guide_outline.png") as &[u8];
-    let label_prefix = "xbox_series";
+pub fn load_hint_icons(ctx: &egui::Context, theme: PromptIconTheme) -> Option<HintIcons> {
+    let (btn_a_bytes, btn_b_bytes, btn_x_bytes, btn_y_bytes, dpad_down_bytes, guide_bytes, label_prefix) =
+        match theme {
+            PromptIconTheme::Xbox => (
+                include_bytes!("../icons/Xbox Series/xbox_button_a_outline.png") as &[u8],
+                include_bytes!("../icons/Xbox Series/xbox_button_b_outline.png") as &[u8],
+                include_bytes!("../icons/Xbox Series/xbox_button_x_outline.png") as &[u8],
+                include_bytes!("../icons/Xbox Series/xbox_button_y_outline.png") as &[u8],
+                include_bytes!("../icons/Xbox Series/xbox_dpad_down_outline.png") as &[u8],
+                include_bytes!("../icons/Xbox Series/xbox_guide_outline.png") as &[u8],
+                "xbox_series",
+            ),
+            PromptIconTheme::PlayStation => (
+                include_bytes!("../icons/PlayStation Series/playstation_button_cross_outline.png") as &[u8],
+                include_bytes!("../icons/PlayStation Series/playstation_button_circle_outline.png") as &[u8],
+                include_bytes!("../icons/PlayStation Series/playstation_button_square_outline.png") as &[u8],
+                include_bytes!("../icons/PlayStation Series/playstation_button_triangle_outline.png") as &[u8],
+                include_bytes!("../icons/PlayStation Series/playstation_dpad_down_outline.png") as &[u8],
+                include_bytes!("../icons/PlayStation Series/playstation_home.png") as &[u8],
+                "playstation_series",
+            ),
+        };
 
     let btn_a = png_bytes_to_texture(ctx, btn_a_bytes, &format!("{}_icon_btn_a", label_prefix))?;
     let btn_b = png_bytes_to_texture(ctx, btn_b_bytes, &format!("{}_icon_btn_b", label_prefix))?;
