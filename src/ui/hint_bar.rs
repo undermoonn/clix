@@ -35,11 +35,15 @@ pub fn draw_hint_bar(
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
 
     let painter = ui.painter();
+    let clock_painter = ui.ctx().layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("system_time"),
+    ));
     let show_clock = true;
     let clock_gap = 34.0;
     let clock_font = egui::FontId::new(40.0, egui::FontFamily::Name("Bold".into()));
     let clock_galley = show_clock.then(|| {
-        painter.layout_no_wrap(
+        clock_painter.layout_no_wrap(
             chrono::Local::now().format("%H:%M").to_string(),
             clock_font,
             color_with_scaled_alpha(
@@ -150,7 +154,7 @@ pub fn draw_hint_bar(
             home_menu_x + action_icon_h + clock_gap,
             hint_y + row_h * 0.5 - clock_galley.size().y * 0.5,
         );
-        draw_main_clock(painter, clock_pos, wake_t);
+        draw_main_clock(&clock_painter, clock_pos, wake_t);
     }
 
     if achievement_panel_active {
