@@ -209,7 +209,14 @@ impl LauncherApp {
             .games
             .iter()
             .position(|game| game.persistent_key() == game_key)?;
-        self.page.force_select(new_index);
+        if game_index == self.page.selected() {
+            // The promoted game is the one the user is currently looking at –
+            // keep the selection animation intact so the press feedback only
+            // animates the icon, not the title/badge size.
+            self.page.relocate_selection(new_index);
+        } else {
+            self.page.force_select(new_index);
+        }
         Some(new_index)
     }
 

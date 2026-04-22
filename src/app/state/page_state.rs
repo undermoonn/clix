@@ -165,6 +165,18 @@ impl PageState {
         self.reset_achievement_selection();
     }
 
+    /// Relocate the current selection (e.g. after a list reorder that moved the
+    /// currently-selected item to a different index) without restarting the
+    /// selection animation or affecting achievement panel state.
+    pub fn relocate_selection(&mut self, selected: usize) {
+        self.selected = selected;
+        // Keep `select_anim_target` in sync with the new index so the next
+        // animation tick doesn't think the selection just changed and reset
+        // `select_anim` back to 0 (which would re-shrink the title/badge).
+        self.select_anim_target = Some(selected);
+        self.scroll_offset = selected as f32;
+    }
+
     pub fn open_home_menu(&mut self, layout: HomeMenuLayout) {
         let default_selected = layout.default_selected();
         self.home_menu_layout = layout;
