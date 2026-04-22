@@ -48,6 +48,11 @@ pub struct LauncherApp {
     game_icons: GameIconState,
     external_app_icons: ExternalAppIconState,
     launch_state: Option<LaunchState>,
+    /// Promotion of the launched game to the front of the list is deferred
+    /// until the launcher next regains focus (i.e. the user comes back from
+    /// the launched game), so reordering the list does not interfere with
+    /// the press animation or the focus-out/in transition.
+    pending_promotion: Option<String>,
     running_games: HashMap<usize, launch::RunningGameState>,
     achievements: AchievementState,
     playtime: PlaytimeState,
@@ -87,6 +92,7 @@ impl LauncherApp {
             game_icons: GameIconState::new(),
             external_app_icons: ExternalAppIconState::new(),
             launch_state: None,
+            pending_promotion: None,
             running_games: HashMap::new(),
             achievements: AchievementState::new(),
             playtime: PlaytimeState::new(),
@@ -135,7 +141,7 @@ impl LauncherApp {
         if let Some(state) = self.running_games.get(&selected) {
             if let Some(focus_state) = launch::begin_focus_transition(selected, state) {
                 self.launch_state = Some(focus_state);
-                let _ = self.promote_game_to_front(selected);
+                self.schedule_promotion(selected);
             } else {
                 if launch::focus_running_game(state) {
                     let _ = self.promote_game_to_front(selected);
@@ -147,9 +153,30 @@ impl LauncherApp {
         if let Some(game) = self.games.get(selected) {
             self.launch_state = launch::begin_launch(selected, game, &self.steam_paths);
             if self.launch_state.is_some() {
-                let _ = self.promote_game_to_front(selected);
+                self.schedule_promotion(selected);
             }
         }
+    }
+
+    fn schedule_promotion(&mut self, game_index: usize) {
+        let Some(game_key) = self.games.get(game_index).map(Game::persistent_key) else {
+            return;
+        };
+        self.pending_promotion = Some(game_key);
+    }
+
+    fn apply_pending_promotion(&mut self) {
+        let Some(game_key) = self.pending_promotion.take() else {
+            return;
+        };
+        let Some(index) = self
+            .games
+            .iter()
+            .position(|game| game.persistent_key() == game_key)
+        else {
+            return;
+        };
+        let _ = self.promote_game_to_front(index);
     }
 
     fn tick_launch_progress(&mut self, ctx: &egui::Context, launch_held: bool) {
@@ -348,6 +375,7 @@ impl eframe::App for LauncherApp {
         let focus = self.runtime.update_focus(has_focus, now);
 
         if focus.did_gain_focus {
+            self.apply_pending_promotion();
             self.page.start_wake_animation();
             self.refresh_selected_playtime(&ctx);
             self.refresh_selected_install_size(&ctx);
