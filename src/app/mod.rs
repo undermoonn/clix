@@ -503,6 +503,7 @@ impl eframe::App for LauncherApp {
         let selected_achievement_reveal = self.achievements.text_reveal_for_selected(selected_game);
         let previous_achievement_summary = self.achievements.previous_summary_for_display();
         let previous_achievement_reveal = self.achievements.previous_summary_reveal();
+        let summary_cards_visibility = self.page.summary_cards_visibility();
         let can_open_achievement_panel = self.can_open_achievement_panel_for_selected();
         let achievement_loading = self.achievements.loading_for_selected(selected_game);
         let achievement_refresh_loading = self.achievements.refresh_loading_for_selected(selected_game);
@@ -548,6 +549,7 @@ impl eframe::App for LauncherApp {
                     launch_feedback,
                     &running_indices,
                     self.page.show_achievement_panel(),
+                    summary_cards_visibility,
                     selected_achievement_summary,
                     selected_achievement_reveal,
                     previous_achievement_summary,

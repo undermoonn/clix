@@ -35,6 +35,7 @@ pub struct PageState {
     cover_nav_dir: f32,
     select_anim: f32,
     select_anim_target: Option<usize>,
+    summary_cards_visibility: f32,
     wake_anim: f32,
     wake_anim_running: bool,
     scroll_offset: f32,
@@ -58,6 +59,7 @@ impl PageState {
             cover_nav_dir: 0.0,
             select_anim: 0.0,
             select_anim_target: None,
+            summary_cards_visibility: 1.0,
             wake_anim: 1.0,
             wake_anim_running: false,
             scroll_offset: 0.0,
@@ -97,6 +99,14 @@ impl PageState {
 
     pub fn scroll_offset(&self) -> f32 {
         self.scroll_offset
+    }
+
+    pub fn is_fast_scrolling(&self) -> bool {
+        (self.selected as f32 - self.scroll_offset).abs() > 0.1
+    }
+
+    pub fn summary_cards_visibility(&self) -> f32 {
+        self.summary_cards_visibility
     }
 
     pub fn wake_anim(&self) -> f32 {
@@ -363,6 +373,17 @@ impl PageState {
             ctx.request_repaint();
         } else {
             self.scroll_offset = scroll_target;
+        }
+
+        let summary_cards_target = if self.is_fast_scrolling() { 0.0 } else { 1.0 };
+        let summary_cards_diff = summary_cards_target - self.summary_cards_visibility;
+        if summary_cards_diff.abs() > 0.001 {
+            let fade_speed = if summary_cards_diff < 0.0 { 18.0 } else { 10.0 };
+            self.summary_cards_visibility +=
+                summary_cards_diff * (1.0 - (-fade_speed * dt).exp());
+            ctx.request_repaint();
+        } else {
+            self.summary_cards_visibility = summary_cards_target;
         }
 
         if self.achievement_select_anim_target != Some(self.achievement_selected) {

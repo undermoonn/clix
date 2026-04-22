@@ -255,6 +255,7 @@ pub fn draw_achievement_page(
     let detail_summary_style = SelectedGameSummaryStyle {
         show_playtime: false,
         show_achievement_title: false,
+        hide_empty_achievement_card: false,
         card_height: 82.0,
     };
     let playtime_width = 0.0;
@@ -355,6 +356,7 @@ pub fn draw_achievement_page(
         achievement_x,
         achievement_width,
         &detail_summary_style,
+        1.0,
         wake_t,
     );
 

@@ -78,6 +78,7 @@ pub fn draw_game_list(
     launch_feedback: Option<(usize, f32)>,
     running_indices: &[usize],
     _achievement_panel_active: bool,
+    summary_cards_visibility: f32,
     achievement_summary_for_selected: Option<&AchievementSummary>,
     achievement_summary_reveal_for_selected: f32,
     previous_achievement_summary: Option<&AchievementSummary>,
@@ -228,19 +229,22 @@ pub fn draw_game_list(
             let title_pos = egui::pos2(title_x + badge_offset, title_y);
 
             draw_selected_game_title(&painter, &header, &g.name, title_pos, wake_t);
-            draw_selected_game_summary(
-                &painter,
-                language,
-                g,
-                achievement_summary_for_selected,
-                achievement_summary_reveal_for_selected,
-                summary_pos,
-                playtime_width,
-                achievement_x,
-                achievement_width,
-                &SelectedGameSummaryStyle::default(),
-                wake_t,
-            );
+            if summary_cards_visibility > 0.001 {
+                draw_selected_game_summary(
+                    &painter,
+                    language,
+                    g,
+                    achievement_summary_for_selected,
+                    achievement_summary_reveal_for_selected,
+                    summary_pos,
+                    playtime_width,
+                    achievement_x,
+                    achievement_width,
+                    &SelectedGameSummaryStyle::default(),
+                    summary_cards_visibility,
+                    wake_t,
+                );
+            }
         }
     }
 }

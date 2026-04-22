@@ -5,7 +5,7 @@ use eframe::egui;
 use crate::i18n::AppLanguage;
 use crate::steam::{AchievementSummary, Game};
 
-use super::anim::{lerp_f32, smoothstep01};
+use super::anim::lerp_f32;
 use super::text::{build_wrapped_galley, color_with_scaled_alpha, corner_radius, scale_alpha};
 
 pub(crate) fn dlss_tag_text(game: &Game) -> Option<String> {
@@ -173,6 +173,7 @@ pub(crate) struct SelectedGameHeaderContent {
 pub(crate) struct SelectedGameSummaryStyle {
     pub(crate) show_playtime: bool,
     pub(crate) show_achievement_title: bool,
+    pub(crate) hide_empty_achievement_card: bool,
     pub(crate) card_height: f32,
 }
 
@@ -181,6 +182,7 @@ impl Default for SelectedGameSummaryStyle {
         Self {
             show_playtime: true,
             show_achievement_title: true,
+            hide_empty_achievement_card: true,
             card_height: 106.0,
         }
     }
@@ -366,54 +368,68 @@ pub(crate) fn draw_selected_game_summary(
     achievement_x: f32,
     achievement_width: f32,
     style: &SelectedGameSummaryStyle,
-    wake_t: f32,
+    summary_visibility: f32,
+    _wake_t: f32,
 ) {
-    let panel_alpha = wake_t;
-    let content_alpha = wake_t * lerp_f32(0.55, 1.0, smoothstep01(summary_reveal));
+    let display_summary = summary.filter(|summary| summary.total > 0);
+    let show_achievement_card = display_summary.is_some() || !style.hide_empty_achievement_card;
+    let panel_alpha = summary_visibility;
+    let content_alpha = summary_visibility;
+    let achievement_reveal = if display_summary.is_some() {
+        summary_reveal.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let achievement_panel_alpha = panel_alpha * achievement_reveal;
+    let achievement_content_alpha = content_alpha * achievement_reveal;
     let card_height = style.card_height;
     let playtime_rect =
         egui::Rect::from_min_size(summary_pos, egui::vec2(playtime_width, card_height));
-    let achievement_rect = egui::Rect::from_min_size(
-        egui::pos2(
-            if style.show_playtime {
-                achievement_x
-            } else {
-                summary_pos.x
-            },
-            summary_pos.y,
-        ),
-        egui::vec2(achievement_width, card_height),
-    );
     let playtime_fill = color_with_scaled_alpha(
         egui::Color32::from_rgba_unmultiplied(28, 30, 34, 228),
         panel_alpha,
     );
     let achievement_fill = color_with_scaled_alpha(
         egui::Color32::from_rgba_unmultiplied(34, 36, 40, 236),
-        panel_alpha,
+        achievement_panel_alpha,
     );
-    let panel_stroke = egui::Stroke::new(
+    let playtime_stroke = egui::Stroke::new(
         1.2,
         color_with_scaled_alpha(
             egui::Color32::from_rgba_unmultiplied(255, 255, 255, 76),
             panel_alpha,
         ),
     );
+    let achievement_stroke = egui::Stroke::new(
+        1.2,
+        color_with_scaled_alpha(
+            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 76),
+            achievement_panel_alpha,
+        ),
+    );
     let title_font = egui::FontId::new(12.0, egui::FontFamily::Name("Bold".into()));
     let value_font = egui::FontId::new(28.0, egui::FontFamily::Name("Bold".into()));
     let achievement_count_font = egui::FontId::new(23.0, egui::FontFamily::Name("Bold".into()));
     let achievement_percent_font = egui::FontId::proportional(18.0);
-    let section_label_color = color_with_scaled_alpha(
+    let playtime_section_label_color = color_with_scaled_alpha(
         egui::Color32::from_rgba_unmultiplied(205, 205, 210, 220),
         content_alpha,
     );
-    let primary_text_color = color_with_scaled_alpha(
+    let achievement_section_label_color = color_with_scaled_alpha(
+        egui::Color32::from_rgba_unmultiplied(205, 205, 210, 220),
+        achievement_content_alpha,
+    );
+    let playtime_primary_text_color = color_with_scaled_alpha(
         egui::Color32::from_rgba_unmultiplied(250, 250, 252, 255),
         content_alpha,
     );
+    let achievement_primary_text_color = color_with_scaled_alpha(
+        egui::Color32::from_rgba_unmultiplied(250, 250, 252, 255),
+        achievement_content_alpha,
+    );
     let secondary_text_color = color_with_scaled_alpha(
         egui::Color32::from_rgba_unmultiplied(220, 220, 224, 232),
-        content_alpha,
+        achievement_content_alpha,
     );
 
     let section_titles = match language {
@@ -437,15 +453,16 @@ pub(crate) fn draw_selected_game_summary(
         painter.rect_stroke(
             playtime_rect,
             corner_radius(14.0),
-            panel_stroke,
+            playtime_stroke,
             egui::StrokeKind::Middle,
         );
         let playtime_label = painter.layout_no_wrap(
             section_titles.0.to_owned(),
             title_font.clone(),
-            section_label_color,
+            playtime_section_label_color,
         );
-        let playtime_galley = painter.layout_no_wrap(playtime_value, value_font, primary_text_color);
+        let playtime_galley =
+            painter.layout_no_wrap(playtime_value, value_font, playtime_primary_text_color);
         painter.galley(
             egui::pos2(playtime_rect.min.x + 16.0, playtime_rect.min.y + 10.0),
             playtime_label,
@@ -458,101 +475,109 @@ pub(crate) fn draw_selected_game_summary(
         );
     }
 
-    painter.rect_filled(achievement_rect, corner_radius(14.0), achievement_fill);
-    painter.rect_stroke(
-        achievement_rect,
-        corner_radius(14.0),
-        panel_stroke,
-        egui::StrokeKind::Middle,
-    );
-    let title_top = if style.show_achievement_title { 10.0 } else { 0.0 };
-    let count_top = if style.show_achievement_title { 42.0 } else { 20.0 };
-    let track_bottom = if style.show_achievement_title { 19.0 } else { 14.0 };
-    let track_top = if style.show_achievement_title { 14.0 } else { 9.0 };
-    if style.show_achievement_title {
-        let achievement_label = painter.layout_no_wrap(
-            section_titles.1.to_owned(),
-            title_font,
-            section_label_color,
-        );
-        painter.galley(
-            egui::pos2(achievement_rect.min.x + 16.0, achievement_rect.min.y + title_top),
-            achievement_label,
-            egui::Color32::WHITE,
-        );
-    }
-
-    let display_summary = summary.filter(|summary| summary.total > 0);
-    let unlocked = display_summary.and_then(|summary| summary.unlocked).unwrap_or(0);
-    let total = display_summary.map(|summary| summary.total).unwrap_or(0);
-    let progress = if total > 0 {
-        unlocked as f32 / total as f32
-    } else {
-        0.0
-    };
-    let progress_percent_text = if total > 0 {
-        format!("{:.0}%", progress * 100.0)
-    } else {
-        "--".to_owned()
-    };
-    let achievement_count_text = if total > 0 {
-        format!("{}/{}", unlocked, total)
-    } else {
-        section_titles.2.to_owned()
-    };
-    let count_galley =
-        painter.layout_no_wrap(achievement_count_text, achievement_count_font, primary_text_color);
-    let percent_galley = painter.layout_no_wrap(
-        progress_percent_text,
-        achievement_percent_font,
-        secondary_text_color,
-    );
-    let count_pos = egui::pos2(achievement_rect.min.x + 16.0, achievement_rect.min.y + count_top);
-    let percent_pos = egui::pos2(
-        achievement_rect.max.x - 16.0 - percent_galley.size().x,
-        count_pos.y + count_galley.size().y - percent_galley.size().y,
-    );
-    painter.galley(count_pos, count_galley, egui::Color32::WHITE);
-    painter.galley(percent_pos, percent_galley, egui::Color32::WHITE);
-
-    let track_rect = egui::Rect::from_min_max(
-        egui::pos2(achievement_rect.min.x + 16.0, achievement_rect.max.y - track_bottom),
-        egui::pos2(achievement_rect.max.x - 16.0, achievement_rect.max.y - track_top),
-    );
-    painter.rect_filled(
-        track_rect,
-        corner_radius(999.0),
-        color_with_scaled_alpha(
-            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 100),
-            panel_alpha,
-        ),
-    );
-    painter.rect_stroke(
-        track_rect,
-        corner_radius(999.0),
-        egui::Stroke::new(
-            1.0,
-            color_with_scaled_alpha(
-                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
-                panel_alpha,
+    if show_achievement_card {
+        let achievement_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                if style.show_playtime {
+                    achievement_x
+                } else {
+                    summary_pos.x
+                },
+                summary_pos.y,
             ),
-        ),
-        egui::StrokeKind::Middle,
-    );
-    if progress > 0.0 {
-        let fill_min_x = track_rect.min.x + 1.0;
-        let fill_max_x = lerp_f32(fill_min_x, track_rect.max.x - 1.0, progress.clamp(0.0, 1.0));
-        let fill_rect = egui::Rect::from_min_max(
-            egui::pos2(fill_min_x, track_rect.min.y + 1.0),
-            egui::pos2(fill_max_x.max(fill_min_x), track_rect.max.y - 1.0),
+            egui::vec2(achievement_width, card_height),
+        );
+        painter.rect_filled(achievement_rect, corner_radius(14.0), achievement_fill);
+        painter.rect_stroke(
+            achievement_rect,
+            corner_radius(14.0),
+            achievement_stroke,
+            egui::StrokeKind::Middle,
+        );
+
+        let title_top = if style.show_achievement_title { 10.0 } else { 0.0 };
+        let count_top = if style.show_achievement_title { 42.0 } else { 20.0 };
+        let track_bottom = if style.show_achievement_title { 19.0 } else { 14.0 };
+        let track_top = if style.show_achievement_title { 14.0 } else { 9.0 };
+
+        if style.show_achievement_title {
+            let achievement_label = painter.layout_no_wrap(
+                section_titles.1.to_owned(),
+                title_font,
+                achievement_section_label_color,
+            );
+            painter.galley(
+                egui::pos2(achievement_rect.min.x + 16.0, achievement_rect.min.y + title_top),
+                achievement_label,
+                egui::Color32::WHITE,
+            );
+        }
+
+        let unlocked = display_summary.and_then(|summary| summary.unlocked).unwrap_or(0);
+        let total = display_summary.map(|summary| summary.total).unwrap_or(0);
+        let progress = if total > 0 {
+            unlocked as f32 / total as f32
+        } else {
+            0.0
+        };
+        let progress_percent_text = if total > 0 {
+            format!("{:.0}%", progress * 100.0)
+        } else {
+            "--".to_owned()
+        };
+        let achievement_count_text = if total > 0 {
+            format!("{}/{}", unlocked, total)
+        } else {
+            section_titles.2.to_owned()
+        };
+        let count_galley = painter.layout_no_wrap(
+            achievement_count_text,
+            achievement_count_font,
+            achievement_primary_text_color,
+        );
+        let percent_galley = painter.layout_no_wrap(
+            progress_percent_text,
+            achievement_percent_font,
+            secondary_text_color,
+        );
+        let count_pos =
+            egui::pos2(achievement_rect.min.x + 16.0, achievement_rect.min.y + count_top);
+        let percent_pos = egui::pos2(
+            achievement_rect.max.x - 16.0 - percent_galley.size().x,
+            count_pos.y + count_galley.size().y - percent_galley.size().y,
+        );
+        painter.galley(count_pos, count_galley, egui::Color32::WHITE);
+        painter.galley(percent_pos, percent_galley, egui::Color32::WHITE);
+
+        let track_rect = egui::Rect::from_min_max(
+            egui::pos2(achievement_rect.min.x + 16.0, achievement_rect.max.y - track_bottom),
+            egui::pos2(achievement_rect.max.x - 16.0, achievement_rect.max.y - track_top),
         );
         painter.rect_filled(
-            fill_rect,
-            corner_radius(999.0),
+            track_rect,
+            corner_radius(track_rect.height() * 0.5),
             color_with_scaled_alpha(
-                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 240),
-                content_alpha,
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 100),
+                achievement_content_alpha,
             ),
         );
+
+        if progress > 0.0 {
+            let fill_rect = egui::Rect::from_min_max(
+                track_rect.min,
+                egui::pos2(
+                    lerp_f32(track_rect.min.x, track_rect.max.x, progress.clamp(0.0, 1.0)),
+                    track_rect.max.y,
+                ),
+            );
+            painter.rect_filled(
+                fill_rect,
+                corner_radius(fill_rect.height() * 0.5),
+                color_with_scaled_alpha(
+                    egui::Color32::from_rgba_unmultiplied(241, 241, 244, 188),
+                    achievement_content_alpha,
+                ),
+            );
+        }
     }
 }
