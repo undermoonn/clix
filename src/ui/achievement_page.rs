@@ -395,7 +395,7 @@ pub fn draw_achievement_page(
                 text.clone(),
                 egui::FontId::proportional(21.0),
                 color_with_scaled_alpha(
-                    egui::Color32::from_rgba_unmultiplied(150, 154, 162, 220),
+                    egui::Color32::from_rgba_unmultiplied(195, 199, 207, 255),
                     wake_t,
                 ),
             )
@@ -482,9 +482,9 @@ pub fn draw_achievement_page(
             egui::FontId::proportional(22.5),
             color_with_scaled_alpha(
                 if hidden_masked {
-                    egui::Color32::from_rgba_unmultiplied(150, 154, 160, 176)
+                    egui::Color32::from_rgba_unmultiplied(180, 184, 192, 220)
                 } else {
-                    egui::Color32::from_rgba_unmultiplied(148, 152, 160, 220)
+                    egui::Color32::from_rgba_unmultiplied(195, 199, 207, 255)
                 },
                 wake_t,
             ),
