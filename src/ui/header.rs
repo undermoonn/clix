@@ -5,7 +5,8 @@ use eframe::egui;
 use crate::i18n::AppLanguage;
 use crate::steam::{AchievementSummary, Game};
 
-use super::text::{build_wrapped_galley, corner_radius, scale_alpha};
+use super::anim::{lerp_f32, smoothstep01};
+use super::text::{build_wrapped_galley, color_with_scaled_alpha, corner_radius, scale_alpha};
 
 pub(crate) fn dlss_tag_text(game: &Game) -> Option<String> {
     game.dlss_version.as_ref().map(|version| {
@@ -24,62 +25,141 @@ pub(crate) fn installed_size_tag_text(language: AppLanguage, game: &Game) -> Opt
         .filter(|text| !text.is_empty())
 }
 
-pub(crate) fn draw_title_tag(
+pub(crate) struct SelectedGameBadgeStyle {
+    pub(crate) fill_color: egui::Color32,
+    pub(crate) text_color: egui::Color32,
+    pub(crate) stroke_color: Option<egui::Color32>,
+}
+
+impl SelectedGameBadgeStyle {
+    pub(crate) fn steam() -> Self {
+        Self {
+            fill_color: egui::Color32::from_rgb(245, 245, 245),
+            text_color: egui::Color32::from_rgb(20, 20, 20),
+            stroke_color: None,
+        }
+    }
+
+    pub(crate) fn detail_tag(fill_color: egui::Color32) -> Self {
+        Self {
+            fill_color,
+            text_color: egui::Color32::from_rgb(244, 244, 246),
+            stroke_color: Some(egui::Color32::WHITE),
+        }
+    }
+}
+
+pub(crate) fn draw_selected_game_text_badge(
     painter: &egui::Painter,
     text: &str,
     title_pos: egui::Pos2,
     title_size: egui::Vec2,
-    opacity: f32,
-    x_offset: f32,
-    fill_color: egui::Color32,
-    text_color: egui::Color32,
-) -> f32 {
-    let alpha = (255.0 * opacity.clamp(0.0, 1.0)).round() as u8;
-    if alpha == 0 {
-        return 0.0;
-    }
+    alpha_scale: f32,
+) -> egui::Vec2 {
+    draw_selected_game_text_badge_with_style(
+        painter,
+        text,
+        title_pos,
+        title_size,
+        alpha_scale,
+        &SelectedGameBadgeStyle::steam(),
+    )
+}
 
-    let tag_font = egui::FontId::new(
-        (title_size.y * 0.42).clamp(11.0, 14.0),
+pub(crate) fn measure_selected_game_text_badge(
+    painter: &egui::Painter,
+    text: &str,
+    title_size: egui::Vec2,
+) -> egui::Vec2 {
+    let badge_font = egui::FontId::new(
+        (title_size.y * 0.46).clamp(13.0, 17.0),
         egui::FontFamily::Name("Bold".into()),
     );
-    let text_color = egui::Color32::from_rgba_unmultiplied(
-        text_color.r(),
-        text_color.g(),
-        text_color.b(),
-        alpha,
+    let badge_galley =
+        painter.layout_no_wrap(text.to_owned(), badge_font, egui::Color32::TRANSPARENT);
+    let padding_x = 14.0;
+    let padding_y = 6.0;
+    let gap = 12.0;
+
+    egui::vec2(
+        badge_galley.size().x + padding_x * 2.0 + gap,
+        badge_galley.size().y + padding_y * 2.0,
+    )
+}
+
+pub(crate) fn draw_selected_game_text_badge_with_style(
+    painter: &egui::Painter,
+    text: &str,
+    title_pos: egui::Pos2,
+    title_size: egui::Vec2,
+    alpha_scale: f32,
+    style: &SelectedGameBadgeStyle,
+) -> egui::Vec2 {
+    let alpha = scale_alpha(255, alpha_scale);
+    if alpha == 0 {
+        return egui::Vec2::ZERO;
+    }
+
+    let badge_font = egui::FontId::new(
+        (title_size.y * 0.46).clamp(13.0, 17.0),
+        egui::FontFamily::Name("Bold".into()),
     );
-    let galley = painter.layout_no_wrap(text.to_owned(), tag_font, text_color);
-    let padding_x = 11.0;
-    let padding_y = 4.0;
-    let tag_rect = egui::Rect::from_min_size(
+    let badge_galley = painter.layout_no_wrap(
+        text.to_owned(),
+        badge_font,
+        egui::Color32::from_rgba_unmultiplied(
+            style.text_color.r(),
+            style.text_color.g(),
+            style.text_color.b(),
+            alpha,
+        ),
+    );
+    let padding_x = 14.0;
+    let padding_y = 6.0;
+    let gap = 12.0;
+    let badge_width = badge_galley.size().x + padding_x * 2.0;
+    let badge_height = badge_galley.size().y + padding_y * 2.0;
+    let badge_rect = egui::Rect::from_min_size(
         egui::pos2(
-            title_pos.x + title_size.x + 14.0 + x_offset,
-            title_pos.y + title_size.y * 0.5 - galley.size().y * 0.5 - padding_y,
+            title_pos.x,
+            title_pos.y + title_size.y * 0.5 - badge_galley.size().y * 0.5 - padding_y,
         ),
-        egui::vec2(
-            galley.size().x + padding_x * 2.0,
-            galley.size().y + padding_y * 2.0,
-        ),
+        egui::vec2(badge_width, badge_height),
     );
 
     painter.rect_filled(
-        tag_rect,
-        corner_radius((tag_rect.height() * 0.5).min(10.0)),
+        badge_rect,
+        corner_radius((badge_rect.height() * 0.5).min(10.0)),
         egui::Color32::from_rgba_unmultiplied(
-            fill_color.r(),
-            fill_color.g(),
-            fill_color.b(),
-            ((alpha as f32) * 0.9).round() as u8,
+            style.fill_color.r(),
+            style.fill_color.g(),
+            style.fill_color.b(),
+            alpha,
         ),
     );
+    if let Some(stroke_color) = style.stroke_color {
+        painter.rect_stroke(
+            badge_rect,
+            corner_radius((badge_rect.height() * 0.5).min(10.0)),
+            egui::Stroke::new(
+                1.0,
+                egui::Color32::from_rgba_unmultiplied(
+                    stroke_color.r(),
+                    stroke_color.g(),
+                    stroke_color.b(),
+                    ((alpha as f32) * 0.22).round() as u8,
+                ),
+            ),
+            egui::StrokeKind::Middle,
+        );
+    }
     painter.galley(
-        egui::pos2(tag_rect.min.x + padding_x, tag_rect.min.y + padding_y),
-        galley,
+        egui::pos2(badge_rect.min.x + padding_x, badge_rect.min.y + padding_y),
+        badge_galley,
         egui::Color32::WHITE,
     );
 
-    tag_rect.width()
+    egui::vec2(badge_width + gap, badge_height)
 }
 
 pub(crate) struct SelectedGameHeaderContent {
@@ -88,6 +168,22 @@ pub(crate) struct SelectedGameHeaderContent {
     pub(crate) achievement_galley: Option<Arc<egui::Galley>>,
     pub(crate) achievement_prev_galley: Option<Arc<egui::Galley>>,
     pub(crate) title_font: egui::FontId,
+}
+
+pub(crate) struct SelectedGameSummaryStyle {
+    pub(crate) show_playtime: bool,
+    pub(crate) show_achievement_title: bool,
+    pub(crate) card_height: f32,
+}
+
+impl Default for SelectedGameSummaryStyle {
+    fn default() -> Self {
+        Self {
+            show_playtime: true,
+            show_achievement_title: true,
+            card_height: 106.0,
+        }
+    }
 }
 
 impl SelectedGameHeaderContent {
@@ -215,7 +311,7 @@ pub(crate) fn build_selected_game_header(
     }
 }
 
-pub(crate) fn draw_selected_game_header(
+pub(crate) fn draw_selected_game_title(
     painter: &egui::Painter,
     content: &SelectedGameHeaderContent,
     game_name: &str,
@@ -248,34 +344,215 @@ pub(crate) fn draw_selected_game_header(
     }
 
     painter.galley(title_pos, content.title_galley.clone(), egui::Color32::WHITE);
+}
 
-    if content.primary_meta_galley.is_some()
-        || content.achievement_galley.is_some()
-        || content.achievement_prev_galley.is_some()
-    {
-        let meta_pos = egui::pos2(title_pos.x, title_pos.y + content.title_galley.size().y + 6.0);
-        let mut meta_x = meta_pos.x;
-        if let Some(primary_meta_galley) = &content.primary_meta_galley {
-            painter.galley(
-                egui::pos2(meta_x, meta_pos.y),
-                primary_meta_galley.clone(),
-                egui::Color32::WHITE,
-            );
-            meta_x += primary_meta_galley.size().x;
+pub(crate) fn draw_selected_game_badge(
+    painter: &egui::Painter,
+    title_pos: egui::Pos2,
+    title_size: egui::Vec2,
+    alpha_scale: f32,
+) -> f32 {
+    draw_selected_game_text_badge(painter, "STEAM", title_pos, title_size, alpha_scale).x
+}
+
+pub(crate) fn draw_selected_game_summary(
+    painter: &egui::Painter,
+    language: AppLanguage,
+    game: &Game,
+    summary: Option<&AchievementSummary>,
+    summary_reveal: f32,
+    summary_pos: egui::Pos2,
+    playtime_width: f32,
+    achievement_x: f32,
+    achievement_width: f32,
+    style: &SelectedGameSummaryStyle,
+    wake_t: f32,
+) {
+    let panel_alpha = wake_t;
+    let content_alpha = wake_t * lerp_f32(0.55, 1.0, smoothstep01(summary_reveal));
+    let card_height = style.card_height;
+    let playtime_rect =
+        egui::Rect::from_min_size(summary_pos, egui::vec2(playtime_width, card_height));
+    let achievement_rect = egui::Rect::from_min_size(
+        egui::pos2(
+            if style.show_playtime {
+                achievement_x
+            } else {
+                summary_pos.x
+            },
+            summary_pos.y,
+        ),
+        egui::vec2(achievement_width, card_height),
+    );
+    let playtime_fill = color_with_scaled_alpha(
+        egui::Color32::from_rgba_unmultiplied(28, 30, 34, 228),
+        panel_alpha,
+    );
+    let achievement_fill = color_with_scaled_alpha(
+        egui::Color32::from_rgba_unmultiplied(34, 36, 40, 236),
+        panel_alpha,
+    );
+    let panel_stroke = egui::Stroke::new(
+        1.2,
+        color_with_scaled_alpha(
+            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 76),
+            panel_alpha,
+        ),
+    );
+    let title_font = egui::FontId::new(12.0, egui::FontFamily::Name("Bold".into()));
+    let value_font = egui::FontId::new(28.0, egui::FontFamily::Name("Bold".into()));
+    let achievement_count_font = egui::FontId::new(23.0, egui::FontFamily::Name("Bold".into()));
+    let achievement_percent_font = egui::FontId::proportional(18.0);
+    let section_label_color = color_with_scaled_alpha(
+        egui::Color32::from_rgba_unmultiplied(205, 205, 210, 220),
+        content_alpha,
+    );
+    let primary_text_color = color_with_scaled_alpha(
+        egui::Color32::from_rgba_unmultiplied(250, 250, 252, 255),
+        content_alpha,
+    );
+    let secondary_text_color = color_with_scaled_alpha(
+        egui::Color32::from_rgba_unmultiplied(220, 220, 224, 232),
+        content_alpha,
+    );
+
+    let section_titles = match language {
+        AppLanguage::English => ("PLAYTIME", "ACHIEVEMENTS", "No achievements"),
+        AppLanguage::SimplifiedChinese => ("游玩时间", "成就", "暂无成就"),
+    };
+    let playtime_value = {
+        let formatted = language.format_playtime(game.playtime_minutes);
+        if formatted.is_empty() {
+            match language {
+                AppLanguage::English => "0 min".to_owned(),
+                AppLanguage::SimplifiedChinese => "0 分钟".to_owned(),
+            }
+        } else {
+            formatted
         }
-        if let Some(achievement_prev_galley) = &content.achievement_prev_galley {
-            painter.galley(
-                egui::pos2(meta_x, meta_pos.y),
-                achievement_prev_galley.clone(),
-                egui::Color32::WHITE,
-            );
-        }
-        if let Some(achievement_galley) = &content.achievement_galley {
-            painter.galley(
-                egui::pos2(meta_x, meta_pos.y),
-                achievement_galley.clone(),
-                egui::Color32::WHITE,
-            );
-        }
+    };
+
+    if style.show_playtime {
+        painter.rect_filled(playtime_rect, corner_radius(14.0), playtime_fill);
+        painter.rect_stroke(
+            playtime_rect,
+            corner_radius(14.0),
+            panel_stroke,
+            egui::StrokeKind::Middle,
+        );
+        let playtime_label = painter.layout_no_wrap(
+            section_titles.0.to_owned(),
+            title_font.clone(),
+            section_label_color,
+        );
+        let playtime_galley = painter.layout_no_wrap(playtime_value, value_font, primary_text_color);
+        painter.galley(
+            egui::pos2(playtime_rect.min.x + 16.0, playtime_rect.min.y + 10.0),
+            playtime_label,
+            egui::Color32::WHITE,
+        );
+        painter.galley(
+            egui::pos2(playtime_rect.min.x + 16.0, playtime_rect.min.y + 42.0),
+            playtime_galley,
+            egui::Color32::WHITE,
+        );
+    }
+
+    painter.rect_filled(achievement_rect, corner_radius(14.0), achievement_fill);
+    painter.rect_stroke(
+        achievement_rect,
+        corner_radius(14.0),
+        panel_stroke,
+        egui::StrokeKind::Middle,
+    );
+    let title_top = if style.show_achievement_title { 10.0 } else { 0.0 };
+    let count_top = if style.show_achievement_title { 42.0 } else { 20.0 };
+    let track_bottom = if style.show_achievement_title { 19.0 } else { 14.0 };
+    let track_top = if style.show_achievement_title { 14.0 } else { 9.0 };
+    if style.show_achievement_title {
+        let achievement_label = painter.layout_no_wrap(
+            section_titles.1.to_owned(),
+            title_font,
+            section_label_color,
+        );
+        painter.galley(
+            egui::pos2(achievement_rect.min.x + 16.0, achievement_rect.min.y + title_top),
+            achievement_label,
+            egui::Color32::WHITE,
+        );
+    }
+
+    let display_summary = summary.filter(|summary| summary.total > 0);
+    let unlocked = display_summary.and_then(|summary| summary.unlocked).unwrap_or(0);
+    let total = display_summary.map(|summary| summary.total).unwrap_or(0);
+    let progress = if total > 0 {
+        unlocked as f32 / total as f32
+    } else {
+        0.0
+    };
+    let progress_percent_text = if total > 0 {
+        format!("{:.0}%", progress * 100.0)
+    } else {
+        "--".to_owned()
+    };
+    let achievement_count_text = if total > 0 {
+        format!("{}/{}", unlocked, total)
+    } else {
+        section_titles.2.to_owned()
+    };
+    let count_galley =
+        painter.layout_no_wrap(achievement_count_text, achievement_count_font, primary_text_color);
+    let percent_galley = painter.layout_no_wrap(
+        progress_percent_text,
+        achievement_percent_font,
+        secondary_text_color,
+    );
+    let count_pos = egui::pos2(achievement_rect.min.x + 16.0, achievement_rect.min.y + count_top);
+    let percent_pos = egui::pos2(
+        achievement_rect.max.x - 16.0 - percent_galley.size().x,
+        count_pos.y + count_galley.size().y - percent_galley.size().y,
+    );
+    painter.galley(count_pos, count_galley, egui::Color32::WHITE);
+    painter.galley(percent_pos, percent_galley, egui::Color32::WHITE);
+
+    let track_rect = egui::Rect::from_min_max(
+        egui::pos2(achievement_rect.min.x + 16.0, achievement_rect.max.y - track_bottom),
+        egui::pos2(achievement_rect.max.x - 16.0, achievement_rect.max.y - track_top),
+    );
+    painter.rect_filled(
+        track_rect,
+        corner_radius(999.0),
+        color_with_scaled_alpha(
+            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 100),
+            panel_alpha,
+        ),
+    );
+    painter.rect_stroke(
+        track_rect,
+        corner_radius(999.0),
+        egui::Stroke::new(
+            1.0,
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+                panel_alpha,
+            ),
+        ),
+        egui::StrokeKind::Middle,
+    );
+    if progress > 0.0 {
+        let fill_min_x = track_rect.min.x + 1.0;
+        let fill_max_x = lerp_f32(fill_min_x, track_rect.max.x - 1.0, progress.clamp(0.0, 1.0));
+        let fill_rect = egui::Rect::from_min_max(
+            egui::pos2(fill_min_x, track_rect.min.y + 1.0),
+            egui::pos2(fill_max_x.max(fill_min_x), track_rect.max.y - 1.0),
+        );
+        painter.rect_filled(
+            fill_rect,
+            corner_radius(999.0),
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 240),
+                content_alpha,
+            ),
+        );
     }
 }

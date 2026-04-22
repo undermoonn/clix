@@ -6,7 +6,10 @@ use crate::i18n::AppLanguage;
 use crate::steam::{AchievementSummary, Game};
 
 use super::anim::{lerp_f32, smoothstep01};
-use super::header::{build_selected_game_header, draw_selected_game_header};
+use super::header::{
+    build_selected_game_header, draw_selected_game_badge, draw_selected_game_summary,
+    draw_selected_game_title, SelectedGameSummaryStyle,
+};
 use super::text::{color_with_scaled_alpha, corner_radius};
 
 fn launch_press_t(elapsed_seconds: f32) -> f32 {
@@ -81,8 +84,8 @@ pub fn draw_game_list(
     previous_achievement_summary_reveal: f32,
     wake_anim: f32,
 ) {
-    let base_icon_size: f32 = 122.0;
-    let selected_icon_size: f32 = 256.0;
+    let base_icon_size: f32 = 152.0;
+    let selected_icon_size: f32 = 224.0;
     let selected_icon_extra = selected_icon_size - base_icon_size;
 
     let panel_rect = ui.available_rect_before_wrap();
@@ -95,13 +98,24 @@ pub fn draw_game_list(
 
     let selected_size = 34.0;
     let base_size = 20.0;
-    let column_spacing = 152.0;
+    let column_spacing = 180.0;
 
     let hero_ratio = 1240.0 / 3840.0;
     let img_bottom = panel_rect.min.y + panel_rect.width() * hero_ratio;
     let content_top = img_bottom + 32.0 + page_offset_y + wake_offset_y;
     let anchor_x = padded_rect.min.x + 24.0;
     let painter = ui.painter().with_clip_rect(panel_rect);
+    let item_left_for_offset = |offset_f: f32| {
+        let dist = offset_f.abs();
+        let sign = if offset_f >= 0.0 { 1.0 } else { -1.0 };
+        let right_side_compensation = if offset_f > 0.0 {
+            selected_icon_extra * smoothstep01(offset_f.clamp(0.0, 1.0))
+        } else {
+            0.0
+        };
+
+        anchor_x + sign * dist * column_spacing + right_side_compensation
+    };
 
     if launch_feedback.is_some() {
         ui.ctx().request_repaint();
@@ -112,19 +126,13 @@ pub fn draw_game_list(
         let is_selected = i == selected;
 
         let dist = offset_f.abs();
-        let sign = if offset_f >= 0.0 { 1.0 } else { -1.0 };
         let icon_focus_t = smoothstep01((1.0 - dist).clamp(0.0, 1.0));
         let selection_t = if is_selected {
             smoothstep01(select_anim)
         } else {
             0.0
         };
-        let right_side_compensation = if offset_f > 0.0 {
-            selected_icon_extra * smoothstep01(offset_f.clamp(0.0, 1.0))
-        } else {
-            0.0
-        };
-        let x_pos = anchor_x + sign * dist * column_spacing + right_side_compensation;
+        let x_pos = item_left_for_offset(offset_f);
         let meta_t = if is_selected {
             smoothstep01((select_anim - 0.18) / 0.82)
         } else {
@@ -161,27 +169,20 @@ pub fn draw_game_list(
         let icon_scale = launch_elapsed_seconds.map(launch_icon_scale).unwrap_or(1.0);
         let icon_size = icon_slot_size * icon_scale;
         let icon_offset_y = launch_elapsed_seconds.map(launch_icon_offset_y).unwrap_or(0.0);
-        let meta_text_width = (icon_slot_size + 58.0).max(160.0);
         let item_left = x_pos;
-        let text_x = item_left;
 
-        let font_id = if is_selected {
-            egui::FontId::new(font_size, egui::FontFamily::Name("Bold".into()))
-        } else {
-            egui::FontId::proportional(font_size)
-        };
-        let text_y = content_top + icon_slot_size + 20.0;
+        let font_id = egui::FontId::proportional(font_size);
+        let icon_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                item_left + (icon_slot_size - icon_size) * 0.5,
+                content_top + (icon_slot_size - icon_size) + icon_offset_y,
+            ),
+            egui::vec2(icon_size, icon_size),
+        );
 
         if let Some(app_id) = g.app_id {
             if let Some(icon_tex) = game_icons.get(&app_id) {
                 let icon_tint = color_with_scaled_alpha(egui::Color32::WHITE, wake_t);
-                let icon_rect = egui::Rect::from_min_size(
-                    egui::pos2(
-                        item_left + (icon_slot_size - icon_size) * 0.5,
-                        content_top + (icon_slot_size - icon_size) + icon_offset_y,
-                    ),
-                    egui::vec2(icon_size, icon_size),
-                );
                 draw_game_icon(&painter, icon_tex, icon_rect, icon_tint);
 
                 if show_running_status && wake_t > 0.12 {
@@ -191,6 +192,12 @@ pub fn draw_game_list(
         }
 
         if is_selected {
+            let title_x = if i + 1 < games.len() {
+                item_left_for_offset((i + 1) as f32 - scroll_offset)
+            } else {
+                icon_rect.max.x + 18.0
+            };
+            let header_width = (icon_slot_size * 2.0 + 28.0).max(320.0);
             let header = build_selected_game_header(
                 ui,
                 &painter,
@@ -204,10 +211,32 @@ pub fn draw_game_list(
                 text_color,
                 17.0,
                 140.0 * meta_t,
-                meta_text_width,
+                header_width,
             );
-            let normal_title_pos = egui::pos2(text_x, text_y);
-            draw_selected_game_header(&painter, &header, &g.name, normal_title_pos, wake_t);
+            let title_y = icon_rect.max.y - header.title_galley.size().y;
+            let badge_pos = egui::pos2(title_x, title_y);
+            let summary_pos = egui::pos2(icon_rect.min.x, icon_rect.max.y + 36.0);
+            let playtime_width = icon_rect.width();
+            let achievement_x = badge_pos.x;
+            let achievement_width = ((padded_rect.max.x - achievement_x - 24.0).min(292.0)).max(220.0);
+            let badge_offset =
+                draw_selected_game_badge(&painter, badge_pos, header.title_galley.size(), wake_t);
+            let title_pos = egui::pos2(title_x + badge_offset, title_y);
+
+            draw_selected_game_title(&painter, &header, &g.name, title_pos, wake_t);
+            draw_selected_game_summary(
+                &painter,
+                language,
+                g,
+                achievement_summary_for_selected,
+                achievement_summary_reveal_for_selected,
+                summary_pos,
+                playtime_width,
+                achievement_x,
+                achievement_width,
+                &SelectedGameSummaryStyle::default(),
+                wake_t,
+            );
         }
     }
 }

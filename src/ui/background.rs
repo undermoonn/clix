@@ -1,10 +1,35 @@
 use eframe::egui;
 
 use super::anim::{lerp_f32, smoothstep01};
-use super::text::{corner_radius, scale_alpha};
+use super::text::{corner_radius, draw_main_clock, scale_alpha};
+
+fn draw_top_right_vignette(
+    painter: &egui::Painter,
+    hero_rect: egui::Rect,
+    texture: Option<&egui::TextureHandle>,
+    alpha_scale: f32,
+) {
+    let Some(texture) = texture else {
+        return;
+    };
+    if alpha_scale <= 0.001 {
+        return;
+    };
+
+    let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+    let tint = egui::Color32::from_rgba_unmultiplied(
+        255,
+        255,
+        255,
+        scale_alpha(255, alpha_scale),
+    );
+    painter.image(texture.id(), hero_rect, uv, tint);
+}
 
 pub fn draw_background(
     ctx: &egui::Context,
+    vignette: Option<&egui::TextureHandle>,
+    show_clock: bool,
     cover: &Option<(u32, egui::TextureHandle)>,
     cover_prev: &Option<(u32, egui::TextureHandle)>,
     logo: &Option<(u32, egui::TextureHandle)>,
@@ -78,43 +103,72 @@ pub fn draw_background(
 
     let slide_distance = 18.0;
     let ease_t = 1.0 - (1.0 - cover_fade) * (1.0 - cover_fade);
+    let previous_hero_rect = if cover_fade < 1.0 {
+        cover_prev.as_ref().map(|(_id, tex)| top_rect(tex, 0.0))
+    } else {
+        None
+    };
+    let current_dx = cover_nav_dir * slide_distance * (1.0 - ease_t);
+    let current_hero_rect = if let Some((_id, tex)) = cover {
+        top_rect(tex, current_dx)
+    } else {
+        fallback_hero_rect(current_dx)
+    };
+    let current_vignette_alpha = if cover.is_some() { cover_fade } else { 1.0 };
+    let clock_anchor_rect = fallback_hero_rect(0.0);
+    let draw_clock = |hero_rect: egui::Rect| {
+        if !show_clock {
+            return;
+        }
+
+        let clock_font = egui::FontId::new(40.0, egui::FontFamily::Name("Bold".into()));
+        let clock_galley = bg_painter.layout_no_wrap(
+            chrono::Local::now().format("%H:%M").to_string(),
+            clock_font,
+            egui::Color32::WHITE,
+        );
+        let margin_x = clock_anchor_rect.width() * 0.042;
+        let margin_y = hero_rect.height() * 0.075;
+        let clock_pos = egui::pos2(
+            clock_anchor_rect.max.x - margin_x - clock_galley.size().x,
+            hero_rect.min.y + margin_y,
+        );
+
+        draw_main_clock(&bg_painter, clock_pos, wake_t);
+    };
 
     if cover_fade < 1.0 {
         if let Some((_id, tex)) = cover_prev {
-            let hero_rect = top_rect(tex, 0.0);
             let alpha = (base_alpha * (1.0 - cover_fade) * wake_alpha_scale) as u8;
             let tint = egui::Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
-            bg_painter.image(tex.id(), hero_rect, uv, tint);
+            bg_painter.image(tex.id(), previous_hero_rect.unwrap(), uv, tint);
         }
     }
 
-    let current_dx = cover_nav_dir * slide_distance * (1.0 - ease_t);
     if let Some((_id, tex)) = cover {
-        let hero_rect = top_rect(tex, current_dx);
         let alpha = (base_alpha * cover_fade * wake_alpha_scale) as u8;
         let tint = egui::Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
-        bg_painter.image(tex.id(), hero_rect, uv, tint);
+        bg_painter.image(tex.id(), current_hero_rect, uv, tint);
     }
+
+    if let Some(hero_rect) = previous_hero_rect {
+        draw_top_right_vignette(&bg_painter, hero_rect, vignette, 1.0 - cover_fade);
+    }
+
+    draw_top_right_vignette(&bg_painter, current_hero_rect, vignette, current_vignette_alpha);
 
     if cover_fade < 1.0 {
         if let Some((_id, tex)) = logo_prev {
-            let hero_rect = if let Some((_cover_id, cover_tex)) = cover_prev {
-                top_rect(cover_tex, 0.0)
-            } else {
-                fallback_hero_rect(0.0)
-            };
+            let hero_rect = previous_hero_rect.unwrap();
             draw_logo(tex, hero_rect, 1.0 - cover_fade);
         }
     }
 
     if let Some((_id, tex)) = logo {
-        let hero_rect = if let Some((_cover_id, cover_tex)) = cover {
-            top_rect(cover_tex, current_dx)
-        } else {
-            fallback_hero_rect(current_dx)
-        };
-        draw_logo(tex, hero_rect, cover_fade);
+        draw_logo(tex, current_hero_rect, cover_fade);
     }
+
+    draw_clock(current_hero_rect);
 
     let wake_overlay_alpha = scale_alpha(120, wake_inv);
     if wake_overlay_alpha > 0 {
@@ -124,4 +178,5 @@ pub fn draw_background(
             egui::Color32::from_rgba_unmultiplied(8, 10, 14, wake_overlay_alpha),
         );
     }
+
 }

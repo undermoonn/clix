@@ -12,6 +12,9 @@ const ICON_SIZES: [u32; 6] = [16, 32, 48, 64, 128, 256];
 const SVG_PATH: &str = "assets/app-icon.svg";
 const PNG_FILE_NAME: &str = "app-icon-256.png";
 const ICO_FILE_NAME: &str = "app-icon.ico";
+const VIGNETTE_FILE_NAME: &str = "top-right-vignette.png";
+const VIGNETTE_WIDTH: u32 = 2048;
+const VIGNETTE_HEIGHT: u32 = 1152;
 
 fn main() {
     println!("cargo:rerun-if-changed={}", SVG_PATH);
@@ -27,9 +30,11 @@ fn build_icon_assets() -> Result<(), Box<dyn Error>> {
     let svg = fs::read_to_string(SVG_PATH)?;
     let png_path = out_dir.join(PNG_FILE_NAME);
     let ico_path = out_dir.join(ICO_FILE_NAME);
+    let vignette_path = out_dir.join(VIGNETTE_FILE_NAME);
 
     write_png(&png_path, &svg, 256)?;
     write_ico(&ico_path, &svg)?;
+    write_top_right_vignette(&vignette_path)?;
     compile_windows_resource(&ico_path)?;
 
     Ok(())
@@ -56,6 +61,18 @@ fn write_ico(path: &Path, svg: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn write_top_right_vignette(path: &Path) -> Result<(), Box<dyn Error>> {
+    let rgba = render_top_right_vignette(VIGNETTE_WIDTH, VIGNETTE_HEIGHT);
+    let file = fs::File::create(path)?;
+    PngEncoder::new(file).write_image(
+        &rgba,
+        VIGNETTE_WIDTH,
+        VIGNETTE_HEIGHT,
+        image::ColorType::Rgba8,
+    )?;
+    Ok(())
+}
+
 fn render_svg(svg: &str, size: u32) -> Result<Vec<u8>, Box<dyn Error>> {
     let options = usvg::Options::default();
     let tree = usvg::Tree::from_str(svg, &options)?;
@@ -72,6 +89,48 @@ fn render_svg(svg: &str, size: u32) -> Result<Vec<u8>, Box<dyn Error>> {
     );
 
     Ok(pixmap.data().to_vec())
+}
+
+fn render_top_right_vignette(width: u32, height: u32) -> Vec<u8> {
+    let mut rgba = vec![0; (width * height * 4) as usize];
+
+    for y in 0..height {
+        for x in 0..width {
+            let nx = x as f32 / (width.saturating_sub(1)) as f32;
+            let ny = y as f32 / (height.saturating_sub(1)) as f32;
+
+            let layer = |cx: f32, cy: f32, rx: f32, ry: f32, strength: f32| -> f32 {
+                let dx = (nx - cx) / rx;
+                let dy = (ny - cy) / ry;
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist >= 1.0 {
+                    0.0
+                } else {
+                    let t = 1.0 - dist;
+                    let eased = t * t * (3.0 - 2.0 * t);
+                    eased * strength
+                }
+            };
+
+            let combined = 1.0
+                - (1.0 - layer(1.16, -0.12, 0.78, 1.02, 0.24))
+                    * (1.0 - layer(1.05, -0.02, 0.54, 0.72, 0.21))
+                    * (1.0 - layer(0.97, 0.06, 0.3, 0.42, 0.16));
+
+            let hash = x.wrapping_mul(73856093) ^ y.wrapping_mul(19349663);
+            let noise = ((hash & 255) as f32 / 255.0 - 0.5) * 0.018;
+            let alpha = (combined + noise).clamp(0.0, 1.0);
+            let alpha_u8 = (alpha * 255.0).round() as u8;
+            let index = ((y * width + x) * 4) as usize;
+
+            rgba[index] = 6;
+            rgba[index + 1] = 8;
+            rgba[index + 2] = 12;
+            rgba[index + 3] = alpha_u8;
+        }
+    }
+
+    rgba
 }
 
 #[cfg(target_os = "windows")]

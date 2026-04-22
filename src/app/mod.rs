@@ -75,7 +75,7 @@ impl LauncherApp {
             games,
             input: InputController::new(),
             steam_paths,
-            artwork: ArtworkState::new(),
+            artwork: ArtworkState::new(ctx),
             page: PageState::new(),
             hint_icon_theme,
             hint_icons: ui::load_hint_icons(ctx, hint_icon_theme),
@@ -524,6 +524,8 @@ impl eframe::App for LauncherApp {
             .show(ui, |ui| {
                 ui::draw_background(
                     &ctx,
+                    self.artwork.vignette(),
+                    !self.page.show_achievement_panel(),
                     self.artwork.cover(),
                     self.artwork.cover_prev(),
                     self.artwork.logo(),

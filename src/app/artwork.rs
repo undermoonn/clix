@@ -16,6 +16,7 @@ pub struct ArtworkState {
     cover_prev: Option<(u32, egui::TextureHandle)>,
     logo: Option<(u32, egui::TextureHandle)>,
     logo_prev: Option<(u32, egui::TextureHandle)>,
+    vignette: Option<egui::TextureHandle>,
     fade: f32,
     transition_ready: bool,
     loaded_for: Option<usize>,
@@ -25,12 +26,20 @@ pub struct ArtworkState {
 }
 
 impl ArtworkState {
-    pub fn new() -> Self {
+    pub fn new(ctx: &egui::Context) -> Self {
+        let vignette = cover::bytes_to_texture_limited(
+            ctx,
+            include_bytes!(concat!(env!("OUT_DIR"), "/top-right-vignette.png")),
+            "top_right_vignette".to_owned(),
+            None,
+        );
+
         Self {
             cover: None,
             cover_prev: None,
             logo: None,
             logo_prev: None,
+            vignette,
             fade: 1.0,
             transition_ready: true,
             loaded_for: None,
@@ -161,6 +170,10 @@ impl ArtworkState {
 
     pub fn logo_prev(&self) -> &Option<(u32, egui::TextureHandle)> {
         &self.logo_prev
+    }
+
+    pub fn vignette(&self) -> Option<&egui::TextureHandle> {
+        self.vignette.as_ref()
     }
 
     pub fn fade(&self) -> f32 {

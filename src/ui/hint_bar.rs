@@ -6,7 +6,7 @@ use crate::i18n::AppLanguage;
 
 use super::hint_icons::HintIcons;
 use super::anim::{lerp_f32, smoothstep01};
-use super::text::{color_with_scaled_alpha, draw_main_clock};
+use super::text::color_with_scaled_alpha;
 
 pub fn draw_hint_bar(
     ui: &mut egui::Ui,
@@ -35,23 +35,6 @@ pub fn draw_hint_bar(
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
 
     let painter = ui.painter();
-    let clock_painter = ui.ctx().layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
-        egui::Id::new("system_time"),
-    ));
-    let show_clock = true;
-    let clock_gap = 34.0;
-    let clock_font = egui::FontId::new(40.0, egui::FontFamily::Name("Bold".into()));
-    let clock_galley = show_clock.then(|| {
-        clock_painter.layout_no_wrap(
-            chrono::Local::now().format("%H:%M").to_string(),
-            clock_font,
-            color_with_scaled_alpha(
-                egui::Color32::from_rgba_unmultiplied(245, 247, 252, 168),
-                wake_t,
-            ),
-        )
-    });
     let draw_icon = |painter: &egui::Painter, tex: &egui::TextureHandle, x: f32, size: f32| {
         painter.image(
             tex.id(),
@@ -140,22 +123,10 @@ pub fn draw_hint_bar(
         hint_color,
     );
     let home_menu_group_w = action_icon_h;
-    let clock_reserved_w = clock_galley
-        .as_ref()
-        .map(|galley| galley.size().x + clock_gap)
-        .unwrap_or(0.0);
-    let home_menu_x = padded_rect.max.x - clock_reserved_w - home_menu_group_w;
+    let home_menu_x = padded_rect.max.x - home_menu_group_w;
     let b_label_reserve = g_back.size().x;
     let b_icon_x = home_menu_x - 20.0 - b_label_reserve - 6.0 - action_icon_h;
     let b_label_x = b_icon_x + action_icon_h + 6.0;
-
-    if let Some(clock_galley) = &clock_galley {
-        let clock_pos = egui::pos2(
-            home_menu_x + action_icon_h + clock_gap,
-            hint_y + row_h * 0.5 - clock_galley.size().y * 0.5,
-        );
-        draw_main_clock(&clock_painter, clock_pos, wake_t);
-    }
 
     if achievement_panel_active {
         let g_scroll =

@@ -8,8 +8,10 @@ use crate::steam::{AchievementSummary, Game};
 use super::hint_icons::HintIcons;
 use super::anim::{lerp_f32, smoothstep01};
 use super::header::{
-    build_selected_game_header, dlss_tag_text, draw_selected_game_header, draw_title_tag,
-    installed_size_tag_text,
+    build_selected_game_header, dlss_tag_text, draw_selected_game_summary,
+    draw_selected_game_text_badge, draw_selected_game_text_badge_with_style,
+    draw_selected_game_title, installed_size_tag_text, measure_selected_game_text_badge,
+    SelectedGameBadgeStyle, SelectedGameSummaryStyle,
 };
 use super::text::{
     build_wrapped_galley, color_with_scaled_alpha, corner_radius, format_achievement_status,
@@ -205,14 +207,14 @@ pub fn draw_achievement_page(
     has_no_data: bool,
     achievement_summary_reveal_for_selected: f32,
     selected_index: usize,
-    achievement_select_anim: f32,
+    _achievement_select_anim: f32,
     achievement_panel_anim: f32,
     _selected_game_index: usize,
     game_select_anim: f32,
     _game_scroll_offset: f32,
     scroll_offset: f32,
     wake_anim: f32,
-    _game_icon: Option<&egui::TextureHandle>,
+    game_icon: Option<&egui::TextureHandle>,
     hint_icons: Option<&HintIcons>,
     revealed_hidden: Option<&str>,
     hidden_reveal_progress: f32,
@@ -230,66 +232,131 @@ pub fn draw_achievement_page(
     let page_enter_offset_y = lerp_f32(panel_rect.height() + 28.0, 0.0, panel_t)
         + lerp_f32(30.0, 0.0, wake_t);
     let content_top = padded_rect.min.y + 18.0;
-    let title_font_size = 20.0 + (34.0 - 20.0) * smoothstep01(game_select_anim);
-    let title_font = egui::FontId::new(title_font_size, egui::FontFamily::Name("Bold".into()));
+    let title_font_size = 18.0 + (30.0 - 18.0) * smoothstep01(game_select_anim);
+    let title_font = egui::FontId::proportional(title_font_size);
     let header = build_selected_game_header(
         ui,
         &painter,
         language,
         game,
-        summary,
-        achievement_summary_reveal_for_selected,
+        None,
+        0.0,
         None,
         0.0,
         title_font,
         egui::Color32::WHITE,
         17.0,
-        140.0,
+        0.0,
         (padded_rect.width() - 96.0).max(220.0),
     );
-    let header_text_x = padded_rect.min.x + 24.0;
-    let text_block_height = header.total_height();
-    let text_top = content_top + 64.0 - text_block_height;
-    let title_base_pos = egui::pos2(header_text_x, text_top);
-    let header_bottom = title_base_pos.y + text_block_height;
+    let header_left = padded_rect.min.x + 24.0;
+    let title_base_y = content_top + 16.0;
+    let title_base_pos = egui::pos2(header_left, title_base_y);
+    let detail_summary_style = SelectedGameSummaryStyle {
+        show_playtime: false,
+        show_achievement_title: false,
+        card_height: 82.0,
+    };
+    let playtime_width = 0.0;
+    let achievement_width = 292.0;
+    let summary_total_width = achievement_width;
+    let summary_base_pos = egui::pos2(
+        padded_rect.max.x - 24.0 - summary_total_width,
+        content_top + 4.0,
+    );
+    let achievement_x = summary_base_pos.x;
+    let header_bottom = (title_base_y + header.total_height()).max(
+        summary_base_pos.y + detail_summary_style.card_height,
+    );
     let header_base_rect = egui::Rect::from_min_max(
         egui::pos2(padded_rect.min.x + 8.0, content_top),
-        egui::pos2(padded_rect.max.x - 8.0, header_bottom + 26.0),
+        egui::pos2(padded_rect.max.x - 8.0, header_bottom + 14.0),
     );
     let list_base_rect = egui::Rect::from_min_max(
-        egui::pos2(padded_rect.min.x + 8.0, header_base_rect.max.y + 24.0),
+        egui::pos2(padded_rect.min.x + 8.0, header_base_rect.max.y + 10.0),
         egui::pos2(padded_rect.max.x - 8.0, padded_rect.max.y - 52.0),
     );
     let content_offset = egui::vec2(0.0, page_enter_offset_y);
     let list_rect = list_base_rect.translate(content_offset);
-    let title_pos = title_base_pos + content_offset;
-    draw_selected_game_header(&painter, &header, &game.name, title_pos, wake_t);
-    let tag_opacity = panel_t * wake_t;
-    let mut tag_offset = 0.0;
-    if let Some(tag_text) = installed_size_tag_text(language, game) {
-        tag_offset += draw_title_tag(
+    let header_visual_offset = egui::vec2(0.0, -14.0);
+    let summary_pos = summary_base_pos + content_offset + header_visual_offset;
+    let steam_badge_size = measure_selected_game_text_badge(&painter, "STEAM", header.title_galley.size());
+    let header_stack_height = steam_badge_size.y + 14.0 + header.title_galley.size().y;
+    let game_icon_size = header_stack_height;
+    let game_icon_gap = 18.0;
+    let game_icon_total_width = if game_icon.is_some() {
+        game_icon_size + game_icon_gap
+    } else {
+        0.0
+    };
+    let header_stack_x =
+        title_base_pos.x + content_offset.x + header_visual_offset.x + game_icon_total_width;
+    let header_text_offset_x = 10.0;
+    let badge_pos = egui::pos2(
+        header_stack_x + header_text_offset_x,
+        summary_pos.y - header.title_galley.size().y * 0.5 + steam_badge_size.y * 0.5,
+    );
+    if let Some(game_icon) = game_icon {
+        let game_icon_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                header_stack_x - game_icon_total_width,
+                summary_pos.y,
+            ),
+            egui::vec2(game_icon_size, game_icon_size),
+        );
+        draw_achievement_icon(
             &painter,
-            &tag_text,
-            title_pos,
-            header.title_galley.size(),
-            tag_opacity,
-            tag_offset,
-            egui::Color32::from_rgb(228, 228, 220),
-            egui::Color32::from_rgb(18, 18, 18),
-        ) + 8.0;
-    }
-    if let Some(tag_text) = dlss_tag_text(game) {
-        let _ = draw_title_tag(
-            &painter,
-            &tag_text,
-            title_pos,
-            header.title_galley.size(),
-            tag_opacity,
-            tag_offset,
-            egui::Color32::from_rgb(228, 228, 220),
-            egui::Color32::from_rgb(18, 18, 18),
+            game_icon,
+            game_icon_rect,
+            color_with_scaled_alpha(egui::Color32::WHITE, wake_t),
+            1.0,
         );
     }
+    let mut badge_row_offset = 0.0;
+    let steam_badge_size = draw_selected_game_text_badge(
+        &painter,
+        "STEAM",
+        badge_pos,
+        header.title_galley.size(),
+        wake_t,
+    );
+    badge_row_offset += steam_badge_size.x;
+    if let Some(tag_text) = installed_size_tag_text(language, game) {
+        let badge_size = draw_selected_game_text_badge_with_style(
+            &painter,
+            &tag_text,
+            egui::pos2(badge_pos.x + badge_row_offset, badge_pos.y),
+            header.title_galley.size(),
+            panel_t * wake_t,
+            &SelectedGameBadgeStyle::detail_tag(egui::Color32::from_rgb(28, 30, 34)),
+        );
+        badge_row_offset += badge_size.x;
+    }
+    if let Some(tag_text) = dlss_tag_text(game) {
+        let _ = draw_selected_game_text_badge_with_style(
+            &painter,
+            &tag_text,
+            egui::pos2(badge_pos.x + badge_row_offset, badge_pos.y),
+            header.title_galley.size(),
+            panel_t * wake_t,
+            &SelectedGameBadgeStyle::detail_tag(egui::Color32::from_rgb(34, 36, 40)),
+        );
+    }
+    let title_pos = egui::pos2(badge_pos.x, badge_pos.y + steam_badge_size.y + 19.0);
+    draw_selected_game_title(&painter, &header, &game.name, title_pos, wake_t);
+    draw_selected_game_summary(
+        &painter,
+        language,
+        game,
+        summary,
+        achievement_summary_reveal_for_selected,
+        summary_pos,
+        playtime_width,
+        achievement_x,
+        achievement_width,
+        &detail_summary_style,
+        wake_t,
+    );
 
     painter.rect_filled(
         list_rect,
@@ -298,8 +365,8 @@ pub fn draw_achievement_page(
     );
 
     let list_inner_rect = egui::Rect::from_min_max(
-        egui::pos2(list_rect.min.x + 16.0, list_rect.min.y + 16.0),
-        egui::pos2(list_rect.max.x - 16.0, list_rect.max.y - 16.0),
+        egui::pos2(list_rect.min.x + 6.0, list_rect.min.y + 16.0),
+        egui::pos2(list_rect.max.x - 6.0, list_rect.max.y - 16.0),
     );
     let row_side_inset = 6.0;
     let unselected_row_shrink_x = 7.0;
@@ -322,7 +389,7 @@ pub fn draw_achievement_page(
         return visible_icon_urls;
     }
 
-    let item_gap_y = 21.0;
+    let item_gap_y = 16.0;
     let row_spacing = 174.0;
     let list_body_rect = list_inner_rect;
     let list_painter = painter.with_clip_rect(list_body_rect);
@@ -336,11 +403,6 @@ pub fn draw_achievement_page(
         }
 
         let is_selected = idx == selected_index;
-        let selection_t = if is_selected {
-            smoothstep01(achievement_select_anim)
-        } else {
-            0.0
-        };
         let row_top = base_y + idx as f32 * row_spacing;
         if row_top > list_body_rect.max.y || row_top + row_spacing < list_body_rect.min.y {
             continue;
@@ -351,10 +413,7 @@ pub fn draw_achievement_page(
             egui::pos2(list_body_rect.min.x + row_side_inset, row_top),
             egui::pos2(list_body_rect.max.x - row_side_inset, row_top + row_height),
         );
-        let row_rect = row_slot_rect.shrink2(egui::vec2(
-            lerp_f32(unselected_row_shrink_x, 0.0, selection_t),
-            0.0,
-        ));
+        let row_rect = row_slot_rect.shrink2(egui::vec2(unselected_row_shrink_x, 0.0));
         let content_padding_y = 18.0;
         let content_padding_x = 33.0;
         let icon_gap = 21.0;
@@ -372,7 +431,7 @@ pub fn draw_achievement_page(
             ),
         );
 
-        let icon_column_width = lerp_f32(78.0, 90.0, selection_t);
+        let icon_column_width = 78.0;
         let left_content_inset = content_padding_x;
         let text_x = row_rect.min.x + left_content_inset + icon_column_width + icon_gap;
         let content_rect = egui::Rect::from_min_max(
@@ -415,10 +474,7 @@ pub fn draw_achievement_page(
             ui,
             name.to_string(),
             if is_selected {
-                egui::FontId::new(
-                    lerp_f32(28.5, 31.5, selection_t),
-                    egui::FontFamily::Name("Bold".into()),
-                )
+                egui::FontId::new(28.5, egui::FontFamily::Name("Bold".into()))
             } else {
                 egui::FontId::proportional(28.5)
             },
