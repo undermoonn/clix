@@ -4,8 +4,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::assets::cover;
+use crate::game::Game;
 use crate::i18n::AppLanguage;
-use crate::steam::{self, AchievementSummary, Game};
+use crate::steam::{self, AchievementSummary};
 
 struct HiddenRevealState {
     api_name: String,

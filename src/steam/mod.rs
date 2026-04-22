@@ -15,4 +15,4 @@ pub use library::{
     find_steam_paths, load_game_installed_size, load_game_playtime_minutes,
     scan_games_with_paths,
 };
-pub use types::{AchievementSummary, Game};
+pub use types::AchievementSummary;

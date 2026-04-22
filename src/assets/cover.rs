@@ -902,12 +902,18 @@ pub fn load_file_icon_bytes(_icon_path: &Path) -> Option<Vec<u8>> {
 }
 
 #[cfg(target_os = "windows")]
-fn load_executable_icon_bytes(game: &crate::steam::Game) -> Option<Vec<u8>> {
+fn load_executable_icon_bytes(game: &crate::game::Game) -> Option<Vec<u8>> {
+    if let Some(launch_target) = game.launch_target.as_deref().filter(|path| path.is_file()) {
+        if let Some(bytes) = load_file_icon_bytes(launch_target) {
+            return Some(bytes);
+        }
+    }
+
     let executable = find_preferred_executable(&game.path, &game.name)?;
     load_file_icon_bytes(&executable)
 }
 
-pub fn load_game_icon_bytes(steam_paths: &[PathBuf], game: &crate::steam::Game) -> Option<Vec<u8>> {
+pub fn load_game_icon_bytes(steam_paths: &[PathBuf], game: &crate::game::Game) -> Option<Vec<u8>> {
     #[cfg(target_os = "windows")]
     if let Some(bytes) = load_executable_icon_bytes(game) {
         return Some(bytes);

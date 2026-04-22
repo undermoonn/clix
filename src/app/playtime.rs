@@ -2,7 +2,8 @@ use eframe::egui;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-use crate::steam::{self, Game};
+use crate::game::Game;
+use crate::steam;
 
 pub struct PlaytimeState {
     pending: Arc<Mutex<Vec<(u32, Option<u32>)>>>,

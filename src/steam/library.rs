@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use regex::Regex;
 
-use super::types::Game;
+use crate::game::{sort_games_by_last_played, Game, GameSource};
 
 pub fn find_steam_paths() -> Vec<PathBuf> {
     let mut steam_paths: Vec<PathBuf> = Vec::new();
@@ -217,9 +217,12 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                         let game_path = lib.join("common").join(&install_dir);
                         let dlss_version = crate::assets::dlss::detect_version(&game_path, Some(id));
                         games.push(Game {
+                            source: GameSource::Steam,
                             name,
                             path: game_path,
+                            launch_target: None,
                             app_id: Some(id),
+                            persistent_id: None,
                             last_played: last_played_map.get(&id).copied().unwrap_or(0),
                             playtime_minutes: playtime_map.get(&id).copied().unwrap_or(0),
                             installed_size_bytes: None,
@@ -267,9 +270,12 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                                 crate::assets::dlss::detect_version(&install_path, Some(app_id));
                             seen_app_ids.insert(app_id);
                             games.push(Game {
+                                source: GameSource::Steam,
                                 name: display_name,
                                 path: install_path,
+                                launch_target: None,
                                 app_id: Some(app_id),
+                                persistent_id: None,
                                 last_played: last_played_map.get(&app_id).copied().unwrap_or(0),
                                 playtime_minutes: playtime_map
                                     .get(&app_id)
@@ -285,11 +291,7 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
         }
     }
 
-    games.sort_by(|a, b| {
-        b.last_played
-            .cmp(&a.last_played)
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-    });
+    sort_games_by_last_played(&mut games);
     games
 }
 

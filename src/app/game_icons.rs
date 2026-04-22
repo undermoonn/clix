@@ -4,10 +4,10 @@ use std::path::PathBuf;
 use eframe::egui;
 
 use crate::assets::cover;
-use crate::steam::Game;
+use crate::game::{Game, GameIconKey};
 
 pub struct GameIconState {
-    textures: HashMap<u32, egui::TextureHandle>,
+    textures: HashMap<GameIconKey, egui::TextureHandle>,
 }
 
 impl GameIconState {
@@ -30,30 +30,28 @@ impl GameIconState {
         }
 
         for game in games {
-            if let Some(app_id) = game.app_id {
-                if self.textures.contains_key(&app_id) {
-                    continue;
-                }
+            let icon_key = game.icon_key();
+            if self.textures.contains_key(&icon_key) {
+                continue;
+            }
 
-                if let Some(bytes) = cover::load_game_icon_bytes(steam_paths, game) {
-                    if let Some(texture) = cover::bytes_to_game_icon_texture(
-                        ctx,
-                        &bytes,
-                        format!("icon_{}", app_id),
-                    )
-                    {
-                        self.textures.insert(app_id, texture);
-                    }
+            if let Some(bytes) = cover::load_game_icon_bytes(steam_paths, game) {
+                if let Some(texture) = cover::bytes_to_game_icon_texture(
+                    ctx,
+                    &bytes,
+                    format!("icon_{:?}", icon_key),
+                ) {
+                    self.textures.insert(icon_key, texture);
                 }
             }
         }
     }
 
-    pub fn get(&self, app_id: u32) -> Option<&egui::TextureHandle> {
-        self.textures.get(&app_id)
+    pub fn get(&self, icon_key: &GameIconKey) -> Option<&egui::TextureHandle> {
+        self.textures.get(icon_key)
     }
 
-    pub fn textures(&self) -> &HashMap<u32, egui::TextureHandle> {
+    pub fn textures(&self) -> &HashMap<GameIconKey, egui::TextureHandle> {
         &self.textures
     }
 }

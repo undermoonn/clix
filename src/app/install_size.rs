@@ -2,12 +2,13 @@ use eframe::egui;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-use crate::steam::{self, Game};
+use crate::game::{Game, GameIconKey};
+use crate::steam;
 
 pub struct InstallSizeState {
-    pending: Arc<Mutex<Vec<(u32, Option<u64>)>>>,
-    loading: HashSet<u32>,
-    checked: HashSet<u32>,
+    pending: Arc<Mutex<Vec<(GameIconKey, Option<u64>)>>>,
+    loading: HashSet<GameIconKey>,
+    checked: HashSet<GameIconKey>,
 }
 
 impl InstallSizeState {
@@ -23,19 +24,17 @@ impl InstallSizeState {
         let Some(game) = selected_game else {
             return;
         };
-        let Some(app_id) = game.app_id else {
-            return;
-        };
+        let game_key = game.icon_key();
 
         if game.installed_size_bytes.is_some()
-            || self.loading.contains(&app_id)
-            || self.checked.contains(&app_id)
+            || self.loading.contains(&game_key)
+            || self.checked.contains(&game_key)
         {
             return;
         }
 
-        self.loading.insert(app_id);
-        self.checked.insert(app_id);
+        self.loading.insert(game_key.clone());
+        self.checked.insert(game_key.clone());
         let pending = Arc::clone(&self.pending);
         let game_path = game.path.clone();
         let ctx_clone = ctx.clone();
@@ -43,7 +42,7 @@ impl InstallSizeState {
         std::thread::spawn(move || {
             let installed_size_bytes = steam::load_game_installed_size(&game_path);
             if let Ok(mut lock) = pending.lock() {
-                lock.push((app_id, installed_size_bytes));
+                lock.push((game_key, installed_size_bytes));
             }
             ctx_clone.request_repaint();
         });
@@ -54,10 +53,10 @@ impl InstallSizeState {
             return;
         };
 
-        for (app_id, installed_size_bytes) in lock.drain(..) {
-            self.loading.remove(&app_id);
+        for (game_key, installed_size_bytes) in lock.drain(..) {
+            self.loading.remove(&game_key);
 
-            let Some(game) = games.iter_mut().find(|game| game.app_id == Some(app_id)) else {
+            let Some(game) = games.iter_mut().find(|game| game.icon_key() == game_key) else {
                 continue;
             };
 

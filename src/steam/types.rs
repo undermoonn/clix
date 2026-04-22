@@ -1,16 +1,4 @@
-use std::path::PathBuf;
-
 use serde::{Deserialize, Serialize};
-
-pub struct Game {
-    pub name: String,
-    pub path: PathBuf,
-    pub app_id: Option<u32>,
-    pub last_played: u64,
-    pub playtime_minutes: u32,
-    pub installed_size_bytes: Option<u64>,
-    pub dlss_version: Option<String>,
-}
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AchievementItem {

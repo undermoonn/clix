@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use eframe::egui;
 
+use crate::game::{Game, GameSource};
 use crate::i18n::AppLanguage;
-use crate::steam::{AchievementSummary, Game};
+use crate::steam::AchievementSummary;
 
 use super::anim::lerp_f32;
 use super::text::{build_wrapped_galley, color_with_scaled_alpha, corner_radius, scale_alpha};
@@ -23,6 +24,10 @@ pub(crate) fn installed_size_tag_text(language: AppLanguage, game: &Game) -> Opt
     game.installed_size_bytes
         .map(|size_bytes| language.format_installed_size(size_bytes))
         .filter(|text| !text.is_empty())
+}
+
+pub(crate) fn game_source_badge_text(source: GameSource) -> &'static str {
+    source.badge_label()
 }
 
 pub(crate) struct SelectedGameBadgeStyle {
@@ -350,11 +355,19 @@ pub(crate) fn draw_selected_game_title(
 
 pub(crate) fn draw_selected_game_badge(
     painter: &egui::Painter,
+    game: &Game,
     title_pos: egui::Pos2,
     title_size: egui::Vec2,
     alpha_scale: f32,
 ) -> f32 {
-    draw_selected_game_text_badge(painter, "STEAM", title_pos, title_size, alpha_scale).x
+    draw_selected_game_text_badge(
+        painter,
+        game_source_badge_text(game.source),
+        title_pos,
+        title_size,
+        alpha_scale,
+    )
+    .x
 }
 
 pub(crate) fn draw_selected_game_summary(

@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use eframe::egui;
 
+use crate::game::{Game, GameIconKey, GameSource};
 use crate::i18n::AppLanguage;
-use crate::steam::{AchievementSummary, Game};
+use crate::steam::AchievementSummary;
 
 use super::anim::{lerp_f32, smoothstep01};
 use super::header::{
@@ -74,7 +75,7 @@ pub fn draw_game_list(
     select_anim: f32,
     achievement_panel_anim: f32,
     scroll_offset: f32,
-    game_icons: &HashMap<u32, egui::TextureHandle>,
+    game_icons: &HashMap<GameIconKey, egui::TextureHandle>,
     launch_feedback: Option<(usize, f32)>,
     running_indices: &[usize],
     _achievement_panel_active: bool,
@@ -185,14 +186,12 @@ pub fn draw_game_list(
             egui::vec2(icon_size, icon_size),
         );
 
-        if let Some(app_id) = g.app_id {
-            if let Some(icon_tex) = game_icons.get(&app_id) {
-                let icon_tint = color_with_scaled_alpha(egui::Color32::WHITE, wake_t);
-                draw_game_icon(&painter, icon_tex, icon_rect, icon_tint);
+        if let Some(icon_tex) = game_icons.get(&g.icon_key()) {
+            let icon_tint = color_with_scaled_alpha(egui::Color32::WHITE, wake_t);
+            draw_game_icon(&painter, icon_tex, icon_rect, icon_tint);
 
-                if show_running_status && wake_t > 0.12 {
-                    draw_running_status_dot(&painter, icon_rect);
-                }
+            if show_running_status && wake_t > 0.12 {
+                draw_running_status_dot(&painter, icon_rect);
             }
         }
 
@@ -224,12 +223,17 @@ pub fn draw_game_list(
             let playtime_width = icon_slot_rect.width();
             let achievement_x = badge_pos.x;
             let achievement_width = ((padded_rect.max.x - achievement_x - 24.0).min(292.0)).max(220.0);
-            let badge_offset =
-                draw_selected_game_badge(&painter, badge_pos, header.title_galley.size(), wake_t);
+            let badge_offset = draw_selected_game_badge(
+                &painter,
+                g,
+                badge_pos,
+                header.title_galley.size(),
+                wake_t,
+            );
             let title_pos = egui::pos2(title_x + badge_offset, title_y);
 
             draw_selected_game_title(&painter, &header, &g.name, title_pos, wake_t);
-            if summary_cards_visibility > 0.001 {
+            if summary_cards_visibility > 0.001 && matches!(g.source, GameSource::Steam) {
                 draw_selected_game_summary(
                     &painter,
                     language,

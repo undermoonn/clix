@@ -154,6 +154,17 @@ impl PageState {
         self.wake_anim_running = true;
     }
 
+    pub fn force_select(&mut self, selected: usize) {
+        self.selected = selected;
+        self.cover_nav_dir = 0.0;
+        self.select_anim = 0.0;
+        self.select_anim_target = None;
+        self.scroll_offset = selected as f32;
+        self.show_achievement_panel = false;
+        self.achievement_panel_anim = 0.0;
+        self.reset_achievement_selection();
+    }
+
     pub fn open_home_menu(&mut self, layout: HomeMenuLayout) {
         let default_selected = layout.default_selected();
         self.home_menu_layout = layout;

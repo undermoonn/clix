@@ -2,15 +2,17 @@ use std::collections::HashMap;
 
 use eframe::egui;
 
+use crate::game::Game;
 use crate::i18n::AppLanguage;
-use crate::steam::{AchievementSummary, Game};
+use crate::steam::AchievementSummary;
 
 use super::hint_icons::HintIcons;
 use super::anim::{lerp_f32, smoothstep01};
 use super::header::{
     build_selected_game_header, dlss_tag_text, draw_selected_game_summary,
     draw_selected_game_text_badge, draw_selected_game_text_badge_with_style,
-    draw_selected_game_title, installed_size_tag_text, measure_selected_game_text_badge,
+    draw_selected_game_title, game_source_badge_text, installed_size_tag_text,
+    measure_selected_game_text_badge,
     SelectedGameBadgeStyle, SelectedGameSummaryStyle,
 };
 use super::text::{
@@ -281,7 +283,9 @@ pub fn draw_achievement_page(
     let list_rect = list_base_rect.translate(content_offset);
     let header_visual_offset = egui::vec2(0.0, -14.0);
     let summary_pos = summary_base_pos + content_offset + header_visual_offset;
-    let steam_badge_size = measure_selected_game_text_badge(&painter, "STEAM", header.title_galley.size());
+    let source_badge_text = game_source_badge_text(game.source);
+    let steam_badge_size =
+        measure_selected_game_text_badge(&painter, source_badge_text, header.title_galley.size());
     let header_stack_height = steam_badge_size.y + 14.0 + header.title_galley.size().y;
     let game_icon_size = header_stack_height;
     let game_icon_gap = 18.0;
@@ -316,7 +320,7 @@ pub fn draw_achievement_page(
     let mut badge_row_offset = 0.0;
     let steam_badge_size = draw_selected_game_text_badge(
         &painter,
-        "STEAM",
+        source_badge_text,
         badge_pos,
         header.title_galley.size(),
         wake_t,

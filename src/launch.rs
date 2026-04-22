@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 #[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicIsize, Ordering};
 
-use crate::steam::Game;
+use crate::game::{Game, GameSource};
 
 pub struct LaunchState {
     pub game_index: usize,
@@ -55,6 +55,7 @@ pub enum LaunchTickResult {
 
 pub fn begin_launch(game_index: usize, game: &Game, steam_paths: &[PathBuf]) -> Option<LaunchState> {
     let target_path = game.path.clone();
+    let launch_target = game.launch_target.clone();
     let game_name = game.name.clone();
     let launch_app_id = game.app_id;
     #[cfg(target_os = "windows")]
@@ -65,35 +66,47 @@ pub fn begin_launch(game_index: usize, game: &Game, steam_paths: &[PathBuf]) -> 
         .map(|(hwnd, _)| hwnd as isize)
         .collect();
 
-    let launched = if let Some(app_id) = game.app_id {
-        #[cfg(target_os = "windows")]
-        {
-            let steam_exe = steam_paths
-                .iter()
-                .map(|path| path.join("steam.exe"))
-                .find(|path| path.exists());
+    let launched = match game.source {
+        GameSource::Steam => {
+            if let Some(app_id) = game.app_id {
+                #[cfg(target_os = "windows")]
+                {
+                    let steam_exe = steam_paths
+                        .iter()
+                        .map(|path| path.join("steam.exe"))
+                        .find(|path| path.exists());
 
-            if let Some(steam_exe) = steam_exe {
-                Command::new(steam_exe)
-                    .args(["-applaunch", &app_id.to_string()])
-                    .spawn()
-                    .is_ok()
+                    if let Some(steam_exe) = steam_exe {
+                        Command::new(steam_exe)
+                            .args(["-applaunch", &app_id.to_string()])
+                            .spawn()
+                            .is_ok()
+                    } else {
+                        let url = format!("steam://rungameid/{}", app_id);
+                        Command::new("cmd")
+                            .args(["/C", "start", "", &url])
+                            .spawn()
+                            .is_ok()
+                    }
+                }
+
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let _ = steam_paths;
+                    false
+                }
             } else {
-                let url = format!("steam://rungameid/{}", app_id);
-                Command::new("cmd")
-                    .args(["/C", "start", "", &url])
-                    .spawn()
-                    .is_ok()
+                launch_target
+                    .as_ref()
+                    .or(Some(&game.path))
+                    .and_then(|path| Command::new(path).spawn().ok())
+                    .is_some()
             }
         }
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            let _ = steam_paths;
-            false
-        }
-    } else {
-        Command::new(&game.path).spawn().is_ok()
+        GameSource::Epic => launch_target
+            .as_ref()
+            .and_then(|path| Command::new(path).spawn().ok())
+            .is_some(),
     };
 
     if !launched {

@@ -10,6 +10,8 @@ use eframe::egui;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use crate::game::{self, Game, GameSource};
+use crate::game_last_played;
 use crate::i18n::AppLanguage;
 use crate::input::{self, InputController};
 use crate::launch::{self, LaunchState};
@@ -19,7 +21,7 @@ use crate::system::{
     external_apps::{self, ExternalApp},
     power, startup,
 };
-use crate::steam::{self, Game};
+use crate::steam;
 use crate::ui;
 
 use self::achievements::AchievementState;
@@ -66,7 +68,7 @@ impl LauncherApp {
         let _ = ctx;
 
         let steam_paths = steam::find_steam_paths();
-        let games = steam::scan_games_with_paths(&steam_paths);
+        let games = game::scan_installed_games(&steam_paths);
         let launch_on_startup_enabled = startup::is_enabled();
         let home_menu_external_apps = external_apps::detect_installed();
         let hint_icon_theme = crate::config::load_hint_icon_theme();
@@ -111,7 +113,10 @@ impl LauncherApp {
     }
 
     fn can_open_achievement_panel_for_selected(&self) -> bool {
-        self.games.get(self.page.selected()).is_some()
+        self.games
+            .get(self.page.selected())
+            .map(|game| matches!(game.source, GameSource::Steam))
+            .unwrap_or(false)
     }
 
     fn selected_launch_pending(&self) -> bool {
@@ -126,15 +131,20 @@ impl LauncherApp {
         if let Some(state) = self.running_games.get(&selected) {
             if let Some(focus_state) = launch::begin_focus_transition(selected, state) {
                 self.launch_state = Some(focus_state);
+                let _ = self.promote_game_to_front(selected);
             } else {
-                let _ = launch::focus_running_game(state);
+                if launch::focus_running_game(state) {
+                    let _ = self.promote_game_to_front(selected);
+                }
             }
             return;
         }
 
         if let Some(game) = self.games.get(selected) {
-            self.launch_state =
-                launch::begin_launch(selected, game, &self.steam_paths);
+            self.launch_state = launch::begin_launch(selected, game, &self.steam_paths);
+            if self.launch_state.is_some() {
+                let _ = self.promote_game_to_front(selected);
+            }
         }
     }
 
@@ -170,6 +180,60 @@ impl LauncherApp {
     fn refresh_selected_install_size(&mut self, ctx: &egui::Context) {
         self.install_size
             .refresh_for_selected(self.games.get(self.page.selected()), ctx);
+    }
+
+    fn promote_game_to_front(&mut self, game_index: usize) -> Option<usize> {
+        let game_key = self.games.get(game_index)?.persistent_key();
+        let now = game_last_played::now_unix_secs();
+        let old_order = self
+            .games
+            .iter()
+            .map(Game::persistent_key)
+            .collect::<Vec<_>>();
+
+        self.games.get_mut(game_index)?.last_played = now;
+        game_last_played::record_for_game(&game_key, now);
+        game::sort_games_by_last_played(&mut self.games);
+        self.remap_runtime_indices(&old_order);
+
+        let new_index = self
+            .games
+            .iter()
+            .position(|game| game.persistent_key() == game_key)?;
+        self.page.force_select(new_index);
+        Some(new_index)
+    }
+
+    fn remap_runtime_indices(&mut self, old_order: &[String]) {
+        let new_positions = self
+            .games
+            .iter()
+            .enumerate()
+            .map(|(index, game)| (game.persistent_key(), index))
+            .collect::<HashMap<_, _>>();
+
+        let mut remapped_running_games = HashMap::with_capacity(self.running_games.len());
+        for (old_index, mut state) in self.running_games.drain() {
+            let Some(game_key) = old_order.get(old_index) else {
+                continue;
+            };
+            let Some(&new_index) = new_positions.get(game_key) else {
+                continue;
+            };
+
+            state.game_index = new_index;
+            remapped_running_games.insert(new_index, state);
+        }
+        self.running_games = remapped_running_games;
+
+        if let Some(state) = self.launch_state.as_mut() {
+            let Some(game_key) = old_order.get(state.game_index) else {
+                return;
+            };
+            if let Some(&new_index) = new_positions.get(game_key) {
+                state.game_index = new_index;
+            }
+        }
     }
 
     fn apply_resolution_preset(&self, preset: ResolutionPreset) {
@@ -557,11 +621,9 @@ impl eframe::App for LauncherApp {
                     render_wake_anim,
                 );
 
-                if self.page.achievement_panel_anim() > 0.001 {
+                if self.page.achievement_panel_anim() > 0.001 && can_open_achievement_panel {
                     if let Some(game) = self.games.get(self.page.selected()) {
-                        let game_icon = game
-                            .app_id
-                            .and_then(|app_id| self.game_icons.get(app_id));
+                        let game_icon = self.game_icons.get(&game.icon_key());
                         ui::draw_achievement_page(
                             ui,
                             self.language,
