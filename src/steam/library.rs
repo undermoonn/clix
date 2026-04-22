@@ -215,18 +215,18 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                             continue;
                         }
                         let game_path = lib.join("common").join(&install_dir);
-                        let dlss_version = crate::assets::dlss::detect_version(&game_path, Some(id));
                         games.push(Game {
                             source: GameSource::Steam,
                             name,
                             path: game_path,
                             launch_target: None,
                             app_id: Some(id),
+                            launch_id: None,
                             persistent_id: None,
                             last_played: last_played_map.get(&id).copied().unwrap_or(0),
                             playtime_minutes: playtime_map.get(&id).copied().unwrap_or(0),
                             installed_size_bytes: None,
-                            dlss_version,
+                            dlss_version: None,
                         });
                     }
                 }
@@ -266,8 +266,6 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                                 continue;
                             }
                             let install_path = PathBuf::from(install_location);
-                            let dlss_version =
-                                crate::assets::dlss::detect_version(&install_path, Some(app_id));
                             seen_app_ids.insert(app_id);
                             games.push(Game {
                                 source: GameSource::Steam,
@@ -275,6 +273,7 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                                 path: install_path,
                                 launch_target: None,
                                 app_id: Some(app_id),
+                                launch_id: None,
                                 persistent_id: None,
                                 last_played: last_played_map.get(&app_id).copied().unwrap_or(0),
                                 playtime_minutes: playtime_map
@@ -282,7 +281,7 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                                     .copied()
                                     .unwrap_or(0),
                                 installed_size_bytes: None,
-                                dlss_version,
+                                dlss_version: None,
                             });
                         }
                     }

@@ -35,7 +35,9 @@ impl GameIconState {
                 continue;
             }
 
-            if let Some(bytes) = cover::load_game_icon_bytes(steam_paths, game) {
+            let icon_bytes = cover::load_game_icon_bytes(steam_paths, game);
+
+            if let Some(bytes) = icon_bytes {
                 if let Some(texture) = cover::bytes_to_game_icon_texture(
                     ctx,
                     &bytes,

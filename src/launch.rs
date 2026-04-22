@@ -56,6 +56,8 @@ pub enum LaunchTickResult {
 pub fn begin_launch(game_index: usize, game: &Game, steam_paths: &[PathBuf]) -> Option<LaunchState> {
     let target_path = game.path.clone();
     let launch_target = game.launch_target.clone();
+    let launch_id = game.launch_id.clone();
+    let persistent_id = game.persistent_id.clone();
     let game_name = game.name.clone();
     let launch_app_id = game.app_id;
     #[cfg(target_os = "windows")]
@@ -107,6 +109,12 @@ pub fn begin_launch(game_index: usize, game: &Game, steam_paths: &[PathBuf]) -> 
             .as_ref()
             .and_then(|path| Command::new(path).spawn().ok())
             .is_some(),
+        GameSource::Xbox => persistent_id
+            .as_deref()
+            .zip(launch_id.as_deref())
+            .is_some_and(|(family_name, application_id)| {
+                launch_xbox_app(family_name, application_id)
+            }),
     };
 
     if !launched {
@@ -132,6 +140,20 @@ pub fn begin_launch(game_index: usize, game: &Game, steam_paths: &[PathBuf]) -> 
         #[cfg(target_os = "windows")]
         transition: None,
     })
+}
+
+#[cfg(target_os = "windows")]
+fn launch_xbox_app(family_name: &str, application_id: &str) -> bool {
+    let apps_folder_target = format!(r"shell:AppsFolder\{}!{}", family_name, application_id);
+    Command::new("explorer.exe")
+        .arg(apps_folder_target)
+        .spawn()
+        .is_ok()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn launch_xbox_app(_family_name: &str, _application_id: &str) -> bool {
+    false
 }
 
 pub fn begin_focus_transition(game_index: usize, state: &RunningGameState) -> Option<LaunchState> {

@@ -1,7 +1,9 @@
 use eframe::egui;
 use image::ImageEncoder;
+use regex::Regex;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use super::cache;
 
@@ -156,6 +158,54 @@ fn is_png_bytes(bytes: &[u8]) -> bool {
 
 fn achievement_icon_cache_dir() -> PathBuf {
     cache::cache_subdir("achievement_icon_cache")
+}
+
+fn game_icon_cache_dir() -> PathBuf {
+    cache::cache_subdir("game_icon_cache")
+}
+
+fn game_icon_cache_key(game: &crate::game::Game, source: &str) -> String {
+    let mut key = format!("{}|{}", source, game.persistent_key());
+    if let Some(launch_id) = game.launch_id.as_deref() {
+        key.push('|');
+        key.push_str(launch_id);
+    }
+    key
+}
+
+fn game_icon_cache_path(game: &crate::game::Game, source: &str) -> PathBuf {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    game_icon_cache_key(game, source).hash(&mut hasher);
+    game_icon_cache_dir().join(format!("{:x}.png", hasher.finish()))
+}
+
+fn encode_game_icon_cache_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
+    let dyn_img = image::load_from_memory(bytes).ok()?;
+    let rgba = dyn_img.to_rgba8();
+    png_bytes_from_rgba(rgba.width(), rgba.height(), rgba.as_raw())
+}
+
+fn game_icon_cache_bytes_are_valid(bytes: &[u8]) -> bool {
+    is_png_bytes(bytes) && image::load_from_memory(bytes).is_ok()
+}
+
+fn load_cached_game_icon_bytes(game: &crate::game::Game, source: &str) -> Option<Vec<u8>> {
+    let cache_path = game_icon_cache_path(game, source);
+    let bytes = std::fs::read(&cache_path).ok()?;
+    if !game_icon_cache_bytes_are_valid(&bytes) {
+        let _ = std::fs::remove_file(cache_path);
+        return None;
+    }
+    Some(bytes)
+}
+
+fn store_cached_game_icon_bytes(game: &crate::game::Game, source: &str, bytes: &[u8]) {
+    let Some(cache_bytes) = encode_game_icon_cache_bytes(bytes) else {
+        return;
+    };
+    let _ = std::fs::write(game_icon_cache_path(game, source), &cache_bytes);
 }
 
 fn achievement_icon_cache_path(url: &str) -> PathBuf {
@@ -903,17 +953,165 @@ pub fn load_file_icon_bytes(_icon_path: &Path) -> Option<Vec<u8>> {
 
 #[cfg(target_os = "windows")]
 fn load_executable_icon_bytes(game: &crate::game::Game) -> Option<Vec<u8>> {
+    if let Some(bytes) = load_cached_game_icon_bytes(game, "exe_icon") {
+        return Some(bytes);
+    }
+
     if let Some(launch_target) = game.launch_target.as_deref().filter(|path| path.is_file()) {
         if let Some(bytes) = load_file_icon_bytes(launch_target) {
+            store_cached_game_icon_bytes(game, "exe_icon", &bytes);
             return Some(bytes);
         }
     }
 
     let executable = find_preferred_executable(&game.path, &game.name)?;
-    load_file_icon_bytes(&executable)
+    let bytes = load_file_icon_bytes(&executable)?;
+    store_cached_game_icon_bytes(game, "exe_icon", &bytes);
+    Some(bytes)
+}
+
+#[cfg(target_os = "windows")]
+fn application_block_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| Regex::new(r"(?s)<Application\b.*?</Application>").unwrap())
+}
+
+#[cfg(target_os = "windows")]
+fn manifest_attribute_regex(attribute_name: &str) -> Regex {
+    Regex::new(&format!(r#"\b{}=\"([^\"]+)\""#, regex::escape(attribute_name))).unwrap()
+}
+
+#[cfg(target_os = "windows")]
+fn find_manifest_attribute(contents: &str, attribute_name: &str) -> Option<String> {
+    manifest_attribute_regex(attribute_name)
+        .captures(contents)
+        .and_then(|captures| captures.get(1).map(|value| value.as_str().trim().to_owned()))
+        .filter(|value| !value.is_empty())
+}
+
+#[cfg(target_os = "windows")]
+fn find_application_block<'a>(manifest: &'a str, application_id: Option<&str>) -> Option<&'a str> {
+    let mut first_block = None;
+
+    for captures in application_block_regex().find_iter(manifest) {
+        let block = captures.as_str();
+        if first_block.is_none() {
+            first_block = Some(block);
+        }
+
+        let Some(application_id) = application_id else {
+            continue;
+        };
+        let Some(block_id) = find_manifest_attribute(block, "Id") else {
+            continue;
+        };
+        if block_id == application_id {
+            return Some(block);
+        }
+    }
+
+    first_block
+}
+
+#[cfg(target_os = "windows")]
+fn preferred_msix_logo_relative_path(application_block: &str, manifest: &str) -> Option<String> {
+    [
+        "Square150x150Logo",
+        "Square310x310Logo",
+        "Square71x71Logo",
+        "Square44x44Logo",
+        "Logo",
+        "SmallLogo",
+    ]
+        .iter()
+        .find_map(|attribute| {
+            find_manifest_attribute(application_block, attribute)
+                .or_else(|| find_manifest_attribute(manifest, attribute))
+        })
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_msix_logo_path(install_dir: &Path, relative_path: &str) -> Option<PathBuf> {
+    let relative_path = relative_path.replace('/', "\\");
+    let direct_path = install_dir.join(&relative_path);
+
+    let relative = PathBuf::from(&relative_path);
+    let parent = relative.parent()?;
+    let stem = relative.file_stem()?.to_str()?;
+    let extension = relative.extension()?.to_str()?.to_ascii_lowercase();
+    let asset_dir = install_dir.join(parent);
+    let stem_lower = stem.to_ascii_lowercase();
+    let extension_suffix = format!(".{}", extension);
+
+    let mut best_match = direct_path.is_file().then_some((100, direct_path.clone()));
+
+    if let Ok(entries) = std::fs::read_dir(asset_dir) {
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            let lower_name = file_name.to_ascii_lowercase();
+            if !lower_name.starts_with(&stem_lower) || !lower_name.ends_with(&extension_suffix) {
+                continue;
+            }
+
+            let score = if lower_name.contains("targetsize-256") {
+                700
+            } else if lower_name.contains("targetsize-128") {
+                600
+            } else if lower_name.contains("targetsize-96") {
+                550
+            } else if lower_name.contains("scale-400") {
+                500
+            } else if lower_name.contains("scale-200") {
+                400
+            } else if lower_name.contains("scale-150") {
+                300
+            } else if lower_name.contains("scale-100") {
+                200
+            } else {
+                100
+            };
+
+            match &best_match {
+                Some((best_score, _)) if *best_score >= score => {}
+                _ => best_match = Some((score, path)),
+            }
+        }
+    }
+
+    best_match.map(|(_, path)| path)
+}
+
+#[cfg(target_os = "windows")]
+fn load_xbox_manifest_icon_bytes(game: &crate::game::Game) -> Option<Vec<u8>> {
+    if let Some(bytes) = load_cached_game_icon_bytes(game, "xbox_manifest_icon") {
+        return Some(bytes);
+    }
+
+    let manifest_path = game.path.join("AppxManifest.xml");
+    let manifest = std::fs::read_to_string(manifest_path).ok()?;
+    let application_block = find_application_block(&manifest, game.launch_id.as_deref())?;
+    let relative_logo_path = preferred_msix_logo_relative_path(application_block, &manifest)?;
+    let logo_path = resolve_msix_logo_path(&game.path, &relative_logo_path)?;
+    let bytes = std::fs::read(logo_path).ok()?;
+    store_cached_game_icon_bytes(game, "xbox_manifest_icon", &bytes);
+    Some(bytes)
 }
 
 pub fn load_game_icon_bytes(steam_paths: &[PathBuf], game: &crate::game::Game) -> Option<Vec<u8>> {
+    #[cfg(target_os = "windows")]
+    if matches!(game.source, crate::game::GameSource::Xbox) {
+        if let Some(bytes) = load_xbox_manifest_icon_bytes(game) {
+            return Some(bytes);
+        }
+    }
+
     #[cfg(target_os = "windows")]
     if let Some(bytes) = load_executable_icon_bytes(game) {
         return Some(bytes);

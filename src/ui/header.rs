@@ -360,14 +360,15 @@ pub(crate) fn draw_selected_game_badge(
     title_size: egui::Vec2,
     alpha_scale: f32,
 ) -> f32 {
-    draw_selected_game_text_badge(
-        painter,
-        game_source_badge_text(game.source),
-        title_pos,
-        title_size,
-        alpha_scale,
-    )
-    .x
+    let badge_text = game_source_badge_text(game.source);
+    let badge_size = measure_selected_game_text_badge(painter, badge_text, title_size);
+    let badge_anchor_pos = egui::pos2(
+        title_pos.x,
+        title_pos.y + (title_size.y - badge_size.y) * 0.5 - 4.0,
+    );
+
+    draw_selected_game_text_badge(painter, badge_text, badge_anchor_pos, title_size, alpha_scale)
+        .x
 }
 
 pub(crate) fn draw_selected_game_summary(

@@ -587,13 +587,13 @@ impl AchievementState {
         selected_game
             .and_then(|game| game.app_id)
             .map(|app_id| {
-                self.detail_loading.contains(&app_id)
-                    || (self
-                        .detail_cache
-                        .as_ref()
-                        .map(|(detail_app_id, _)| *detail_app_id != app_id)
-                        .unwrap_or(true)
-                        && !self.no_data.contains(&app_id))
+                let has_current_detail = self
+                    .detail_cache
+                    .as_ref()
+                    .is_some_and(|(detail_app_id, _)| *detail_app_id == app_id);
+
+                !has_current_detail
+                    && (self.detail_loading.contains(&app_id) || !self.no_data.contains(&app_id))
             })
             .unwrap_or(false)
     }

@@ -111,19 +111,18 @@ mod imp {
             .filter(|path| path.is_file())?;
         let last_played = manifest_last_played(&manifest, last_played).unwrap_or(0);
 
-        let dlss_version = crate::assets::dlss::detect_version(&install_dir, None);
-
         Some(Game {
             source: GameSource::Epic,
             name,
             path: install_dir,
             launch_target: Some(launch_target),
             app_id: None,
+            launch_id: None,
             persistent_id: app_name,
             last_played,
             playtime_minutes: 0,
             installed_size_bytes: None,
-            dlss_version,
+            dlss_version: None,
         })
     }
 

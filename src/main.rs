@@ -3,8 +3,8 @@
 mod app;
 mod assets;
 mod config;
-mod epic;
 mod game;
+mod game_platforms;
 mod game_last_played;
 mod home_menu_structure;
 mod i18n;

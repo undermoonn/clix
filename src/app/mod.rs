@@ -1,5 +1,6 @@
 mod achievements;
 mod artwork;
+mod dlss_state;
 mod external_app_icons;
 mod game_icons;
 mod install_size;
@@ -26,6 +27,7 @@ use crate::ui;
 
 use self::achievements::AchievementState;
 use self::artwork::ArtworkState;
+use self::dlss_state::DlssState;
 use self::external_app_icons::ExternalAppIconState;
 use self::game_icons::GameIconState;
 use self::install_size::InstallSizeState;
@@ -50,6 +52,7 @@ pub struct LauncherApp {
     achievements: AchievementState,
     playtime: PlaytimeState,
     install_size: InstallSizeState,
+    dlss: DlssState,
     runtime: RuntimeState,
     resolution_options: ResolutionOptions,
     launch_on_startup_enabled: bool,
@@ -88,6 +91,7 @@ impl LauncherApp {
             achievements: AchievementState::new(),
             playtime: PlaytimeState::new(),
             install_size: InstallSizeState::new(),
+            dlss: DlssState::new(),
             runtime: RuntimeState::new(),
             resolution_options: display_mode::detect_resolution_options(),
             launch_on_startup_enabled,
@@ -179,6 +183,11 @@ impl LauncherApp {
 
     fn refresh_selected_install_size(&mut self, ctx: &egui::Context) {
         self.install_size
+            .refresh_for_selected(self.games.get(self.page.selected()), ctx);
+    }
+
+    fn refresh_selected_dlss(&mut self, ctx: &egui::Context) {
+        self.dlss
             .refresh_for_selected(self.games.get(self.page.selected()), ctx);
     }
 
@@ -462,6 +471,7 @@ impl eframe::App for LauncherApp {
                         &ctx,
                     );
                     self.refresh_selected_install_size(&ctx);
+                    self.refresh_selected_dlss(&ctx);
                 }
                 if result.reveal_hidden_achievement
                     && self.achievements.reveal_hidden_description_for_selected(
@@ -523,6 +533,7 @@ impl eframe::App for LauncherApp {
         self.achievements.drain_icon_results(&ctx);
         self.playtime.drain_results(&mut self.games);
         self.install_size.drain_results(&mut self.games);
+        self.dlss.drain_results(&mut self.games);
 
         let selected_game = self.games.get(self.page.selected());
         let selected_app_id = selected_game.and_then(|game| game.app_id);
