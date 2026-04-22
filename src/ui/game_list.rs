@@ -172,10 +172,14 @@ pub fn draw_game_list(
         let item_left = x_pos;
 
         let font_id = egui::FontId::proportional(font_size);
+        let icon_slot_rect = egui::Rect::from_min_size(
+            egui::pos2(item_left, content_top),
+            egui::vec2(icon_slot_size, icon_slot_size),
+        );
         let icon_rect = egui::Rect::from_min_size(
             egui::pos2(
-                item_left + (icon_slot_size - icon_size) * 0.5,
-                content_top + (icon_slot_size - icon_size) + icon_offset_y,
+                icon_slot_rect.min.x + (icon_slot_rect.width() - icon_size) * 0.5,
+                icon_slot_rect.min.y + (icon_slot_rect.height() - icon_size) + icon_offset_y,
             ),
             egui::vec2(icon_size, icon_size),
         );
@@ -195,7 +199,7 @@ pub fn draw_game_list(
             let title_x = if i + 1 < games.len() {
                 item_left_for_offset((i + 1) as f32 - scroll_offset)
             } else {
-                icon_rect.max.x + 18.0
+                icon_slot_rect.max.x + 18.0
             };
             let header_width = (icon_slot_size * 2.0 + 28.0).max(320.0);
             let header = build_selected_game_header(
@@ -213,10 +217,10 @@ pub fn draw_game_list(
                 140.0 * meta_t,
                 header_width,
             );
-            let title_y = icon_rect.max.y - header.title_galley.size().y;
+            let title_y = icon_slot_rect.max.y - header.title_galley.size().y;
             let badge_pos = egui::pos2(title_x, title_y);
-            let summary_pos = egui::pos2(icon_rect.min.x, icon_rect.max.y + 36.0);
-            let playtime_width = icon_rect.width();
+            let summary_pos = egui::pos2(icon_slot_rect.min.x, icon_slot_rect.max.y + 36.0);
+            let playtime_width = icon_slot_rect.width();
             let achievement_x = badge_pos.x;
             let achievement_width = ((padded_rect.max.x - achievement_x - 24.0).min(292.0)).max(220.0);
             let badge_offset =
