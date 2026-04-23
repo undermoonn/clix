@@ -63,13 +63,6 @@ impl AppLanguage {
         }
     }
 
-    pub fn minimize_app_text(self) -> &'static str {
-        match self {
-            Self::English => "Minimize",
-            Self::SimplifiedChinese => "最小化",
-        }
-    }
-
     pub fn power_text(self) -> &'static str {
         match self {
             Self::English => "Power",
@@ -84,6 +77,20 @@ impl AppLanguage {
         }
     }
 
+    pub fn system_text(self) -> &'static str {
+        match self {
+            Self::English => "System",
+            Self::SimplifiedChinese => "系统",
+        }
+    }
+
+    pub fn screen_text(self) -> &'static str {
+        match self {
+            Self::English => "Screen",
+            Self::SimplifiedChinese => "屏幕",
+        }
+    }
+
     pub fn sleep_text(self) -> &'static str {
         match self {
             Self::English => "Sleep",
@@ -91,17 +98,17 @@ impl AppLanguage {
         }
     }
 
+    pub fn reboot_text(self) -> &'static str {
+        match self {
+            Self::English => "Restart",
+            Self::SimplifiedChinese => "重启",
+        }
+    }
+
     pub fn shutdown_text(self) -> &'static str {
         match self {
             Self::English => "Shut Down",
             Self::SimplifiedChinese => "关机",
-        }
-    }
-
-    pub fn set_display_resolution_text(self) -> &'static str {
-        match self {
-            Self::English => "Display Resolution",
-            Self::SimplifiedChinese => "显示器分辨率",
         }
     }
 
@@ -116,6 +123,27 @@ impl AppLanguage {
         match self {
             Self::English => "Launch on Startup",
             Self::SimplifiedChinese => "开机自启",
+        }
+    }
+
+    pub fn startup_options_text(self) -> &'static str {
+        match self {
+            Self::English => "Startup Options",
+            Self::SimplifiedChinese => "开机选项",
+        }
+    }
+
+    pub fn settings_text(self) -> &'static str {
+        match self {
+            Self::English => "Settings",
+            Self::SimplifiedChinese => "设置",
+        }
+    }
+
+    pub fn resolution_settings_text(self) -> &'static str {
+        match self {
+            Self::English => "Resolution Settings",
+            Self::SimplifiedChinese => "分辨率设置",
         }
     }
 
@@ -147,17 +175,24 @@ impl AppLanguage {
         }
     }
 
+    pub fn confirm_text(self) -> &'static str {
+        match self {
+            Self::English => "Confirm",
+            Self::SimplifiedChinese => "确认",
+        }
+    }
+
+    pub fn installed_app_options_text(self) -> &'static str {
+        match self {
+            Self::English => "Installed Apps",
+            Self::SimplifiedChinese => "已安装的应用",
+        }
+    }
+
     pub fn hold_close_game_text(self) -> &'static str {
         match self {
             Self::English => "Force Exit",
             Self::SimplifiedChinese => "强制退出",
-        }
-    }
-
-    pub fn scroll_text(self) -> &'static str {
-        match self {
-            Self::English => "Scroll",
-            Self::SimplifiedChinese => "滚动",
         }
     }
 
@@ -172,13 +207,6 @@ impl AppLanguage {
         match self {
             Self::English => "Launch",
             Self::SimplifiedChinese => "启动",
-        }
-    }
-
-    pub fn achievements_text(self) -> &'static str {
-        match self {
-            Self::English => "Details",
-            Self::SimplifiedChinese => "详情",
         }
     }
 

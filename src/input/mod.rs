@@ -57,6 +57,7 @@ pub enum ControllerAction {
     Right,
     Launch,
     Refresh,
+    Settings,
     Quit,
 }
 
@@ -68,12 +69,13 @@ enum InputAction {
     Right,
     Launch,
     Refresh,
+    Settings,
     Quit,
     ForceClose,
 }
 
 impl InputAction {
-    const COUNT: usize = 8;
+    const COUNT: usize = 9;
     const ALL: [Self; Self::COUNT] = [
         Self::Up,
         Self::Down,
@@ -81,24 +83,27 @@ impl InputAction {
         Self::Right,
         Self::Launch,
         Self::Refresh,
+        Self::Settings,
         Self::Quit,
         Self::ForceClose,
     ];
-    const POLLABLE_ACTIONS: [Self; 6] = [
+    const POLLABLE_ACTIONS: [Self; 7] = [
         Self::Up,
         Self::Down,
         Self::Left,
         Self::Right,
         Self::Launch,
         Self::Refresh,
+        Self::Settings,
     ];
-    const POLLABLE_ACTIONS_WITH_QUIT: [Self; 7] = [
+    const POLLABLE_ACTIONS_WITH_QUIT: [Self; 8] = [
         Self::Up,
         Self::Down,
         Self::Left,
         Self::Right,
         Self::Launch,
         Self::Refresh,
+        Self::Settings,
         Self::Quit,
     ];
 
@@ -118,6 +123,7 @@ impl InputAction {
             "right" => Some(Self::Right),
             "launch" => Some(Self::Launch),
             "refresh" => Some(Self::Refresh),
+            "settings" => Some(Self::Settings),
             "quit" => Some(Self::Quit),
             "force_close" => Some(Self::ForceClose),
             _ => None,
@@ -140,13 +146,14 @@ impl InputAction {
             Self::Right => Some(ControllerAction::Right),
             Self::Launch => Some(ControllerAction::Launch),
             Self::Refresh => Some(ControllerAction::Refresh),
+            Self::Settings => Some(ControllerAction::Settings),
             Self::Quit => Some(ControllerAction::Quit),
             Self::ForceClose => None,
         }
     }
 
     fn repeats(self) -> bool {
-        !matches!(self, Self::Refresh)
+        !matches!(self, Self::Refresh | Self::Settings)
     }
 
     fn pollable_actions(include_quit_action: bool) -> &'static [Self] {
@@ -233,6 +240,9 @@ impl InputAggregateState {
         if self.buttons.intersects(Buttons::X) {
             raw_held.insert(InputAction::Refresh);
             raw_held.insert(InputAction::ForceClose);
+        }
+        if self.buttons.intersects(Buttons::Y) {
+            raw_held.insert(InputAction::Settings);
         }
     }
 
@@ -695,6 +705,55 @@ mod tests {
 
         assert!(matches!(first.actions.as_slice(), [ControllerAction::Refresh]));
         assert!(held.actions.is_empty());
+    }
+
+    #[test]
+    fn settings_does_not_repeat_while_held() {
+        let mut input = InputController::new();
+        let now = Instant::now();
+        let held_until = now + Duration::from_millis((NAV_REPEAT_ACCEL_STAGE1_AFTER_MS + 250) as u64);
+
+        let first = input.poll_with_raw_held(
+            raw_held(&[InputAction::Settings]),
+            true,
+            false,
+            None,
+            now,
+        );
+        let held = input.poll_with_raw_held(
+            raw_held(&[InputAction::Settings]),
+            true,
+            false,
+            None,
+            held_until,
+        );
+
+        assert!(matches!(first.actions.as_slice(), [ControllerAction::Settings]));
+        assert!(held.actions.is_empty());
+    }
+
+    #[test]
+    fn quit_is_only_emitted_when_enabled() {
+        let mut input = InputController::new();
+        let now = Instant::now();
+
+        let blocked = input.poll_with_raw_held(
+            raw_held(&[InputAction::Quit]),
+            true,
+            false,
+            None,
+            now,
+        );
+        let allowed = input.poll_with_raw_held(
+            raw_held(&[InputAction::Quit]),
+            true,
+            true,
+            None,
+            now + Duration::from_millis(1),
+        );
+
+        assert!(blocked.actions.is_empty());
+        assert!(matches!(allowed.actions.as_slice(), [ControllerAction::Quit]));
     }
 
     #[test]

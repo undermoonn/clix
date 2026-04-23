@@ -10,14 +10,44 @@ use resvg::{tiny_skia, usvg};
 
 const ICON_SIZES: [u32; 6] = [16, 32, 48, 64, 128, 256];
 const SVG_PATH: &str = "assets/app-icon.svg";
+const SETTINGS_SVG_PATH: &str = "src/icons/settings.svg";
+const SYSTEM_SVG_PATH: &str = "src/icons/system.svg";
+const SCREEN_SVG_PATH: &str = "src/icons/screen.svg";
+const APPS_SVG_PATH: &str = "src/icons/apps.svg";
+const EXIT_SVG_PATH: &str = "src/icons/exit.svg";
+const POWER_SLEEP_SVG_PATH: &str = "src/icons/power-sleep.svg";
+const POWER_REBOOT_SVG_PATH: &str = "src/icons/power-reboot.svg";
+const POWER_OFF_SVG_PATH: &str = "src/icons/power-off.svg";
+const MAIN_CLOCK_FONT_SIZE: f32 = 40.0;
+const SETTINGS_ICON_SCALE: f32 = 0.63;
+const POWER_TRIGGER_ICON_SCALE: f32 = 1.18;
+const UI_ICON_MAX_RENDERED_SIZE: u32 =
+    (MAIN_CLOCK_FONT_SIZE * SETTINGS_ICON_SCALE * POWER_TRIGGER_ICON_SCALE).ceil() as u32;
+const UI_ICON_RENDER_SIZE: u32 = UI_ICON_MAX_RENDERED_SIZE * 4;
 const PNG_FILE_NAME: &str = "app-icon-256.png";
 const ICO_FILE_NAME: &str = "app-icon.ico";
+const SETTINGS_PNG_FILE_NAME: &str = "settings-icon-ui.png";
+const SYSTEM_PNG_FILE_NAME: &str = "system-icon-ui.png";
+const SCREEN_PNG_FILE_NAME: &str = "screen-icon-ui.png";
+const APPS_PNG_FILE_NAME: &str = "apps-icon-ui.png";
+const EXIT_PNG_FILE_NAME: &str = "exit-icon-ui.png";
+const POWER_SLEEP_PNG_FILE_NAME: &str = "power-sleep-icon-ui.png";
+const POWER_REBOOT_PNG_FILE_NAME: &str = "power-reboot-icon-ui.png";
+const POWER_OFF_PNG_FILE_NAME: &str = "power-off-icon-ui.png";
 const VIGNETTE_FILE_NAME: &str = "top-right-vignette.png";
 const VIGNETTE_WIDTH: u32 = 2048;
 const VIGNETTE_HEIGHT: u32 = 1152;
 
 fn main() {
     println!("cargo:rerun-if-changed={}", SVG_PATH);
+    println!("cargo:rerun-if-changed={}", SETTINGS_SVG_PATH);
+    println!("cargo:rerun-if-changed={}", SYSTEM_SVG_PATH);
+    println!("cargo:rerun-if-changed={}", SCREEN_SVG_PATH);
+    println!("cargo:rerun-if-changed={}", APPS_SVG_PATH);
+    println!("cargo:rerun-if-changed={}", EXIT_SVG_PATH);
+    println!("cargo:rerun-if-changed={}", POWER_SLEEP_SVG_PATH);
+    println!("cargo:rerun-if-changed={}", POWER_REBOOT_SVG_PATH);
+    println!("cargo:rerun-if-changed={}", POWER_OFF_SVG_PATH);
     println!("cargo:rerun-if-changed=build.rs");
 
     if let Err(error) = build_icon_assets() {
@@ -28,12 +58,68 @@ fn main() {
 fn build_icon_assets() -> Result<(), Box<dyn Error>> {
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
     let svg = fs::read_to_string(SVG_PATH)?;
+    let settings_svg = fs::read_to_string(SETTINGS_SVG_PATH)?;
+    let system_svg = fs::read_to_string(SYSTEM_SVG_PATH)?;
+    let screen_svg = fs::read_to_string(SCREEN_SVG_PATH)?;
+    let apps_svg = fs::read_to_string(APPS_SVG_PATH)?;
+    let exit_svg = fs::read_to_string(EXIT_SVG_PATH)?;
+    let power_sleep_svg = fs::read_to_string(POWER_SLEEP_SVG_PATH)?;
+    let power_reboot_svg = fs::read_to_string(POWER_REBOOT_SVG_PATH)?;
+    let power_off_svg = fs::read_to_string(POWER_OFF_SVG_PATH)?;
     let png_path = out_dir.join(PNG_FILE_NAME);
     let ico_path = out_dir.join(ICO_FILE_NAME);
+    let settings_png_path = out_dir.join(SETTINGS_PNG_FILE_NAME);
+    let system_png_path = out_dir.join(SYSTEM_PNG_FILE_NAME);
+    let screen_png_path = out_dir.join(SCREEN_PNG_FILE_NAME);
+    let apps_png_path = out_dir.join(APPS_PNG_FILE_NAME);
+    let exit_png_path = out_dir.join(EXIT_PNG_FILE_NAME);
+    let power_sleep_png_path = out_dir.join(POWER_SLEEP_PNG_FILE_NAME);
+    let power_reboot_png_path = out_dir.join(POWER_REBOOT_PNG_FILE_NAME);
+    let power_off_png_path = out_dir.join(POWER_OFF_PNG_FILE_NAME);
     let vignette_path = out_dir.join(VIGNETTE_FILE_NAME);
 
     write_png(&png_path, &svg, 256)?;
     write_ico(&ico_path, &svg)?;
+    write_png(
+        &settings_png_path,
+        &settings_svg.replace("currentColor", "#ffffff"),
+        UI_ICON_RENDER_SIZE,
+    )?;
+    write_png(
+        &system_png_path,
+        &system_svg.replace("currentColor", "#ffffff"),
+        UI_ICON_RENDER_SIZE,
+    )?;
+    write_png(
+        &screen_png_path,
+        &screen_svg.replace("currentColor", "#ffffff"),
+        UI_ICON_RENDER_SIZE,
+    )?;
+    write_png(
+        &apps_png_path,
+        &apps_svg.replace("currentColor", "#ffffff"),
+        UI_ICON_RENDER_SIZE,
+    )?;
+    write_png(
+        &exit_png_path,
+        &exit_svg.replace("currentColor", "#ffffff"),
+        UI_ICON_RENDER_SIZE,
+    )?;
+    write_png(
+        &power_sleep_png_path,
+        &power_sleep_svg.replace("currentColor", "#ffffff"),
+        UI_ICON_RENDER_SIZE,
+    )?;
+    write_png(
+        &power_reboot_png_path,
+        &power_reboot_svg.replace("currentColor", "#ffffff"),
+        UI_ICON_RENDER_SIZE,
+    )?;
+    write_png(
+        &power_off_png_path,
+        &power_off_svg.replace("currentColor", "#ffffff"),
+        UI_ICON_RENDER_SIZE,
+    )?;
     write_top_right_vignette(&vignette_path)?;
     compile_windows_resource(&ico_path)?;
 

@@ -1,7 +1,10 @@
 use eframe::egui;
 
 use super::anim::{lerp_f32, smoothstep01};
-use super::text::{corner_radius, draw_main_clock, scale_alpha};
+use super::text::{
+    color_with_scaled_alpha, corner_radius, draw_main_clock, layout_main_clock, main_clock_color,
+    scale_alpha,
+};
 
 fn draw_top_right_vignette(
     painter: &egui::Painter,
@@ -23,13 +26,24 @@ fn draw_top_right_vignette(
         255,
         scale_alpha(255, alpha_scale),
     );
-    painter.image(texture.id(), hero_rect, uv, tint);
+    let vignette_rect = egui::Rect::from_min_max(
+        egui::pos2(hero_rect.min.x - hero_rect.width() * 0.12, hero_rect.min.y),
+        hero_rect.max,
+    );
+    painter.image(texture.id(), vignette_rect, uv, tint);
 }
 
 pub fn draw_background(
     ctx: &egui::Context,
     vignette: Option<&egui::TextureHandle>,
     show_clock: bool,
+    settings_icon: Option<&egui::TextureHandle>,
+    power_icon: Option<&egui::TextureHandle>,
+    show_settings_button: bool,
+    settings_button_focus_anim: f32,
+    power_button_visibility_anim: f32,
+    power_button_focus_anim: f32,
+    power_button_above_mask: bool,
     cover: &Option<(u32, egui::TextureHandle)>,
     cover_prev: &Option<(u32, egui::TextureHandle)>,
     logo: &Option<(u32, egui::TextureHandle)>,
@@ -121,18 +135,134 @@ pub fn draw_background(
             return;
         }
 
-        let clock_font = egui::FontId::new(40.0, egui::FontFamily::Name("Bold".into()));
-        let clock_galley = bg_painter.layout_no_wrap(
-            chrono::Local::now().format("%H:%M").to_string(),
-            clock_font,
-            egui::Color32::WHITE,
-        );
+        let clock_galley = layout_main_clock(&bg_painter, wake_t);
         let margin_x = clock_anchor_rect.width() * 0.042;
         let margin_y = hero_rect.height() * 0.075;
         let clock_pos = egui::pos2(
             clock_anchor_rect.max.x - margin_x - clock_galley.size().x,
             hero_rect.min.y + margin_y,
         );
+
+        if show_settings_button {
+            if let Some(texture) = settings_icon {
+                let focus_t = smoothstep01(settings_button_focus_anim);
+                let power_t = smoothstep01(power_button_visibility_anim);
+                let power_focus_t = smoothstep01(power_button_focus_anim);
+                let icon_size = clock_galley.size().y * 0.63;
+                let icon_offset_x = 56.0;
+                let icon_pos = egui::pos2(
+                    clock_pos.x - icon_size - icon_offset_x,
+                    clock_pos.y + (clock_galley.size().y - icon_size) * 0.5,
+                );
+                let icon_rect = egui::Rect::from_min_size(icon_pos, egui::vec2(icon_size, icon_size));
+                let power_gap = 54.0;
+
+                if power_t > 0.001 {
+                    if let Some(power_icon) = power_icon {
+                        let power_painter = if power_button_above_mask {
+                            ctx.layer_painter(egui::LayerId::new(
+                                egui::Order::Foreground,
+                                egui::Id::new("home_power_trigger_icon"),
+                            ))
+                        } else {
+                            bg_painter.clone()
+                        };
+                        let power_icon_size = icon_size * 1.18;
+                        let power_y = icon_rect.center().y - power_icon_size * 0.5;
+                        let power_rect = egui::Rect::from_min_size(
+                            egui::pos2(icon_rect.min.x - power_icon_size - power_gap, power_y),
+                            egui::vec2(power_icon_size, power_icon_size),
+                        );
+                        if power_focus_t > 0.001 {
+                            let highlight_radius = power_icon_size * 0.56;
+                            let highlight_center = power_rect.center();
+                            let highlight_rect = egui::Rect::from_center_size(
+                                highlight_center,
+                                egui::vec2(highlight_radius * 2.0, highlight_radius * 2.0),
+                            );
+                            let fill_clip_top = egui::lerp(
+                                highlight_rect.bottom()..=highlight_rect.top(),
+                                power_focus_t,
+                            );
+                            let fill_clip_rect = egui::Rect::from_min_max(
+                                egui::pos2(highlight_rect.left(), fill_clip_top),
+                                egui::pos2(highlight_rect.right(), highlight_rect.bottom()),
+                            );
+                            let fill_painter = power_painter.with_clip_rect(fill_clip_rect);
+                            fill_painter.circle_filled(
+                                highlight_center,
+                                highlight_radius,
+                                color_with_scaled_alpha(
+                                    egui::Color32::from_rgba_unmultiplied(248, 250, 255, 58),
+                                    wake_t * power_focus_t,
+                                ),
+                            );
+                            power_painter.circle_stroke(
+                                highlight_center,
+                                highlight_radius,
+                                egui::Stroke::new(
+                                    lerp_f32(1.0, 2.8, power_focus_t),
+                                    color_with_scaled_alpha(
+                                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 164),
+                                        wake_t * power_focus_t,
+                                    ),
+                                ),
+                            );
+                        }
+                        power_painter.image(
+                            power_icon.id(),
+                            power_rect,
+                            uv,
+                            color_with_scaled_alpha(main_clock_color(wake_t), power_t),
+                        );
+                    }
+                }
+
+                if focus_t > 0.001 {
+                    let highlight_radius = icon_size * 0.58;
+                    let highlight_center = icon_rect.center();
+                    let highlight_rect = egui::Rect::from_center_size(
+                        highlight_center,
+                        egui::vec2(highlight_radius * 2.0, highlight_radius * 2.0),
+                    );
+                    let fill_clip_top = egui::lerp(
+                        highlight_rect.bottom()..=highlight_rect.top(),
+                        focus_t,
+                    );
+                    let fill_clip_rect = egui::Rect::from_min_max(
+                        egui::pos2(highlight_rect.left(), fill_clip_top),
+                        egui::pos2(highlight_rect.right(), highlight_rect.bottom()),
+                    );
+                    let fill_painter = bg_painter.with_clip_rect(fill_clip_rect);
+                    fill_painter.circle_filled(
+                        highlight_center,
+                        highlight_radius,
+                        color_with_scaled_alpha(
+                            egui::Color32::from_rgba_unmultiplied(248, 250, 255, 58),
+                            wake_t * focus_t,
+                        ),
+                    );
+                    bg_painter.circle_stroke(
+                        highlight_center,
+                        highlight_radius,
+                        egui::Stroke::new(
+                            lerp_f32(1.0, 2.8, focus_t),
+                            color_with_scaled_alpha(
+                                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 164),
+                                wake_t * focus_t,
+                            ),
+                        ),
+                    );
+                }
+
+                bg_painter.image(
+                    texture.id(),
+                    icon_rect,
+                    uv,
+                    main_clock_color(wake_t),
+                );
+            }
+        }
 
         draw_main_clock(&bg_painter, clock_pos, wake_t);
     };

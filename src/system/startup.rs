@@ -1,9 +1,5 @@
 use std::path::{Path, PathBuf};
 
-pub const fn supported() -> bool {
-    cfg!(target_os = "windows")
-}
-
 pub fn is_enabled() -> bool {
     imp::is_enabled()
 }

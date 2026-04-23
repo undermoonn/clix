@@ -200,6 +200,39 @@ fn draw_hidden_achievement_overlay(
     }
 }
 
+fn draw_achievement_row_focus_frame(
+    painter: &egui::Painter,
+    row_rect: egui::Rect,
+    focus_t: f32,
+    wake_t: f32,
+) {
+    if focus_t <= 0.001 {
+        return;
+    }
+
+    let focus_rect = row_rect.expand(5.0);
+    painter.rect_filled(
+        focus_rect,
+        corner_radius(12.0),
+        color_with_scaled_alpha(
+            egui::Color32::from_rgba_unmultiplied(248, 250, 255, 54),
+            wake_t * focus_t,
+        ),
+    );
+    painter.rect_stroke(
+        focus_rect,
+        corner_radius(12.0),
+        egui::Stroke::new(
+            lerp_f32(1.2, 3.0, focus_t),
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 168),
+                wake_t * focus_t,
+            ),
+        ),
+        egui::StrokeKind::Outside,
+    );
+}
+
 pub fn draw_achievement_page(
     ui: &mut egui::Ui,
     language: AppLanguage,
@@ -209,7 +242,7 @@ pub fn draw_achievement_page(
     has_no_data: bool,
     achievement_summary_reveal_for_selected: f32,
     selected_index: usize,
-    _achievement_select_anim: f32,
+    achievement_select_anim: f32,
     achievement_panel_anim: f32,
     _selected_game_index: usize,
     game_select_anim: f32,
@@ -371,7 +404,7 @@ pub fn draw_achievement_page(
     );
 
     let list_inner_rect = egui::Rect::from_min_max(
-        egui::pos2(list_rect.min.x + 6.0, list_rect.min.y + 16.0),
+        egui::pos2(list_rect.min.x + 6.0, list_rect.min.y + 12.0),
         egui::pos2(list_rect.max.x - 6.0, list_rect.max.y - 16.0),
     );
     let row_side_inset = 6.0;
@@ -400,7 +433,8 @@ pub fn draw_achievement_page(
     let list_body_rect = list_inner_rect;
     let list_painter = painter.with_clip_rect(list_body_rect);
     let visible_rows = (list_body_rect.height() / row_spacing).ceil() as i32 + 2;
-    let base_y = list_body_rect.min.y - scroll_offset * row_spacing;
+    let initial_row_offset_y = 8.0;
+    let base_y = list_body_rect.min.y + initial_row_offset_y - scroll_offset * row_spacing;
 
     for (idx, item) in summary.items.iter().enumerate() {
         let row_offset = idx as f32 - scroll_offset;
@@ -409,6 +443,11 @@ pub fn draw_achievement_page(
         }
 
         let is_selected = idx == selected_index;
+        let selection_t = if is_selected {
+            smoothstep01(achievement_select_anim)
+        } else {
+            0.0
+        };
         let row_top = base_y + idx as f32 * row_spacing;
         if row_top > list_body_rect.max.y || row_top + row_spacing < list_body_rect.min.y {
             continue;
@@ -428,6 +467,7 @@ pub fn draw_achievement_page(
         let hidden_revealing = hidden_state
             && revealed_hidden.is_some_and(|revealed_api_name| revealed_api_name == item.api_name);
         let hidden_masked = hidden_state && !hidden_revealing;
+        draw_achievement_row_focus_frame(&list_painter, row_rect, selection_t, wake_t);
         list_painter.rect_filled(
             row_rect,
             corner_radius(9.0),

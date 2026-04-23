@@ -48,6 +48,39 @@ fn draw_game_icon(
     ));
 }
 
+fn draw_game_icon_focus_frame(
+    painter: &egui::Painter,
+    icon_rect: egui::Rect,
+    focus_t: f32,
+    wake_t: f32,
+) {
+    if focus_t <= 0.001 {
+        return;
+    }
+
+    let focus_rect = icon_rect.expand(5.0);
+    painter.rect_filled(
+        focus_rect,
+        corner_radius(12.0),
+        color_with_scaled_alpha(
+            egui::Color32::from_rgba_unmultiplied(248, 250, 255, 54),
+            wake_t * focus_t,
+        ),
+    );
+    painter.rect_stroke(
+        focus_rect,
+        corner_radius(12.0),
+        egui::Stroke::new(
+            lerp_f32(1.2, 3.0, focus_t),
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 168),
+                wake_t * focus_t,
+            ),
+        ),
+        egui::StrokeKind::Outside,
+    );
+}
+
 fn draw_running_status_dot(painter: &egui::Painter, icon_rect: egui::Rect) {
     let radius = (icon_rect.width().min(icon_rect.height()) * 0.055).clamp(4.0, 7.0);
     let inset = (radius * 0.9).clamp(6.0, 10.0);
@@ -73,6 +106,7 @@ pub fn draw_game_list(
     games: &[Game],
     selected: usize,
     select_anim: f32,
+    home_settings_focus_anim: f32,
     achievement_panel_anim: f32,
     scroll_offset: f32,
     game_icons: &HashMap<GameIconKey, egui::TextureHandle>,
@@ -96,6 +130,7 @@ pub fn draw_game_list(
     let page_scroll_t = smoothstep01(achievement_panel_anim);
     let page_offset_y = -panel_rect.height() * page_scroll_t;
     let wake_t = smoothstep01(wake_anim);
+    let game_focus_visibility = 1.0 - smoothstep01(home_settings_focus_anim);
     let wake_offset_y = lerp_f32(42.0, 0.0, wake_t);
 
     let selected_size = 34.0;
@@ -185,6 +220,14 @@ pub fn draw_game_list(
             ),
             egui::vec2(icon_size, icon_size),
         );
+
+        let border_focus_t = if is_selected {
+            selection_t * game_focus_visibility
+        } else {
+            0.0
+        };
+
+        draw_game_icon_focus_frame(&painter, icon_rect, border_focus_t, wake_t);
 
         if let Some(icon_tex) = game_icons.get(&g.icon_key()) {
             let icon_tint = color_with_scaled_alpha(egui::Color32::WHITE, wake_t);

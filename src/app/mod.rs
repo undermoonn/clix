@@ -16,7 +16,6 @@ use crate::game_last_played;
 use crate::i18n::AppLanguage;
 use crate::input::{self, InputController};
 use crate::launch::{self, LaunchState};
-use crate::home_menu_structure::HomeMenuLayout;
 use crate::system::{
     display_mode::{self, ResolutionOptions},
     external_apps::{self, ExternalApp},
@@ -45,6 +44,14 @@ pub struct LauncherApp {
     page: PageState,
     hint_icon_theme: crate::config::PromptIconTheme,
     hint_icons: Option<ui::HintIcons>,
+    settings_icon: Option<egui::TextureHandle>,
+    settings_system_icon: Option<egui::TextureHandle>,
+    settings_screen_icon: Option<egui::TextureHandle>,
+    settings_apps_icon: Option<egui::TextureHandle>,
+    settings_exit_icon: Option<egui::TextureHandle>,
+    power_sleep_icon: Option<egui::TextureHandle>,
+    power_reboot_icon: Option<egui::TextureHandle>,
+    power_off_icon: Option<egui::TextureHandle>,
     game_icons: GameIconState,
     external_app_icons: ExternalAppIconState,
     launch_state: Option<LaunchState>,
@@ -61,7 +68,7 @@ pub struct LauncherApp {
     runtime: RuntimeState,
     resolution_options: ResolutionOptions,
     launch_on_startup_enabled: bool,
-    home_menu_external_apps: Vec<ExternalApp>,
+    power_menu_external_apps: Vec<ExternalApp>,
     wake_focus_pending: bool,
     pending_send_to_background: bool,
     send_to_background_after_frame: bool,
@@ -78,7 +85,7 @@ impl LauncherApp {
         let steam_paths = steam::find_steam_paths();
         let games = game::scan_installed_games(&steam_paths);
         let launch_on_startup_enabled = startup::is_enabled();
-        let home_menu_external_apps = external_apps::detect_installed();
+        let power_menu_external_apps = external_apps::detect_installed();
         let hint_icon_theme = crate::config::load_hint_icon_theme();
         let mut app = LauncherApp {
             language,
@@ -89,6 +96,14 @@ impl LauncherApp {
             page: PageState::new(),
             hint_icon_theme,
             hint_icons: ui::load_hint_icons(ctx, hint_icon_theme),
+            settings_icon: load_settings_icon(ctx),
+            settings_system_icon: load_settings_system_icon(ctx),
+            settings_screen_icon: load_settings_screen_icon(ctx),
+            settings_apps_icon: load_settings_apps_icon(ctx),
+            settings_exit_icon: load_settings_exit_icon(ctx),
+            power_sleep_icon: load_power_sleep_icon(ctx),
+            power_reboot_icon: load_power_reboot_icon(ctx),
+            power_off_icon: load_power_off_icon(ctx),
             game_icons: GameIconState::new(),
             external_app_icons: ExternalAppIconState::new(),
             launch_state: None,
@@ -101,7 +116,7 @@ impl LauncherApp {
             runtime: RuntimeState::new(),
             resolution_options: display_mode::detect_resolution_options(),
             launch_on_startup_enabled,
-            home_menu_external_apps,
+            power_menu_external_apps,
             wake_focus_pending: false,
             pending_send_to_background: false,
             send_to_background_after_frame: false,
@@ -292,24 +307,15 @@ impl LauncherApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     }
 
-    fn home_menu_layout(&self) -> HomeMenuLayout {
-        let external_app_kinds = self
-            .home_menu_external_apps
-            .iter()
-            .map(ExternalApp::kind)
-            .collect::<Vec<_>>();
-        HomeMenuLayout::new(
-            &external_app_kinds,
-            power::supported(),
-            startup::supported(),
-        )
-    }
-
-    fn refresh_home_menu_state(&mut self) {
+    fn refresh_power_menu_state(&mut self) {
         self.resolution_options = display_mode::detect_resolution_options();
         self.launch_on_startup_enabled = startup::is_enabled();
-        self.home_menu_external_apps = external_apps::detect_installed();
-        self.page.open_home_menu(self.home_menu_layout());
+        self.power_menu_external_apps = external_apps::detect_installed();
+        let layout = crate::power_menu_structure::PowerMenuLayout::new(power::supported());
+        if layout.is_empty() {
+            return;
+        }
+        self.page.open_power_menu(layout);
     }
 
     fn schedule_input_repaint(
@@ -341,6 +347,11 @@ impl LauncherApp {
         match action {
             PowerAction::Sleep => {
                 let _ = power::sleep_system();
+            }
+            PowerAction::Reboot => {
+                if power::reboot_system() {
+                    self.close_root_viewport(ctx);
+                }
             }
             PowerAction::Shutdown => {
                 if power::shutdown_system() {
@@ -400,9 +411,13 @@ impl eframe::App for LauncherApp {
         self.input.tick();
 
         let process_input = has_focus && !focus.in_cooldown && !self.pending_send_to_background;
+        let modal_open = self.page.show_achievement_panel()
+            || self.page.show_power_menu()
+            || self.page.show_settings_page()
+            || self.page.home_top_button_selected();
         let input_frame = self.input.poll(
             process_input,
-            self.page.show_achievement_panel() || self.page.show_home_menu(),
+            modal_open,
         );
         if let Some(theme) = input_frame.prompt_icon_theme {
             self.set_hint_icon_theme(theme, &ctx);
@@ -424,16 +439,9 @@ impl eframe::App for LauncherApp {
 
         let actions = input_frame.actions;
         let selected_running = self.running_games.contains_key(&self.page.selected());
-        let home_button = self.runtime.update_home_button(
-            process_input,
-            self.page.show_home_menu(),
-            guide_held,
-        );
-        if home_button.trigger_menu {
-            self.refresh_home_menu_state();
-            ctx.request_repaint();
-        }
-        let can_force_close = !self.page.show_achievement_panel();
+        self.runtime
+            .update_home_button(process_input, self.page.show_power_menu(), guide_held);
+        let can_force_close = !self.page.show_achievement_panel() && !self.page.show_settings_page();
         let force_close_hold = self.runtime.update_force_close_hold(
             process_input && can_force_close,
             selected_running && can_force_close,
@@ -450,34 +458,24 @@ impl eframe::App for LauncherApp {
         if force_close_hold.should_repaint {
             ctx.request_repaint();
         }
-        let shutdown_hold = self.runtime.update_shutdown_hold(
-            process_input && power::supported(),
-            self.page.show_home_menu(),
-            self.page.home_menu_shutdown_selected(),
-            input_frame.launch_held,
-            now,
-        );
-        if shutdown_hold.trigger_shutdown {
-            self.apply_power_action(PowerAction::Shutdown, &ctx, frame);
-        }
-        if shutdown_hold.should_repaint {
-            ctx.request_repaint();
-        }
-
         if !self.send_to_background_after_frame {
             for action in &actions {
-                let previous_game = self.games.get(self.page.selected());
+                let previous_selected = self.page.selected();
                 let previous_achievement_panel = self.page.show_achievement_panel();
                 let previous_achievement_selected = self.page.achievement_selected();
                 let achievement_len = self
                     .achievements
-                    .detail_len_for_selected(self.games.get(self.page.selected()));
+                    .detail_len_for_selected(self.games.get(previous_selected));
                 let result = self.page.handle_action(
                     action,
                     self.games.len(),
                     self.can_open_achievement_panel_for_selected(),
                     achievement_len,
                 );
+                if result.open_power_menu {
+                    self.refresh_power_menu_state();
+                    ctx.request_repaint();
+                }
                 let achievement_selection_changed = previous_achievement_panel
                     && self.page.show_achievement_panel()
                     && self.page.achievement_selected() != previous_achievement_selected;
@@ -495,7 +493,7 @@ impl eframe::App for LauncherApp {
                     || achievement_panel_closed
                 {
                     self.achievements
-                        .clear_revealed_hidden_for_selected(previous_game);
+                        .clear_revealed_hidden_for_selected(self.games.get(previous_selected));
                 }
 
                 if result.open_achievement_panel {
@@ -543,7 +541,7 @@ impl eframe::App for LauncherApp {
                     self.launch_selected();
                 }
                 if let Some(kind) = result.launch_external_app {
-                    let _ = external_apps::launch(kind, &self.home_menu_external_apps);
+                    let _ = external_apps::launch(kind, &self.power_menu_external_apps);
                 }
                 if result.send_app_to_background {
                     self.pending_send_to_background = true;
@@ -606,7 +604,7 @@ impl eframe::App for LauncherApp {
         self.game_icons
             .ensure_loaded(&ctx, &self.steam_paths, &self.games, self.page.selected());
         self.external_app_icons
-            .ensure_loaded(&ctx, &self.home_menu_external_apps);
+            .ensure_loaded(&ctx, &self.power_menu_external_apps);
 
         let selected_achievement_summary = self.achievements.summary_for_selected(selected_game);
         let selected_achievement_detail = self.achievements.detail_for_selected(selected_game);
@@ -637,6 +635,14 @@ impl eframe::App for LauncherApp {
                     &ctx,
                     self.artwork.vignette(),
                     !self.page.show_achievement_panel(),
+                    self.settings_icon.as_ref(),
+                    self.power_off_icon.as_ref(),
+                    !self.page.show_achievement_panel()
+                        && !self.page.show_settings_page(),
+                    self.page.home_settings_focus_anim(),
+                    1.0,
+                    self.page.home_power_focus_anim(),
+                    self.page.power_menu_anim() > 0.001,
                     self.artwork.cover(),
                     self.artwork.cover_prev(),
                     self.artwork.logo(),
@@ -653,6 +659,7 @@ impl eframe::App for LauncherApp {
                     &self.games,
                     self.page.selected(),
                     self.page.select_anim(),
+                    self.page.home_top_focus_anim(),
                     self.page.achievement_panel_anim(),
                     self.page.scroll_offset(),
                     self.game_icons.textures(),
@@ -699,13 +706,48 @@ impl eframe::App for LauncherApp {
                     }
                 }
 
+                ui::draw_settings_page(
+                    ui,
+                    self.language,
+                    self.settings_system_icon.as_ref(),
+                    self.settings_screen_icon.as_ref(),
+                    self.settings_apps_icon.as_ref(),
+                    self.settings_exit_icon.as_ref(),
+                    self.launch_on_startup_enabled,
+                    &self.resolution_options,
+                    self.page.settings_section_index(),
+                    self.page.settings_selected_item_index(),
+                    self.page.settings_in_submenu(),
+                    self.page.settings_page_anim(),
+                    self.page.settings_submenu_anim(),
+                    self.page.settings_select_anim(),
+                    render_wake_anim,
+                );
+
                 if let Some(icons) = &self.hint_icons {
+                    let settings_action_label = if self.page.show_settings_page() {
+                        Some(self.language.confirm_text())
+                    } else {
+                        None
+                    };
+                    let home_top_action_label = if self.page.home_settings_selected() {
+                        Some(self.language.settings_text())
+                    } else if self.page.home_power_selected() {
+                        Some(self.language.power_text())
+                    } else {
+                        None
+                    };
+
                     ui::draw_hint_bar(
                         ui,
                         self.language,
                         icons,
                         self.page.show_achievement_panel(),
-                        self.page.show_home_menu(),
+                        self.page.show_power_menu(),
+                        self.page.show_settings_page(),
+                        self.page.home_top_button_selected(),
+                        home_top_action_label,
+                        settings_action_label,
                         can_open_achievement_panel,
                         achievement_refresh_loading,
                         selected_running,
@@ -714,21 +756,22 @@ impl eframe::App for LauncherApp {
                     );
                 }
 
-                ui::draw_home_menu(
+                ui::draw_power_menu(
                     ui,
                     self.language,
-                    self.page.home_menu_layout(),
-                    self.external_app_icons.textures(),
+                    self.page.power_menu_layout(),
+                    self.power_sleep_icon.as_ref(),
+                    self.power_reboot_icon.as_ref(),
+                    self.power_off_icon.as_ref(),
                     self.hint_icons.as_ref(),
                     &self.resolution_options.current.label,
                     &self.resolution_options.half_refresh.label,
                     &self.resolution_options.max_refresh.label,
                     power::supported(),
-                    self.runtime.shutdown_hold_progress(),
-                    self.launch_on_startup_enabled,
-                    startup::supported(),
-                    self.page.home_menu_anim(),
-                    self.page.home_menu_scroll_offset(),
+                    self.page.power_menu_anim(),
+                    self.page.power_menu_select_anim(),
+                    self.page.power_menu_scroll_offset(),
+                    self.page.home_power_focus_anim(),
                     render_wake_anim,
                 );
             });
@@ -746,6 +789,86 @@ impl eframe::App for LauncherApp {
                 .ensure_icons_for_urls(achievement_icon_scope, &ctx, &visible_achievement_icon_urls);
         }
     }
+}
+
+fn load_settings_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_generated_icon(
+        ctx,
+        include_bytes!(concat!(env!("OUT_DIR"), "/settings-icon-ui.png")),
+        "home_settings_icon",
+    )
+}
+
+fn load_settings_system_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_generated_icon(
+        ctx,
+        include_bytes!(concat!(env!("OUT_DIR"), "/system-icon-ui.png")),
+        "settings_system_icon",
+    )
+}
+
+fn load_settings_screen_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_generated_icon(
+        ctx,
+        include_bytes!(concat!(env!("OUT_DIR"), "/screen-icon-ui.png")),
+        "settings_screen_icon",
+    )
+}
+
+fn load_settings_apps_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_generated_icon(
+        ctx,
+        include_bytes!(concat!(env!("OUT_DIR"), "/apps-icon-ui.png")),
+        "settings_apps_icon",
+    )
+}
+
+fn load_settings_exit_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_generated_icon(
+        ctx,
+        include_bytes!(concat!(env!("OUT_DIR"), "/exit-icon-ui.png")),
+        "settings_exit_icon",
+    )
+}
+
+fn load_power_sleep_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_generated_icon(
+        ctx,
+        include_bytes!(concat!(env!("OUT_DIR"), "/power-sleep-icon-ui.png")),
+        "home_power_sleep_icon",
+    )
+}
+
+fn load_power_reboot_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_generated_icon(
+        ctx,
+        include_bytes!(concat!(env!("OUT_DIR"), "/power-reboot-icon-ui.png")),
+        "home_power_reboot_icon",
+    )
+}
+
+fn load_power_off_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_generated_icon(
+        ctx,
+        include_bytes!(concat!(env!("OUT_DIR"), "/power-off-icon-ui.png")),
+        "home_power_off_icon",
+    )
+}
+
+fn load_generated_icon(
+    ctx: &egui::Context,
+    bytes: &[u8],
+    texture_name: &str,
+) -> Option<egui::TextureHandle> {
+    let dyn_img = image::load_from_memory(bytes).ok()?;
+    let rgba = dyn_img.to_rgba8();
+    let size = [rgba.width() as usize, rgba.height() as usize];
+    let image = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+    Some(ctx.load_texture(
+        texture_name,
+        image,
+        egui::TextureOptions::LINEAR,
+    ))
 }
 
 fn achievement_panel_scope_app_id(

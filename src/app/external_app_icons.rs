@@ -36,8 +36,4 @@ impl ExternalAppIconState {
             }
         }
     }
-
-    pub fn textures(&self) -> &HashMap<ExternalAppKind, egui::TextureHandle> {
-        &self.textures
-    }
 }

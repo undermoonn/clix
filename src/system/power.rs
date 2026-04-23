@@ -41,3 +41,17 @@ pub fn shutdown_system() -> bool {
 pub fn shutdown_system() -> bool {
     false
 }
+
+#[cfg(target_os = "windows")]
+pub fn reboot_system() -> bool {
+    Command::new("shutdown.exe")
+        .args(["/r", "/t", "0"])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn reboot_system() -> bool {
+    false
+}
