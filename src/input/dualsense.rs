@@ -1,8 +1,12 @@
 #[cfg(target_os = "windows")]
+use std::time::Instant;
+#[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "windows")]
 use std::sync::{Mutex, Once, OnceLock};
 
+#[cfg(target_os = "windows")]
+use crc32fast::Hasher;
 #[cfg(target_os = "windows")]
 use eframe::egui;
 #[cfg(target_os = "windows")]
@@ -19,11 +23,43 @@ const DUALSENSE_EDGE_PRODUCT_ID: u16 = 0x0df2;
 const REPORT_BUFFER_SIZE: usize = 128;
 #[cfg(target_os = "windows")]
 const STICK_ACTIVITY_THRESHOLD: i32 = 16_000;
+#[cfg(target_os = "windows")]
+const DUALSENSE_SELECTION_RUMBLE_DURATION_MS: u128 = 30;
+#[cfg(target_os = "windows")]
+const DUALSENSE_SELECTION_RUMBLE_WEAK: u8 = 1;
+#[cfg(target_os = "windows")]
+const DUALSENSE_SELECTION_RUMBLE_STRONG: u8 = 0;
+#[cfg(target_os = "windows")]
+const USB_OUTPUT_REPORT_SIZE: usize = 48;
+#[cfg(target_os = "windows")]
+const BLUETOOTH_OUTPUT_REPORT_SIZE: usize = 78;
+#[cfg(target_os = "windows")]
+const BLUETOOTH_OUTPUT_REPORT_TAG: u8 = 0x02;
+#[cfg(target_os = "windows")]
+const EFFECT_ENABLE_RUMBLE_EMULATION: u8 = 0x01;
+#[cfg(target_os = "windows")]
+const EFFECT_DISABLE_AUDIO_HAPTICS: u8 = 0x02;
+#[cfg(target_os = "windows")]
+const EFFECT_ENABLE_IMPROVED_RUMBLE: u8 = 0x04;
+#[cfg(target_os = "windows")]
+const USB_EFFECTS_OFFSET: usize = 1;
+#[cfg(target_os = "windows")]
+const BLUETOOTH_EFFECTS_OFFSET: usize = 3;
+#[cfg(target_os = "windows")]
+const EFFECT_ENABLE_BITS1_INDEX: usize = 0;
+#[cfg(target_os = "windows")]
+const EFFECT_RUMBLE_RIGHT_INDEX: usize = 2;
+#[cfg(target_os = "windows")]
+const EFFECT_RUMBLE_LEFT_INDEX: usize = 3;
+#[cfg(target_os = "windows")]
+const EFFECT_ENABLE_BITS3_INDEX: usize = 38;
 
 #[cfg(target_os = "windows")]
 static WAKE_PENDING: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "windows")]
 static SNAPSHOT: OnceLock<Mutex<DualSenseSnapshot>> = OnceLock::new();
+#[cfg(target_os = "windows")]
+static RUMBLE: OnceLock<Mutex<Option<DualSenseRumble>>> = OnceLock::new();
 
 #[cfg(target_os = "windows")]
 #[derive(Clone, Copy, Default)]
@@ -102,7 +138,17 @@ pub(super) fn remap_state() -> Option<(Buttons, i32)> {
 
 #[cfg(target_os = "windows")]
 pub(super) fn start_selection_rumble() -> bool {
-    false
+    let settings = selection_rumble_settings();
+    let mut rumble = rumble_state()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    if start_rumble_with_state(&mut rumble, settings) {
+        return true;
+    }
+
+    *rumble = None;
+    start_rumble_with_state(&mut rumble, settings)
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -111,13 +157,39 @@ pub(super) fn start_selection_rumble() -> bool {
 }
 
 #[cfg(target_os = "windows")]
-pub(super) fn tick_rumble() {}
+pub(super) fn tick_rumble() {
+    let should_stop = rumble_state()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .as_ref()
+        .and_then(|rumble| rumble.active_until)
+        .map(|active_until| Instant::now() >= active_until)
+        .unwrap_or(false);
+
+    if should_stop {
+        stop_rumble();
+    }
+}
 
 #[cfg(not(target_os = "windows"))]
 pub(super) fn tick_rumble() {}
 
 #[cfg(target_os = "windows")]
-pub(super) fn stop_rumble() {}
+pub(super) fn stop_rumble() {
+    let mut rumble = rumble_state()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(state) = rumble.as_mut() else {
+        return;
+    };
+
+    if state.connection.write_rumble(0, 0).is_err() {
+        *rumble = None;
+        return;
+    }
+
+    state.active_until = None;
+}
 
 #[cfg(not(target_os = "windows"))]
 pub(super) fn stop_rumble() {}
@@ -125,6 +197,41 @@ pub(super) fn stop_rumble() {}
 #[cfg(target_os = "windows")]
 fn snapshot_state() -> &'static Mutex<DualSenseSnapshot> {
     SNAPSHOT.get_or_init(|| Mutex::new(DualSenseSnapshot::default()))
+}
+
+#[cfg(target_os = "windows")]
+fn rumble_state() -> &'static Mutex<Option<DualSenseRumble>> {
+    RUMBLE.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(target_os = "windows")]
+fn start_rumble_with_state(
+    rumble: &mut Option<DualSenseRumble>,
+    settings: RumbleSettings,
+) -> bool {
+    let state = match rumble.as_mut() {
+        Some(state) => state,
+        None => {
+            *rumble = DualSenseRumble::open();
+            let Some(state) = rumble.as_mut() else {
+                return false;
+            };
+            state
+        }
+    };
+
+    if state
+        .connection
+        .write_rumble(settings.weak_motor, settings.strong_motor)
+        .is_err()
+    {
+        return false;
+    }
+
+    state.active_until = Some(
+        Instant::now() + std::time::Duration::from_millis(settings.duration_ms as u64),
+    );
+    true
 }
 
 #[cfg(target_os = "windows")]
@@ -192,6 +299,30 @@ fn run_dualsense_watcher(ctx: egui::Context) {
 #[cfg(target_os = "windows")]
 struct ConnectedDualSense {
     device: HidDevice,
+    transport: DualSenseTransport,
+    bluetooth_sequence: u8,
+}
+
+#[cfg(target_os = "windows")]
+struct DualSenseRumble {
+    connection: ConnectedDualSense,
+    active_until: Option<Instant>,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+enum DualSenseTransport {
+    #[default]
+    Usb,
+    Bluetooth,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Clone, Copy)]
+struct RumbleSettings {
+    duration_ms: u128,
+    weak_motor: u8,
+    strong_motor: u8,
 }
 
 #[cfg(target_os = "windows")]
@@ -203,7 +334,11 @@ impl ConnectedDualSense {
             .or_else(|_| api.open(SONY_VENDOR_ID, DUALSENSE_EDGE_PRODUCT_ID))
             .ok()?;
 
-        Some(Self { device })
+        Some(Self {
+            device,
+            transport: DualSenseTransport::Usb,
+            bluetooth_sequence: 0,
+        })
     }
 
     fn read_snapshot(&mut self) -> Result<Option<DualSenseSnapshot>, hidapi::HidError> {
@@ -213,7 +348,41 @@ impl ConnectedDualSense {
             return try_get_input_report(&self.device);
         }
 
-        Ok(parse_input_report(&report[..bytes_read]))
+        Ok(self.parse_report(&report[..bytes_read]))
+    }
+
+    fn parse_report(&mut self, report: &[u8]) -> Option<DualSenseSnapshot> {
+        let (snapshot, transport) = parse_input_report(report)?;
+        self.transport = transport;
+        Some(snapshot)
+    }
+
+    fn write_rumble(&mut self, weak_motor: u8, strong_motor: u8) -> Result<(), hidapi::HidError> {
+        let bytes = match self.transport {
+            DualSenseTransport::Usb => build_usb_output_report(weak_motor, strong_motor).to_vec(),
+            DualSenseTransport::Bluetooth => {
+                self.bluetooth_sequence = self.bluetooth_sequence.wrapping_add(1);
+                build_bluetooth_output_report(
+                    weak_motor,
+                    strong_motor,
+                    self.bluetooth_sequence,
+                )
+                .to_vec()
+            }
+        };
+
+        let _ = self.device.write(&bytes)?;
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl DualSenseRumble {
+    fn open() -> Option<Self> {
+        Some(Self {
+            connection: ConnectedDualSense::open()?,
+            active_until: None,
+        })
     }
 }
 
@@ -228,7 +397,7 @@ fn try_get_input_report(device: &HidDevice) -> Result<Option<DualSenseSnapshot>,
             continue;
         }
 
-        if let Some(snapshot) = parse_input_report(&report[..bytes_read]) {
+        if let Some((snapshot, _)) = parse_input_report(&report[..bytes_read]) {
             return Ok(Some(snapshot));
         }
     }
@@ -237,15 +406,72 @@ fn try_get_input_report(device: &HidDevice) -> Result<Option<DualSenseSnapshot>,
 }
 
 #[cfg(target_os = "windows")]
-fn parse_input_report(report: &[u8]) -> Option<DualSenseSnapshot> {
+fn parse_input_report(report: &[u8]) -> Option<(DualSenseSnapshot, DualSenseTransport)> {
     let report_id = *report.first()?;
 
     match report_id {
-        0x01 if report.len() >= 64 => parse_full_state(&report[1..64]),
-        0x31 if report.len() >= 65 => parse_full_state(&report[2..65]),
-        0x01 if report.len() >= 10 => parse_simple_bluetooth_state(&report[1..10]),
+        0x01 if report.len() >= 64 => parse_full_state(&report[1..64]).map(|snapshot| {
+            (snapshot, DualSenseTransport::Usb)
+        }),
+        0x31 if report.len() >= 65 => parse_full_state(&report[2..65]).map(|snapshot| {
+            (snapshot, DualSenseTransport::Bluetooth)
+        }),
+        0x01 if report.len() >= 10 => parse_simple_bluetooth_state(&report[1..10]).map(
+            |snapshot| (snapshot, DualSenseTransport::Bluetooth),
+        ),
         _ => None,
     }
+}
+
+#[cfg(target_os = "windows")]
+fn selection_rumble_settings() -> RumbleSettings {
+    RumbleSettings {
+        duration_ms: DUALSENSE_SELECTION_RUMBLE_DURATION_MS,
+        weak_motor: DUALSENSE_SELECTION_RUMBLE_WEAK,
+        strong_motor: DUALSENSE_SELECTION_RUMBLE_STRONG,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn build_usb_output_report(weak_motor: u8, strong_motor: u8) -> [u8; USB_OUTPUT_REPORT_SIZE] {
+    let mut report = [0u8; USB_OUTPUT_REPORT_SIZE];
+    report[0] = 0x02;
+    populate_effect_state(&mut report[USB_EFFECTS_OFFSET..], weak_motor, strong_motor);
+    report
+}
+
+#[cfg(target_os = "windows")]
+fn build_bluetooth_output_report(
+    weak_motor: u8,
+    strong_motor: u8,
+    sequence: u8,
+) -> [u8; BLUETOOTH_OUTPUT_REPORT_SIZE] {
+    let mut report = [0u8; BLUETOOTH_OUTPUT_REPORT_SIZE];
+    report[0] = 0x31;
+    report[1] = BLUETOOTH_OUTPUT_REPORT_TAG;
+    report[2] = sequence << 4;
+    populate_effect_state(&mut report[BLUETOOTH_EFFECTS_OFFSET..], weak_motor, strong_motor);
+
+    let crc = dualsense_bluetooth_crc(&report[..BLUETOOTH_OUTPUT_REPORT_SIZE - 4]);
+    report[BLUETOOTH_OUTPUT_REPORT_SIZE - 4..].copy_from_slice(&crc.to_le_bytes());
+    report
+}
+
+#[cfg(target_os = "windows")]
+fn populate_effect_state(report: &mut [u8], weak_motor: u8, strong_motor: u8) {
+    report[EFFECT_ENABLE_BITS1_INDEX] =
+        EFFECT_ENABLE_RUMBLE_EMULATION | EFFECT_DISABLE_AUDIO_HAPTICS;
+    report[EFFECT_RUMBLE_RIGHT_INDEX] = strong_motor;
+    report[EFFECT_RUMBLE_LEFT_INDEX] = weak_motor;
+    report[EFFECT_ENABLE_BITS3_INDEX] = EFFECT_ENABLE_IMPROVED_RUMBLE;
+}
+
+#[cfg(target_os = "windows")]
+fn dualsense_bluetooth_crc(report: &[u8]) -> u32 {
+    let mut hasher = Hasher::new();
+    hasher.update(&[0xA2]);
+    hasher.update(report);
+    hasher.finalize()
 }
 
 #[cfg(target_os = "windows")]
@@ -397,7 +623,10 @@ fn scale_inverted_stick_axis(value: u8) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_full_state, parse_simple_bluetooth_state};
+    use super::{
+        build_bluetooth_output_report, build_usb_output_report, dualsense_bluetooth_crc,
+        parse_full_state, parse_simple_bluetooth_state,
+    };
     use crate::input::buttons::Buttons;
 
     #[test]
@@ -438,5 +667,34 @@ mod tests {
         assert!(snapshot.buttons.intersects(Buttons::HOME));
         assert!(snapshot.left_stick_x < 0);
         assert!(snapshot.left_stick_y < 0);
+    }
+
+    #[test]
+    fn builds_usb_rumble_report() {
+        let report = build_usb_output_report(1, 0);
+
+        assert_eq!(report[0], 0x02);
+        assert_eq!(report[1], 0x03);
+        assert_eq!(report[3], 0);
+        assert_eq!(report[4], 1);
+        assert_eq!(report[39], 0x04);
+    }
+
+    #[test]
+    fn builds_bluetooth_rumble_report_with_crc() {
+        let report = build_bluetooth_output_report(1, 0, 1);
+        let expected_crc = dualsense_bluetooth_crc(&report[..report.len() - 4]);
+
+        assert_eq!(report[0], 0x31);
+        assert_eq!(report[1], 0x02);
+        assert_eq!(report[2], 0x10);
+        assert_eq!(report[3], 0x03);
+        assert_eq!(report[5], 0);
+        assert_eq!(report[6], 1);
+        assert_eq!(report[41], 0x04);
+        assert_eq!(
+            u32::from_le_bytes(report[report.len() - 4..].try_into().unwrap()),
+            expected_crc,
+        );
     }
 }

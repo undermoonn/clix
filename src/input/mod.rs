@@ -269,6 +269,8 @@ pub struct InputFrame {
 pub struct InputController {
     #[cfg(target_os = "windows")]
     xinput: Option<xinput::XInput>,
+    current_prompt_icon_theme: Option<PromptIconTheme>,
+    current_rumble_prompt_icon_theme: Option<PromptIconTheme>,
     selection_vibration_enabled: bool,
     mapping: Mapping,
     remap_target: Option<String>,
@@ -307,6 +309,8 @@ impl InputController {
         Self {
             #[cfg(target_os = "windows")]
             xinput: xinput::XInput::new().ok(),
+            current_prompt_icon_theme: None,
+            current_rumble_prompt_icon_theme: None,
             selection_vibration_enabled: false,
             mapping: Mapping::default(),
             remap_target: None,
@@ -444,6 +448,8 @@ impl InputController {
             if self.collect_dualsense(raw_held) {
                 prompt_icon_theme = Some(PromptIconTheme::PlayStation);
             }
+
+            self.current_prompt_icon_theme = prompt_icon_theme;
         }
 
         prompt_icon_theme
@@ -451,26 +457,55 @@ impl InputController {
 
     #[cfg(target_os = "windows")]
     fn start_selection_rumble(&mut self) {
-        if let Some(xinput) = self.xinput.as_mut() {
-            let _ = xinput.start_selection_rumble();
+        self.stop_rumble();
+
+        match self.current_prompt_icon_theme {
+            Some(PromptIconTheme::Xbox) => {
+                if let Some(xinput) = self.xinput.as_mut() {
+                    if xinput.start_selection_rumble() {
+                        self.current_rumble_prompt_icon_theme = Some(PromptIconTheme::Xbox);
+                    }
+                }
+            }
+            Some(PromptIconTheme::PlayStation) => {
+                if dualsense::start_selection_rumble() {
+                    self.current_rumble_prompt_icon_theme = Some(PromptIconTheme::PlayStation);
+                }
+            }
+            None => {}
         }
-        let _ = dualsense::start_selection_rumble();
     }
 
     #[cfg(target_os = "windows")]
     fn tick_rumble(&mut self) {
-        if let Some(xinput) = self.xinput.as_mut() {
-            xinput.tick_rumble();
+        match self.current_rumble_prompt_icon_theme {
+            Some(PromptIconTheme::Xbox) => {
+                if let Some(xinput) = self.xinput.as_mut() {
+                    xinput.tick_rumble();
+                }
+            }
+            Some(PromptIconTheme::PlayStation) => {
+                dualsense::tick_rumble();
+            }
+            None => {}
         }
-        dualsense::tick_rumble();
     }
 
     #[cfg(target_os = "windows")]
     fn stop_rumble(&mut self) {
-        if let Some(xinput) = self.xinput.as_mut() {
-            xinput.stop_rumble();
+        match self.current_rumble_prompt_icon_theme {
+            Some(PromptIconTheme::Xbox) => {
+                if let Some(xinput) = self.xinput.as_mut() {
+                    xinput.stop_rumble();
+                }
+            }
+            Some(PromptIconTheme::PlayStation) => {
+                dualsense::stop_rumble();
+            }
+            None => {}
         }
-        dualsense::stop_rumble();
+
+        self.current_rumble_prompt_icon_theme = None;
     }
 
     #[cfg(target_os = "windows")]

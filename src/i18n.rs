@@ -128,8 +128,8 @@ impl AppLanguage {
 
     pub fn controller_vibration_feedback_text(self) -> &'static str {
         match self {
-            Self::English => "Controller Vibration Feedback (Xbox Controller only currently)",
-            Self::SimplifiedChinese => "应用内手柄震动反馈（目前仅限 Xbox 手柄）",
+            Self::English => "Controller Vibration Feedback",
+            Self::SimplifiedChinese => "应用内手柄震动反馈",
         }
     }
 
