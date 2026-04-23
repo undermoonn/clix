@@ -314,7 +314,7 @@ pub fn draw_settings_page(
             body_rect,
             corner_radius(8.0),
             color_with_scaled_alpha(
-                egui::Color32::from_rgba_unmultiplied(14, 14, 14, 236),
+                egui::Color32::from_rgba_unmultiplied(14, 14, 14, 255),
                 layer_t,
             ),
         );
