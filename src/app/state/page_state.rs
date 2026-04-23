@@ -497,6 +497,9 @@ impl PageState {
                 ControllerAction::Launch => {
                     result.open_power_menu = true;
                 }
+                ControllerAction::Left => {
+                    self.clear_home_top_button_selection();
+                }
                 ControllerAction::Down => {
                     self.clear_home_top_button_selection();
                 }
@@ -506,8 +509,7 @@ impl PageState {
                 ControllerAction::Quit => {
                     self.clear_home_top_button_selection();
                 }
-                ControllerAction::Left
-                | ControllerAction::Refresh
+                ControllerAction::Refresh
                 | ControllerAction::Up => {}
             }
             return result;
@@ -518,9 +520,6 @@ impl PageState {
                 ControllerAction::Left => {
                     self.select_home_power_button();
                 }
-                ControllerAction::Right => {
-                    self.clear_home_top_button_selection();
-                }
                 ControllerAction::Down => {
                     self.clear_home_top_button_selection();
                 }
@@ -530,7 +529,8 @@ impl PageState {
                 ControllerAction::Launch => {
                     self.open_settings_page();
                 }
-                ControllerAction::Refresh
+                ControllerAction::Right
+                | ControllerAction::Refresh
                 | ControllerAction::Settings
                 | ControllerAction::Up => {}
             }
@@ -994,6 +994,19 @@ mod tests {
     }
 
     #[test]
+    fn left_from_home_power_button_returns_focus_to_game_list() {
+        let mut page = PageState::new();
+        let _ = page.handle_action(&ControllerAction::Up, 3, true, 4);
+
+        let result = page.handle_action(&ControllerAction::Left, 3, true, 4);
+
+        assert!(!result.open_power_menu);
+        assert!(!page.home_power_selected());
+        assert!(!page.home_settings_selected());
+        assert!(!page.show_achievement_panel());
+    }
+
+    #[test]
     fn down_from_home_settings_button_returns_focus_to_game_list() {
         let mut page = PageState::new();
         let _ = page.handle_action(&ControllerAction::Settings, 3, true, 4);
@@ -1060,7 +1073,7 @@ mod tests {
     }
 
     #[test]
-    fn right_from_home_settings_button_returns_focus_to_game_list() {
+    fn right_from_home_settings_button_keeps_settings_selected() {
         let mut page = PageState::new();
         let _ = page.handle_action(&ControllerAction::Up, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Right, 3, true, 4);
@@ -1069,7 +1082,7 @@ mod tests {
 
         assert!(!result.open_power_menu);
         assert!(!result.open_achievement_panel);
-        assert!(!page.home_settings_selected());
+        assert!(page.home_settings_selected());
         assert!(!page.home_power_selected());
         assert!(!page.show_achievement_panel());
     }
@@ -1097,7 +1110,7 @@ mod tests {
     #[test]
     fn horizontal_navigation_is_disabled_while_home_settings_button_is_selected() {
         let mut page = PageState::new();
-        let _ = page.handle_action(&ControllerAction::Up, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Settings, 3, true, 4);
 
         let left_result = page.handle_action(&ControllerAction::Left, 3, true, 4);
         let right_result = page.handle_action(&ControllerAction::Right, 3, true, 4);
