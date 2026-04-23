@@ -269,6 +269,7 @@ pub struct InputFrame {
 pub struct InputController {
     #[cfg(target_os = "windows")]
     xinput: Option<xinput::XInput>,
+    selection_vibration_enabled: bool,
     mapping: Mapping,
     remap_target: Option<String>,
     nav_held: [Option<NavState>; InputAction::COUNT],
@@ -306,9 +307,19 @@ impl InputController {
         Self {
             #[cfg(target_os = "windows")]
             xinput: xinput::XInput::new().ok(),
+            selection_vibration_enabled: false,
             mapping: Mapping::default(),
             remap_target: None,
             nav_held: [None; InputAction::COUNT],
+        }
+    }
+
+    pub fn set_selection_vibration_enabled(&mut self, enabled: bool) {
+        self.selection_vibration_enabled = enabled;
+
+        if !enabled {
+            #[cfg(target_os = "windows")]
+            self.stop_rumble();
         }
     }
 
@@ -324,6 +335,10 @@ impl InputController {
     }
 
     pub fn pulse_selection_change(&mut self) {
+        if !self.selection_vibration_enabled {
+            return;
+        }
+
         #[cfg(target_os = "windows")]
         self.start_selection_rumble();
     }

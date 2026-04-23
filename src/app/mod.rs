@@ -68,6 +68,7 @@ pub struct LauncherApp {
     runtime: RuntimeState,
     resolution_options: ResolutionOptions,
     launch_on_startup_enabled: bool,
+    controller_vibration_enabled: bool,
     power_menu_external_apps: Vec<ExternalApp>,
     wake_focus_pending: bool,
     pending_send_to_background: bool,
@@ -87,10 +88,13 @@ impl LauncherApp {
         let launch_on_startup_enabled = startup::is_enabled();
         let power_menu_external_apps = external_apps::detect_installed();
         let hint_icon_theme = crate::config::load_hint_icon_theme();
+        let controller_vibration_enabled = crate::config::load_controller_vibration_enabled();
+        let mut input = InputController::new();
+        input.set_selection_vibration_enabled(controller_vibration_enabled);
         let mut app = LauncherApp {
             language,
             games,
-            input: InputController::new(),
+            input,
             steam_paths,
             artwork: ArtworkState::new(ctx),
             page: PageState::new(),
@@ -116,6 +120,7 @@ impl LauncherApp {
             runtime: RuntimeState::new(),
             resolution_options: display_mode::detect_resolution_options(),
             launch_on_startup_enabled,
+            controller_vibration_enabled,
             power_menu_external_apps,
             wake_focus_pending: false,
             pending_send_to_background: false,
@@ -134,6 +139,17 @@ impl LauncherApp {
         self.hint_icon_theme = theme;
         self.hint_icons = ui::load_hint_icons(ctx, theme);
         crate::config::store_hint_icon_theme(theme);
+        ctx.request_repaint();
+    }
+
+    fn set_controller_vibration_enabled(&mut self, enabled: bool, ctx: &egui::Context) {
+        if self.controller_vibration_enabled == enabled {
+            return;
+        }
+
+        self.controller_vibration_enabled = enabled;
+        self.input.set_selection_vibration_enabled(enabled);
+        crate::config::store_controller_vibration_enabled(enabled);
         ctx.request_repaint();
     }
 
@@ -531,6 +547,9 @@ impl eframe::App for LauncherApp {
                     }
                     ctx.request_repaint();
                 }
+                if result.toggle_controller_vibration_feedback {
+                    self.set_controller_vibration_enabled(!self.controller_vibration_enabled, &ctx);
+                }
                 if achievement_selection_changed {
                     self.input.pulse_selection_change();
                 }
@@ -714,6 +733,7 @@ impl eframe::App for LauncherApp {
                     self.settings_apps_icon.as_ref(),
                     self.settings_exit_icon.as_ref(),
                     self.launch_on_startup_enabled,
+                    self.controller_vibration_enabled,
                     &self.resolution_options,
                     self.page.settings_section_index(),
                     self.page.settings_selected_item_index(),

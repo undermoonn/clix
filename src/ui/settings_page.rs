@@ -52,6 +52,7 @@ fn draw_settings_list_row(
     leading_icon: Option<&egui::TextureHandle>,
     title: &str,
     subtitle: Option<&str>,
+    subtitle_color: Option<egui::Color32>,
     trailing: Option<&str>,
     focus_t: f32,
     show_focus_outline: bool,
@@ -129,7 +130,7 @@ fn draw_settings_list_row(
     };
     let title_galley = painter.layout_no_wrap(
         title.to_string(),
-        egui::FontId::proportional(29.0),
+        egui::FontId::proportional(26.0),
         color_with_scaled_alpha(
             egui::Color32::from_rgba_unmultiplied(242, 245, 248, 255),
             settings_t,
@@ -140,7 +141,8 @@ fn draw_settings_list_row(
             subtitle.to_string(),
             egui::FontId::proportional(19.0),
             color_with_scaled_alpha(
-                egui::Color32::from_rgba_unmultiplied(196, 202, 212, 220),
+                subtitle_color
+                    .unwrap_or(egui::Color32::from_rgba_unmultiplied(196, 202, 212, 220)),
                 settings_t,
             ),
         )
@@ -274,6 +276,7 @@ pub fn draw_settings_page(
     apps_icon: Option<&egui::TextureHandle>,
     exit_icon: Option<&egui::TextureHandle>,
     launch_on_startup_enabled: bool,
+    controller_vibration_enabled: bool,
     resolution_options: &ResolutionOptions,
     selected_section_index: usize,
     selected_item_index: usize,
@@ -353,6 +356,7 @@ pub fn draw_settings_page(
                     leading_icon: Option<&egui::TextureHandle>,
                     title: &str,
                     subtitle: Option<&str>,
+                    subtitle_color: Option<egui::Color32>,
                     trailing: Option<&str>,
                     selected: bool,
                     show_focus_outline: bool,
@@ -372,6 +376,7 @@ pub fn draw_settings_page(
             leading_icon,
             title,
             subtitle,
+            subtitle_color,
             trailing,
             if selected {
                 smoothstep01(settings_select_anim)
@@ -408,6 +413,7 @@ pub fn draw_settings_page(
             language.system_text(),
             None,
             None,
+            None,
             selected_section_index == 0,
             true,
             top_layer_t,
@@ -420,6 +426,7 @@ pub fn draw_settings_page(
             1,
             screen_icon,
             language.screen_text(),
+            None,
             None,
             None,
             selected_section_index == 1,
@@ -436,6 +443,7 @@ pub fn draw_settings_page(
             language.apps_text(),
             None,
             None,
+            None,
             selected_section_index == 2,
             true,
             top_layer_t,
@@ -448,6 +456,7 @@ pub fn draw_settings_page(
             3,
             exit_icon,
             language.close_app_text(),
+            None,
             None,
             None,
             selected_section_index == 3,
@@ -478,37 +487,49 @@ pub fn draw_settings_page(
             _ => language.close_app_text(),
         };
         let section_name = match selected_section_index {
-            0 => language.startup_options_text(),
             1 => language.resolution_settings_text(),
             2 => language.installed_app_options_text(),
             _ => language.close_app_text(),
         };
         let page_title = format!("{} / {}", language.settings_text(), breadcrumb_section_name);
         let submenu_list_inner_rect = draw_page_shell(submenu_content_rect, submenu_layer_t, &page_title);
-        let header_rect = egui::Rect::from_min_max(
-            egui::pos2(submenu_list_inner_rect.min.x + 18.0, submenu_list_inner_rect.min.y + 8.0),
-            egui::pos2(submenu_list_inner_rect.max.x - 18.0, submenu_list_inner_rect.min.y + 96.0),
-        );
         let submenu_list_painter = painter.with_clip_rect(submenu_list_inner_rect);
-        let initial_row_offset_y = 8.0;
-        let rows_origin_y = submenu_list_inner_rect.min.y
-            + draw_settings_section_header(
-                &submenu_list_painter,
-                header_rect,
-                section_name,
-                summary_text.as_deref(),
-                submenu_layer_t,
-            )
-            + initial_row_offset_y;
-
         let submenu_row_spacing = 112.0;
         let submenu_row_height = 98.0;
+        let enabled_subtitle_color = egui::Color32::from_rgba_unmultiplied(122, 214, 145, 255);
         match selected_section_index {
             0 => {
+                let vibration_row_top = submenu_list_inner_rect.min.y + 8.0;
                 draw_row(
                     submenu_list_inner_rect,
-                    rows_origin_y,
-                    submenu_row_spacing,
+                    vibration_row_top,
+                    1.0,
+                    submenu_row_height,
+                    0,
+                    None,
+                    language.controller_vibration_feedback_text(),
+                    Some(if controller_vibration_enabled {
+                        language.enabled_text()
+                    } else {
+                        language.disabled_text()
+                    }),
+                    if controller_vibration_enabled {
+                        Some(enabled_subtitle_color)
+                    } else {
+                        None
+                    },
+                    None,
+                    selected_item_index == 0,
+                    true,
+                    submenu_layer_t,
+                );
+
+                let startup_rows_origin_y = vibration_row_top + submenu_row_height + 26.0;
+
+                draw_row(
+                    submenu_list_inner_rect,
+                    startup_rows_origin_y,
+                    1.0,
                     submenu_row_height,
                     0,
                     None,
@@ -518,13 +539,31 @@ pub fn draw_settings_page(
                     } else {
                         language.disabled_text()
                     }),
+                    if launch_on_startup_enabled {
+                        Some(enabled_subtitle_color)
+                    } else {
+                        None
+                    },
                     None,
-                    selected_item_index == 0,
+                    selected_item_index == 1,
                     true,
                     submenu_layer_t,
                 );
             }
             1 => {
+                let header_rect = egui::Rect::from_min_max(
+                    egui::pos2(submenu_list_inner_rect.min.x + 18.0, submenu_list_inner_rect.min.y + 8.0),
+                    egui::pos2(submenu_list_inner_rect.max.x - 18.0, submenu_list_inner_rect.min.y + 96.0),
+                );
+                let rows_origin_y = submenu_list_inner_rect.min.y
+                    + draw_settings_section_header(
+                        &submenu_list_painter,
+                        header_rect,
+                        section_name,
+                        summary_text.as_deref(),
+                        submenu_layer_t,
+                    )
+                    + 16.0;
                 draw_row(
                     submenu_list_inner_rect,
                     rows_origin_y,
@@ -533,6 +572,7 @@ pub fn draw_settings_page(
                     0,
                     None,
                     &resolution_options.half_refresh.label,
+                    None,
                     None,
                     None,
                     selected_item_index == 0,
@@ -549,12 +589,26 @@ pub fn draw_settings_page(
                     &resolution_options.max_refresh.label,
                     None,
                     None,
+                    None,
                     selected_item_index == 1,
                     true,
                     submenu_layer_t,
                 );
             }
             _ => {
+                let header_rect = egui::Rect::from_min_max(
+                    egui::pos2(submenu_list_inner_rect.min.x + 18.0, submenu_list_inner_rect.min.y + 8.0),
+                    egui::pos2(submenu_list_inner_rect.max.x - 18.0, submenu_list_inner_rect.min.y + 96.0),
+                );
+                let rows_origin_y = submenu_list_inner_rect.min.y
+                    + draw_settings_section_header(
+                        &submenu_list_painter,
+                        header_rect,
+                        section_name,
+                        summary_text.as_deref(),
+                        submenu_layer_t,
+                    )
+                    + 16.0;
                 draw_row(
                     submenu_list_inner_rect,
                     rows_origin_y,
@@ -563,6 +617,7 @@ pub fn draw_settings_page(
                     0,
                     None,
                     language.dlss_swapper_text(),
+                    None,
                     None,
                     None,
                     selected_item_index == 0,
@@ -577,6 +632,7 @@ pub fn draw_settings_page(
                     1,
                     None,
                     language.nvidia_app_text(),
+                    None,
                     None,
                     None,
                     selected_item_index == 1,

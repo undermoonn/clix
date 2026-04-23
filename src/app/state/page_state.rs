@@ -65,6 +65,7 @@ pub struct PageActionResult {
     pub reveal_hidden_achievement: bool,
     pub refresh_achievements: bool,
     pub toggle_launch_on_startup: bool,
+    pub toggle_controller_vibration_feedback: bool,
     pub launch_selected: bool,
     pub launch_external_app: Option<ExternalAppKind>,
     pub selected_changed: bool,
@@ -342,6 +343,7 @@ impl PageState {
             reveal_hidden_achievement: false,
             refresh_achievements: false,
             toggle_launch_on_startup: false,
+            toggle_controller_vibration_feedback: false,
             launch_selected: false,
             launch_external_app: None,
             selected_changed: false,
@@ -417,7 +419,10 @@ impl PageState {
                     if self.settings_in_submenu {
                         match self.settings_section {
                             SettingsSection::System => {
-                                result.toggle_launch_on_startup = true;
+                                match self.settings_system_selected {
+                                    0 => result.toggle_controller_vibration_feedback = true,
+                                    _ => result.toggle_launch_on_startup = true,
+                                }
                             }
                             SettingsSection::Screen => {
                                 result.set_resolution = Some(match self.settings_screen_selected {
@@ -805,7 +810,7 @@ impl PageState {
     fn settings_selection_key(&self) -> u8 {
         if self.settings_in_submenu {
             match self.settings_section {
-                SettingsSection::System => 10,
+                SettingsSection::System => 10 + self.settings_system_selected as u8,
                 SettingsSection::Screen => 20 + self.settings_screen_selected as u8,
                 SettingsSection::Apps => 30 + self.settings_apps_selected as u8,
                 SettingsSection::CloseApp => 40,
@@ -830,7 +835,7 @@ impl PageState {
             SettingsSection::CloseApp => return,
         };
         let max_index = match self.settings_section {
-            SettingsSection::System => 0,
+            SettingsSection::System => 1,
             SettingsSection::Screen => 1,
             SettingsSection::Apps => 1,
             SettingsSection::CloseApp => 0,
@@ -1183,14 +1188,29 @@ mod tests {
     }
 
     #[test]
-    fn launch_in_settings_page_toggles_without_closing_page() {
+    fn launch_in_settings_page_toggles_controller_vibration_without_closing_page() {
         let mut page = PageState::new();
 
         open_settings_page(&mut page);
         let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
 
+        assert!(!result.toggle_launch_on_startup);
+        assert!(result.toggle_controller_vibration_feedback);
+        assert!(page.show_settings_page());
+    }
+
+    #[test]
+    fn launch_on_second_system_setting_toggles_launch_on_startup() {
+        let mut page = PageState::new();
+
+        open_settings_page(&mut page);
+        let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
         assert!(result.toggle_launch_on_startup);
+        assert!(!result.toggle_controller_vibration_feedback);
         assert!(page.show_settings_page());
     }
 

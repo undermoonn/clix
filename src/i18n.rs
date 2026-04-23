@@ -126,10 +126,10 @@ impl AppLanguage {
         }
     }
 
-    pub fn startup_options_text(self) -> &'static str {
+    pub fn controller_vibration_feedback_text(self) -> &'static str {
         match self {
-            Self::English => "Startup Options",
-            Self::SimplifiedChinese => "开机选项",
+            Self::English => "Controller Vibration Feedback (Xbox Controller only currently)",
+            Self::SimplifiedChinese => "应用内手柄震动反馈（目前仅限 Xbox 手柄）",
         }
     }
 
