@@ -248,7 +248,6 @@ pub fn draw_achievement_page(
     game_select_anim: f32,
     _game_scroll_offset: f32,
     scroll_offset: f32,
-    wake_anim: f32,
     game_icon: Option<&egui::TextureHandle>,
     hint_icons: Option<&HintIcons>,
     revealed_hidden: Option<&str>,
@@ -263,9 +262,8 @@ pub fn draw_achievement_page(
     let padded_rect = panel_rect.shrink(padding);
     let painter = ui.painter().with_clip_rect(panel_rect);
     let panel_t = smoothstep01(achievement_panel_anim);
-    let wake_t = smoothstep01(wake_anim);
-    let page_enter_offset_y = lerp_f32(panel_rect.height() + 28.0, 0.0, panel_t)
-        + lerp_f32(30.0, 0.0, wake_t);
+    let wake_t = 1.0_f32;
+    let page_enter_offset_y = lerp_f32(panel_rect.height() + 28.0, 0.0, panel_t);
     let content_top = padded_rect.min.y + 18.0;
     let title_font_size = 18.0 + (30.0 - 18.0) * smoothstep01(game_select_anim);
     let title_font = egui::FontId::proportional(title_font_size);

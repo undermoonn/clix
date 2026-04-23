@@ -693,7 +693,6 @@ impl eframe::App for LauncherApp {
                             self.page.select_anim(),
                             self.page.scroll_offset(),
                             self.page.achievement_scroll_offset(),
-                            render_wake_anim,
                             game_icon,
                             self.hint_icons.as_ref(),
                             self.achievements.revealed_hidden_for_selected(selected_game),
@@ -722,7 +721,6 @@ impl eframe::App for LauncherApp {
                     self.page.settings_page_anim(),
                     self.page.settings_submenu_anim(),
                     self.page.settings_select_anim(),
-                    render_wake_anim,
                 );
 
                 if let Some(icons) = &self.hint_icons {

@@ -281,10 +281,8 @@ pub fn draw_settings_page(
     settings_anim: f32,
     submenu_anim: f32,
     settings_select_anim: f32,
-    wake_anim: f32,
 ) {
-    let wake_t = smoothstep01(wake_anim);
-    let settings_t = smoothstep01(settings_anim) * wake_t;
+    let settings_t = smoothstep01(settings_anim);
     if settings_t <= 0.001 {
         return;
     }
