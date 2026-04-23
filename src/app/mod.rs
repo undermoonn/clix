@@ -294,13 +294,14 @@ impl LauncherApp {
         }
     }
 
-    fn apply_resolution_preset(&self, preset: ResolutionPreset) {
+    fn apply_resolution_preset(&mut self, preset: ResolutionPreset) {
         let option = match preset {
             ResolutionPreset::HalfMaxRefresh => &self.resolution_options.half_refresh,
             ResolutionPreset::MaxRefresh => &self.resolution_options.max_refresh,
         };
 
         let _ = display_mode::apply_resolution_choice(option);
+        self.resolution_options = display_mode::detect_resolution_options();
     }
 
     fn close_root_viewport(&self, ctx: &egui::Context) {
