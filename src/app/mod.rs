@@ -712,6 +712,13 @@ impl eframe::App for LauncherApp {
         }
         self.artwork.drain_pending(selected_app_id, &ctx);
 
+        // Refresh `now` here: the value captured at the top of `update()` may
+        // be tens of milliseconds stale after the input/IO work above. Feeding
+        // a stale instant into the exponential animations would back-date their
+        // `started_at`, so the next frame's wall-clock delta would advance the
+        // curve by a huge chunk in one step (visible as the very first
+        // post-idle game switch "swallowing" the icon scale animation).
+        let now = Instant::now();
         self.artwork.tick_fade(&ctx, now);
         self.page.tick_animations(&ctx, now);
         self.achievements.animate_reveals(&ctx, now);
