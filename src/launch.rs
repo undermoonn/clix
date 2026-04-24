@@ -463,6 +463,13 @@ fn bring_window_to_foreground(hwnd: HWND) {
 }
 
 #[cfg(target_os = "windows")]
+fn minimize_window(hwnd: HWND) {
+    unsafe {
+        ShowWindow(hwnd, SW_MINIMIZE);
+    }
+}
+
+#[cfg(target_os = "windows")]
 fn build_running_game_state(state: &LaunchState, fallback_pid: u32) -> RunningGameState {
     let tracked_pids = if let Some(tracked_pids) = &state.focus_pids {
         let matched = collect_matching_process_ids(
@@ -589,8 +596,15 @@ pub fn current_app_window_is_background() -> bool {
 #[cfg(target_os = "windows")]
 pub fn focus_current_app_window() -> bool {
     if let Some(hwnd) = find_current_app_window() {
-        let was_background = unsafe { GetForegroundWindow() != hwnd };
+        let previous_foreground = unsafe { GetForegroundWindow() };
+        let was_background = previous_foreground != hwnd;
+
+        if was_background && !previous_foreground.is_null() {
+            minimize_window(previous_foreground);
+        }
+
         bring_window_to_foreground(hwnd);
+
         was_background
     } else {
         false
@@ -605,9 +619,7 @@ pub fn focus_current_app_window() -> bool {
 #[cfg(target_os = "windows")]
 pub fn send_current_app_to_background() -> bool {
     if let Some(hwnd) = find_current_app_window() {
-        unsafe {
-            ShowWindow(hwnd, SW_MINIMIZE);
-        }
+        minimize_window(hwnd);
         true
     } else {
         false
