@@ -27,6 +27,7 @@ raw-window-handle = "0.6"
 hidapi = "2"
 
 [build-dependencies]
+chrono = { version = "0.4", default-features = true, features = ["clock"] }
 ico = "0.5"
 image = { version = "0.24", default-features = false, features = ["png"] }
 resvg = "0.47"

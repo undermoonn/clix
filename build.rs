@@ -2,7 +2,9 @@ use std::env;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
+use chrono::Utc;
 use ico::{IconDir, IconDirEntry, IconImage, ResourceType};
 use image::codecs::png::PngEncoder;
 use image::ImageEncoder;
@@ -39,6 +41,13 @@ const VIGNETTE_WIDTH: u32 = 2048;
 const VIGNETTE_HEIGHT: u32 = 1152;
 
 fn main() {
+    println!(
+        "cargo:rustc-env=BIG_SCREEN_LAUNCHER_BUILD_TIME={}",
+        Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+    );
+    if let Some(git_commit) = current_git_commit() {
+        println!("cargo:rustc-env=BIG_SCREEN_LAUNCHER_GIT_COMMIT={git_commit}");
+    }
     println!("cargo:rerun-if-changed={}", SVG_PATH);
     println!("cargo:rerun-if-changed={}", SETTINGS_SVG_PATH);
     println!("cargo:rerun-if-changed={}", SYSTEM_SVG_PATH);
@@ -48,10 +57,74 @@ fn main() {
     println!("cargo:rerun-if-changed={}", POWER_SLEEP_SVG_PATH);
     println!("cargo:rerun-if-changed={}", POWER_REBOOT_SVG_PATH);
     println!("cargo:rerun-if-changed={}", POWER_OFF_SVG_PATH);
+    println!("cargo:rerun-if-changed=src");
+    println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=build.rs");
+    emit_git_rerun_hints();
 
     if let Err(error) = build_icon_assets() {
         panic!("failed to generate app icon assets: {error}");
+    }
+}
+
+fn current_git_commit() -> Option<String> {
+    run_git_command(["rev-parse", "--short=12", "HEAD"])
+}
+
+fn emit_git_rerun_hints() {
+    let Some(git_dir) = resolve_git_dir() else {
+        return;
+    };
+
+    let head_path = git_dir.join("HEAD");
+    println!("cargo:rerun-if-changed={}", head_path.display());
+
+    if let Ok(head_contents) = fs::read_to_string(&head_path) {
+        if let Some(reference) = head_contents.strip_prefix("ref: ") {
+            let reference = reference.trim();
+            println!(
+                "cargo:rerun-if-changed={}",
+                git_dir.join(reference).display()
+            );
+        }
+    }
+
+    let packed_refs_path = git_dir.join("packed-refs");
+    if packed_refs_path.exists() {
+        println!("cargo:rerun-if-changed={}", packed_refs_path.display());
+    }
+}
+
+fn resolve_git_dir() -> Option<PathBuf> {
+    let git_dir = run_git_command(["rev-parse", "--git-dir"])?;
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").ok()?);
+    let git_dir_path = PathBuf::from(git_dir);
+
+    if git_dir_path.is_absolute() {
+        Some(git_dir_path)
+    } else {
+        Some(manifest_dir.join(git_dir_path))
+    }
+}
+
+fn run_git_command<const N: usize>(args: [&str; N]) -> Option<String> {
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").ok()?;
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(manifest_dir)
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    let trimmed = stdout.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }
 

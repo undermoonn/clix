@@ -23,6 +23,15 @@ struct SettingsLayerState {
 }
 
 const SETTINGS_BACKDROP_PHASE: f32 = 0.18;
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+fn build_time() -> &'static str {
+    option_env!("BIG_SCREEN_LAUNCHER_BUILD_TIME").unwrap_or("unknown")
+}
+
+fn git_commit() -> &'static str {
+    option_env!("BIG_SCREEN_LAUNCHER_GIT_COMMIT").unwrap_or("unknown")
+}
 
 fn should_force_top_level_entry_layer(
     show_settings_page: bool,
@@ -407,6 +416,77 @@ fn draw_settings_section_header(
     height + 22.0
 }
 
+fn draw_settings_build_footer(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    language: AppLanguage,
+    settings_t: f32,
+) {
+    let (version_label, build_label, commit_label) = match language {
+        AppLanguage::English => ("Version", "Build Time", "Commit"),
+        AppLanguage::SimplifiedChinese => ("版本号", "构建时间", "提交"),
+    };
+    let footer_font = egui::FontId::proportional(15.0);
+    let footer_color = color_with_scaled_alpha(
+        egui::Color32::from_rgba_unmultiplied(188, 194, 203, 216),
+        settings_t,
+    );
+    let version_galley = painter.layout_no_wrap(
+        format!("{} {}", version_label, APP_VERSION),
+        footer_font.clone(),
+        footer_color,
+    );
+    let build_galley = painter.layout_no_wrap(
+        format!("{} {}", build_label, build_time()),
+        footer_font.clone(),
+        footer_color,
+    );
+    let commit_galley = painter.layout_no_wrap(
+        format!("{} {}", commit_label, git_commit()),
+        footer_font,
+        footer_color,
+    );
+    let line_gap = 4.0;
+    let version_size = version_galley.size();
+    let build_size = build_galley.size();
+    let commit_size = commit_galley.size();
+    let max_width = version_size.x.max(build_size.x).max(commit_size.x);
+    let total_height = version_size.y
+        + line_gap
+        + build_size.y
+        + line_gap
+        + commit_size.y;
+    let footer_origin = egui::pos2(
+        rect.max.x - 26.0 - max_width,
+        rect.max.y - 18.0 - total_height,
+    );
+
+    painter.galley(
+        egui::pos2(
+            footer_origin.x + max_width - version_size.x,
+            footer_origin.y,
+        ),
+        version_galley,
+        egui::Color32::WHITE,
+    );
+    painter.galley(
+        egui::pos2(
+            footer_origin.x + max_width - build_size.x,
+            footer_origin.y + version_size.y + line_gap,
+        ),
+        build_galley,
+        egui::Color32::WHITE,
+    );
+    painter.galley(
+        egui::pos2(
+            footer_origin.x + max_width - commit_size.x,
+            footer_origin.y + total_height - commit_size.y,
+        ),
+        commit_galley,
+        egui::Color32::WHITE,
+    );
+}
+
 pub fn draw_settings_page(
     ui: &mut egui::Ui,
     language: AppLanguage,
@@ -645,6 +725,7 @@ pub fn draw_settings_page(
             true,
             top_layer_t,
         );
+        draw_settings_build_footer(painter, top_list_inner_rect, language, top_layer_t);
     }
 
     if submenu_layer_t > 0.001 {
