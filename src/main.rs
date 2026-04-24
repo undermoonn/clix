@@ -120,6 +120,7 @@ fn cache_root_window_handle(cc: &eframe::CreationContext<'_>) {
 fn cache_root_window_handle(_cc: &eframe::CreationContext<'_>) {}
 
 fn main() {
+    config::initialize();
     let language_setting = config::load_app_language_setting();
     let language = language_setting.resolve();
     let viewport = if let Some(icon) = load_app_icon() {

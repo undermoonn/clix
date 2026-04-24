@@ -310,6 +310,27 @@ impl AppLanguage {
         }
     }
 
+    pub fn steam_start_action_text(self) -> &'static str {
+        match self {
+            Self::English => "Start Steam",
+            Self::SimplifiedChinese => "启动 Steam",
+        }
+    }
+
+    pub fn steam_starting_text(self) -> &'static str {
+        match self {
+            Self::English => "Steam starting",
+            Self::SimplifiedChinese => "Steam 启动中",
+        }
+    }
+
+    pub fn steam_started_text(self) -> &'static str {
+        match self {
+            Self::English => "Steam started",
+            Self::SimplifiedChinese => "Steam 启动完成",
+        }
+    }
+
     pub fn achievement_hidden_text(self) -> &'static str {
         match self {
             Self::English => "Show hidden achievement",

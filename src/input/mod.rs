@@ -199,10 +199,6 @@ impl RawHeldState {
     fn contains(&self, action: InputAction) -> bool {
         (self.0 & action.bit()) != 0
     }
-
-    fn has_any(&self) -> bool {
-        self.0 != 0
-    }
 }
 
 #[cfg(target_os = "windows")]
@@ -285,7 +281,7 @@ pub struct InputFrame {
     pub actions: Vec<ControllerAction>,
     pub launch_held: bool,
     pub force_close_held: bool,
-    pub has_input_activity: bool,
+    pub has_controller_activity: bool,
     pub prompt_icon_theme: Option<PromptIconTheme>,
 }
 
@@ -372,12 +368,13 @@ impl InputController {
 
     pub fn poll(&mut self, process_input: bool, include_quit_action: bool) -> InputFrame {
         let mut raw_held = RawHeldState::default();
-        let prompt_icon_theme = self.collect_raw_held(&mut raw_held);
+        let (prompt_icon_theme, has_controller_activity) = self.collect_raw_held(&mut raw_held);
 
         self.poll_with_raw_held(
             raw_held,
             process_input,
             include_quit_action,
+            has_controller_activity,
             prompt_icon_theme,
             Instant::now(),
         )
@@ -388,6 +385,7 @@ impl InputController {
         raw_held: RawHeldState,
         process_input: bool,
         include_quit_action: bool,
+        has_controller_activity: bool,
         prompt_icon_theme: Option<PromptIconTheme>,
         now: Instant,
     ) -> InputFrame {
@@ -455,27 +453,30 @@ impl InputController {
             actions,
             launch_held: raw_held.contains(InputAction::Launch),
             force_close_held: raw_held.contains(InputAction::ForceClose),
-            has_input_activity: raw_held.has_any(),
+            has_controller_activity,
             prompt_icon_theme,
         }
     }
 
-    fn collect_raw_held(&mut self, raw_held: &mut RawHeldState) -> Option<PromptIconTheme> {
+    fn collect_raw_held(&mut self, raw_held: &mut RawHeldState) -> (Option<PromptIconTheme>, bool) {
         let mut prompt_icon_theme = None;
+        let mut has_controller_activity = false;
 
         #[cfg(target_os = "windows")]
         {
             if self.collect_xinput(raw_held) {
                 prompt_icon_theme = Some(PromptIconTheme::Xbox);
+                has_controller_activity = true;
             }
             if self.collect_dualsense(raw_held) {
                 prompt_icon_theme = Some(PromptIconTheme::PlayStation);
+                has_controller_activity = true;
             }
 
             self.current_prompt_icon_theme = prompt_icon_theme;
         }
 
-        prompt_icon_theme
+        (prompt_icon_theme, has_controller_activity)
     }
 
     #[cfg(target_os = "windows")]

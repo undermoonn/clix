@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 
 use crate::game::GameScanOptions;
 use crate::i18n::AppLanguageSetting;
@@ -6,6 +7,7 @@ use crate::i18n::AppLanguageSetting;
 const CONFIG_FILE_NAME: &str = "settings.ini";
 const UI_SECTION: &str = "ui";
 const GAMES_SECTION: &str = "games";
+const DEBUG_SECTION: &str = "debug";
 const HINT_ICON_THEME_KEY: &str = "hint_icon_theme";
 const LANGUAGE_KEY: &str = "language";
 const BACKGROUND_HOME_WAKE_ENABLED_KEY: &str = "background_home_wake_enabled";
@@ -13,6 +15,7 @@ const CONTROLLER_VIBRATION_ENABLED_KEY: &str = "controller_vibration_enabled";
 const DETECT_STEAM_GAMES_KEY: &str = "detect_steam_games";
 const DETECT_EPIC_GAMES_KEY: &str = "detect_epic_games";
 const DETECT_XBOX_GAMES_KEY: &str = "detect_xbox_games";
+const STEAM_CLIENT_STATE_LOGGING_ENABLED_KEY: &str = "steam_client_state_logging_enabled";
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum PromptIconTheme {
@@ -47,7 +50,10 @@ struct AppConfig {
     background_home_wake_enabled: bool,
     controller_vibration_enabled: bool,
     game_scan_options: GameScanOptions,
+    steam_client_state_logging_enabled: bool,
 }
+
+static CONFIG_CACHE: OnceLock<Mutex<AppConfig>> = OnceLock::new();
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -57,6 +63,7 @@ impl Default for AppConfig {
             background_home_wake_enabled: true,
             controller_vibration_enabled: false,
             game_scan_options: GameScanOptions::default(),
+            steam_client_state_logging_enabled: false,
         }
     }
 }
@@ -87,6 +94,16 @@ fn config_dir() -> PathBuf {
 
 fn config_path() -> PathBuf {
     config_dir().join(CONFIG_FILE_NAME)
+}
+
+fn config_cache() -> &'static Mutex<AppConfig> {
+    CONFIG_CACHE.get_or_init(|| Mutex::new(load_config_from_disk()))
+}
+
+fn lock_config_cache() -> std::sync::MutexGuard<'static, AppConfig> {
+    config_cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn parse_config(contents: &str) -> AppConfig {
@@ -136,6 +153,11 @@ fn parse_config(contents: &str) -> AppConfig {
                 config.game_scan_options.detect_xbox_games =
                     parse_bool_config_value(value).unwrap_or(GameScanOptions::default().detect_xbox_games);
             }
+        } else if current_section.eq_ignore_ascii_case(DEBUG_SECTION) {
+            if key.eq_ignore_ascii_case(STEAM_CLIENT_STATE_LOGGING_ENABLED_KEY) {
+                config.steam_client_state_logging_enabled =
+                    parse_bool_config_value(value).unwrap_or(false);
+            }
         }
     }
 
@@ -144,7 +166,7 @@ fn parse_config(contents: &str) -> AppConfig {
 
 fn serialize_config(config: AppConfig) -> String {
     format!(
-        "[{}]\n{}={}\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n{}={}\n{}={}\n",
+        "[{}]\n{}={}\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n",
         UI_SECTION,
         HINT_ICON_THEME_KEY,
         config.hint_icon_theme.as_config_value(),
@@ -161,10 +183,13 @@ fn serialize_config(config: AppConfig) -> String {
         config.game_scan_options.detect_epic_games,
         DETECT_XBOX_GAMES_KEY,
         config.game_scan_options.detect_xbox_games,
+        DEBUG_SECTION,
+        STEAM_CLIENT_STATE_LOGGING_ENABLED_KEY,
+        config.steam_client_state_logging_enabled,
     )
 }
 
-fn load_config() -> AppConfig {
+fn load_config_from_disk() -> AppConfig {
     let Ok(contents) = std::fs::read_to_string(config_path()) else {
         return AppConfig::default();
     };
@@ -172,8 +197,17 @@ fn load_config() -> AppConfig {
     parse_config(&contents)
 }
 
+fn load_config() -> AppConfig {
+    *lock_config_cache()
+}
+
 fn store_config(config: AppConfig) {
+    *lock_config_cache() = config;
     let _ = std::fs::write(config_path(), serialize_config(config));
+}
+
+pub fn initialize() {
+    let _ = config_cache();
 }
 
 pub fn load_hint_icon_theme() -> PromptIconTheme {
@@ -224,4 +258,8 @@ pub fn store_game_scan_options(options: GameScanOptions) {
     let mut config = load_config();
     config.game_scan_options = options;
     store_config(config);
+}
+
+pub fn load_steam_client_state_logging_enabled() -> bool {
+    load_config().steam_client_state_logging_enabled
 }

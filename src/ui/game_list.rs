@@ -11,7 +11,7 @@ use super::header::{
     build_selected_game_header, draw_selected_game_badge, draw_selected_game_summary,
     draw_selected_game_title, SelectedGameSummaryStyle,
 };
-use super::text::{color_with_scaled_alpha, corner_radius};
+use super::text::{build_wrapped_galley, color_with_scaled_alpha, corner_radius};
 
 fn launch_press_t(elapsed_seconds: f32) -> f32 {
     let press_in_duration = 0.06;
@@ -81,23 +81,107 @@ fn draw_game_icon_focus_frame(
     );
 }
 
-fn draw_running_status_dot(painter: &egui::Painter, icon_rect: egui::Rect) {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GameStatusDot {
+    Running,
+    Launching,
+}
+
+fn draw_status_dot(painter: &egui::Painter, icon_rect: egui::Rect, status: GameStatusDot) {
     let radius = (icon_rect.width().min(icon_rect.height()) * 0.055).clamp(4.0, 7.0);
     let inset = (radius * 0.9).clamp(6.0, 10.0);
     let center = egui::pos2(icon_rect.max.x - inset - radius, icon_rect.min.y + inset + radius);
     let halo_alpha = 84;
     let halo_radius = radius + 3.4;
+    let dot_color = match status {
+        GameStatusDot::Running => egui::Color32::from_rgba_unmultiplied(78, 201, 108, 220),
+        GameStatusDot::Launching => egui::Color32::from_rgba_unmultiplied(232, 188, 64, 228),
+    };
 
     painter.circle_filled(
         center,
         halo_radius,
         egui::Color32::from_rgba_unmultiplied(12, 20, 14, halo_alpha),
     );
-    painter.circle_filled(
-        center,
-        radius,
-        egui::Color32::from_rgba_unmultiplied(78, 201, 108, 220),
+    painter.circle_filled(center, radius, dot_color);
+}
+
+fn draw_launch_notice_overlay(
+    ui: &egui::Ui,
+    painter: &egui::Painter,
+    icon_rect: egui::Rect,
+    notice_text: &str,
+    action_icon: Option<&egui::TextureHandle>,
+    use_action_icon: bool,
+    overlay_t: f32,
+    overlay_color: egui::Color32,
+    wake_t: f32,
+) {
+    if overlay_t <= 0.001 {
+        return;
+    }
+
+    let alpha_scale = wake_t.clamp(0.0, 1.0);
+    if alpha_scale <= 0.001 {
+        return;
+    }
+
+    let icon_size = 24.0;
+    let text_gap = 8.0;
+    let icon_and_text_padding = if use_action_icon && action_icon.is_some() {
+        icon_size + text_gap
+    } else {
+        0.0
+    };
+    let max_text_width = (icon_rect.width() - 18.0 - icon_and_text_padding).max(48.0);
+    let text_font = egui::FontId::new(17.0, egui::FontFamily::Name("Bold".into()));
+    let text_color = color_with_scaled_alpha(
+        egui::Color32::from_rgba_unmultiplied(252, 253, 255, 248),
+        alpha_scale,
     );
+    let text_galley = build_wrapped_galley(ui, notice_text.to_string(), text_font, text_color, max_text_width);
+    let target_height = icon_rect.height() * 0.25;
+    let overlay_height = lerp_f32(0.0, target_height, overlay_t);
+    let overlay_rect = egui::Rect::from_min_max(
+        egui::pos2(icon_rect.min.x, icon_rect.max.y - overlay_height),
+        icon_rect.max,
+    );
+    let overlay_painter = painter.with_clip_rect(icon_rect);
+
+    overlay_painter.rect_filled(
+        overlay_rect,
+        egui::CornerRadius {
+            nw: 0,
+            ne: 0,
+            sw: 8,
+            se: 8,
+        },
+        color_with_scaled_alpha(overlay_color, alpha_scale),
+    );
+
+    let text_offset_y = lerp_f32(16.0, 0.0, overlay_t);
+    let content_width = text_galley.size().x + icon_and_text_padding;
+    let content_left = icon_rect.center().x - content_width * 0.5;
+    if use_action_icon {
+        if let Some(action_icon) = action_icon {
+            let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+            let icon_rect = egui::Rect::from_min_size(
+                egui::pos2(content_left, overlay_rect.center().y - icon_size * 0.5 + text_offset_y),
+                egui::vec2(icon_size, icon_size),
+            );
+            overlay_painter.image(
+                action_icon.id(),
+                icon_rect,
+                uv,
+                color_with_scaled_alpha(egui::Color32::WHITE, alpha_scale),
+            );
+        }
+    }
+    let text_pos = egui::pos2(
+        content_left + icon_and_text_padding,
+        overlay_rect.center().y - text_galley.size().y * 0.5 + text_offset_y,
+    );
+    overlay_painter.galley(text_pos, text_galley, egui::Color32::WHITE);
 }
 
 pub fn draw_game_list(
@@ -110,7 +194,10 @@ pub fn draw_game_list(
     achievement_panel_anim: f32,
     scroll_offset: f32,
     game_icons: &HashMap<GameIconKey, egui::TextureHandle>,
+    action_icon_a: Option<&egui::TextureHandle>,
     launch_feedback: Option<(usize, f32)>,
+    launch_notice: Option<(usize, String, f32, egui::Color32, bool)>,
+    launching_index: Option<usize>,
     running_indices: &[usize],
     _achievement_panel_active: bool,
     summary_cards_visibility: f32,
@@ -179,10 +266,19 @@ pub fn draw_game_list(
             .filter(|(launch_index, _)| *launch_index == i)
             .map(|(_, elapsed_seconds)| elapsed_seconds);
         let is_running = running_indices.contains(&i);
-        let show_running_status = is_running
-            || launch_feedback
+        let status_dot = if is_running {
+            Some(GameStatusDot::Running)
+        } else if launching_index == Some(i) {
+            Some(GameStatusDot::Launching)
+        } else if !matches!(g.source, GameSource::Steam)
+            && launch_feedback
                 .map(|(launch_index, _)| launch_index == i)
-                .unwrap_or(false);
+                .unwrap_or(false)
+        {
+            Some(GameStatusDot::Running)
+        } else {
+            None
+        };
         let font_size = if is_selected {
             base_size + (selected_size - base_size) * selection_t
         } else {
@@ -233,8 +329,24 @@ pub fn draw_game_list(
             let icon_tint = color_with_scaled_alpha(egui::Color32::WHITE, wake_t);
             draw_game_icon(&painter, icon_tex, icon_rect, icon_tint);
 
-            if show_running_status && wake_t > 0.12 {
-                draw_running_status_dot(&painter, icon_rect);
+            if let Some(status_dot) = status_dot.filter(|_| wake_t > 0.12) {
+                draw_status_dot(&painter, icon_rect, status_dot);
+            }
+
+            if let Some((notice_index, notice_text, notice_overlay_t, notice_color, use_action_icon)) = &launch_notice {
+                if *notice_index == i {
+                    draw_launch_notice_overlay(
+                        ui,
+                        &painter,
+                        icon_rect,
+                        notice_text,
+                        action_icon_a,
+                        *use_action_icon,
+                        *notice_overlay_t,
+                        *notice_color,
+                        wake_t,
+                    );
+                }
             }
         }
 

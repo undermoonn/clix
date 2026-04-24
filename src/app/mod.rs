@@ -9,6 +9,7 @@ mod state;
 
 use eframe::egui;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::animation;
@@ -36,6 +37,117 @@ use self::playtime::PlaytimeState;
 use self::state::{PageState, PowerAction, ResolutionPreset, RuntimeState};
 
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_secs(1);
+const CONTROLLER_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const IDLE_DIM_OVERLAY_ALPHA: u8 = 200;
+const IDLE_DIM_ANIMATION_SPEED: f32 = 4.0;
+const LAUNCH_PRESS_FEEDBACK_DURATION: Duration = Duration::from_millis(200);
+const STEAM_PROMPT_VISIBLE_DURATION: Duration = Duration::from_secs(5);
+const STEAM_READY_VISIBLE_DURATION: Duration = Duration::from_secs(1);
+const STEAM_NOTICE_ANIMATION_DURATION: Duration = Duration::from_millis(300);
+const STEAM_STATUS_POLL_INTERVAL: Duration = Duration::from_millis(1_000);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LaunchNoticeKind {
+    PromptStartSteam,
+    SteamStarting,
+    SteamStarted,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LaunchNoticeStage {
+    Entering,
+    Visible,
+    Exiting,
+}
+
+struct LaunchNotice {
+    game_index: usize,
+    kind: LaunchNoticeKind,
+    stage: LaunchNoticeStage,
+    stage_started_at: Instant,
+    last_state_check_at: Option<Instant>,
+    queued_kind: Option<LaunchNoticeKind>,
+    launch_game_after_exit: bool,
+}
+
+struct LaunchPressFeedback {
+    game_index: usize,
+    started_at: Instant,
+}
+
+#[derive(Clone, Copy)]
+struct PendingLaunchRequest {
+    game_index: usize,
+}
+
+struct SteamClientStateMonitor {
+    pending: Arc<Mutex<Option<launch::SteamClientState>>>,
+    in_flight: bool,
+    cached: launch::SteamClientState,
+}
+
+impl SteamClientStateMonitor {
+    fn new() -> Self {
+        Self {
+            pending: Arc::new(Mutex::new(None)),
+            in_flight: false,
+            cached: launch::SteamClientState::NotRunning,
+        }
+    }
+
+    fn cached(&self) -> launch::SteamClientState {
+        self.cached
+    }
+
+    fn drain(&mut self) {
+        let Ok(mut lock) = self.pending.lock() else {
+            return;
+        };
+        let Some(state) = lock.take() else {
+            return;
+        };
+
+        self.in_flight = false;
+        self.cached = state;
+    }
+
+    fn poll_if_due(
+        &mut self,
+        now: Instant,
+        last_polled_at: &mut Option<Instant>,
+        ctx: &egui::Context,
+    ) {
+        if self.in_flight {
+            return;
+        }
+
+        if last_polled_at.is_some_and(|last| now.duration_since(last) < STEAM_STATUS_POLL_INTERVAL)
+        {
+            return;
+        }
+
+        *last_polled_at = Some(now);
+        self.in_flight = true;
+
+        let pending = Arc::clone(&self.pending);
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let state = launch::steam_client_state();
+            if let Ok(mut lock) = pending.lock() {
+                *lock = Some(state);
+            }
+            ctx.request_repaint();
+        });
+    }
+
+    fn reset(&mut self, cached: launch::SteamClientState) {
+        self.in_flight = false;
+        self.cached = cached;
+        if let Ok(mut lock) = self.pending.lock() {
+            *lock = None;
+        }
+    }
+}
 
 pub struct LauncherApp {
     language: AppLanguage,
@@ -59,7 +171,11 @@ pub struct LauncherApp {
     power_off_icon: Option<egui::TextureHandle>,
     game_icons: GameIconState,
     external_app_icons: ExternalAppIconState,
+    steam_client_state_monitor: SteamClientStateMonitor,
     launch_state: Option<LaunchState>,
+    launch_notice: Option<LaunchNotice>,
+    launch_press_feedback: Option<LaunchPressFeedback>,
+    pending_launch_request: Option<PendingLaunchRequest>,
     /// Promotion of the launched game to the front of the list is deferred
     /// until the launcher next regains focus (i.e. the user comes back from
     /// the launched game), so reordering the list does not interfere with
@@ -81,6 +197,8 @@ pub struct LauncherApp {
     pending_send_to_background: bool,
     send_to_background_after_frame: bool,
     send_to_background_commit_pending: bool,
+    idle_dim_anim: animation::ExponentialAnimation,
+    last_controller_activity_at: Instant,
     last_pointer_pos: Option<egui::Pos2>,
     last_pointer_activity: Option<Instant>,
 }
@@ -128,7 +246,11 @@ impl LauncherApp {
             power_off_icon: load_power_off_icon(ctx),
             game_icons: GameIconState::new(),
             external_app_icons: ExternalAppIconState::new(),
+            steam_client_state_monitor: SteamClientStateMonitor::new(),
             launch_state: None,
+            launch_notice: None,
+            launch_press_feedback: None,
+            pending_launch_request: None,
             pending_promotion: None,
             running_games: HashMap::new(),
             achievements: AchievementState::new(),
@@ -146,6 +268,8 @@ impl LauncherApp {
             pending_send_to_background: false,
             send_to_background_after_frame: false,
             send_to_background_commit_pending: false,
+            idle_dim_anim: animation::ExponentialAnimation::new(0.0),
+            last_controller_activity_at: Instant::now(),
             last_pointer_pos: None,
             last_pointer_activity: None,
         };
@@ -213,6 +337,8 @@ impl LauncherApp {
         self.games = game::scan_installed_games(&self.steam_paths, &self.game_scan_options);
         self.running_games.clear();
         self.launch_state = None;
+        self.launch_press_feedback = None;
+        self.pending_launch_request = None;
         self.pending_promotion = None;
 
         if let Some(index) = selected_key
@@ -244,26 +370,294 @@ impl LauncherApp {
             .unwrap_or(false)
     }
 
-    fn launch_selected(&mut self) {
-        let selected = self.page.selected();
+    fn game_is_steam(&self, game_index: usize) -> bool {
+        self.games
+            .get(game_index)
+            .map(|game| matches!(game.source, GameSource::Steam))
+            .unwrap_or(false)
+    }
+
+    fn should_queue_launch_feedback(&self, game_index: usize) -> bool {
+        if !self.game_is_steam(game_index) {
+            return true;
+        }
+
+        let Some(notice) = self.launch_notice.as_ref() else {
+            return true;
+        };
+
+        notice.game_index == game_index
+    }
+
+    fn steam_launch_flow_active(&self) -> bool {
+        self.launch_notice.is_some()
+            || self.launch_press_feedback.is_some()
+            || self.launch_state.is_some()
+    }
+
+    fn controller_idle_active(&self, now: Instant) -> bool {
+        now.duration_since(self.last_controller_activity_at) >= CONTROLLER_IDLE_TIMEOUT
+    }
+
+    fn set_launch_press_feedback(&mut self, game_index: usize) {
+        self.launch_press_feedback = Some(LaunchPressFeedback {
+            game_index,
+            started_at: Instant::now(),
+        });
+    }
+
+    fn queue_launch_selected(&mut self, ctx: &egui::Context) {
+        let game_index = self.page.selected();
+        self.pending_launch_request = Some(PendingLaunchRequest { game_index });
+        self.set_launch_press_feedback(game_index);
+        ctx.request_repaint();
+    }
+
+    fn drain_pending_launch_request(&mut self, now: Instant, ctx: &egui::Context) {
+        let Some(request) = self.pending_launch_request else {
+            return;
+        };
+
+        if let Some(feedback) = self.launch_press_feedback.as_ref() {
+            if feedback.game_index == request.game_index {
+                let elapsed = now.duration_since(feedback.started_at);
+                if elapsed < LAUNCH_PRESS_FEEDBACK_DURATION {
+                    ctx.request_repaint_after(LAUNCH_PRESS_FEEDBACK_DURATION - elapsed);
+                    return;
+                }
+            }
+        }
+
+        self.pending_launch_request = None;
+        self.launch_selected(request.game_index, ctx);
+    }
+
+    fn show_launch_notice(
+        &mut self,
+        game_index: usize,
+        kind: LaunchNoticeKind,
+        ctx: &egui::Context,
+    ) {
+        let cached_state = match kind {
+            LaunchNoticeKind::PromptStartSteam => launch::SteamClientState::NotRunning,
+            LaunchNoticeKind::SteamStarting => launch::SteamClientState::Loading,
+            LaunchNoticeKind::SteamStarted => launch::SteamClientState::Ready,
+        };
+        self.steam_client_state_monitor.reset(cached_state);
+        self.launch_notice = Some(LaunchNotice {
+            game_index,
+            kind,
+            stage: LaunchNoticeStage::Entering,
+            stage_started_at: Instant::now(),
+            last_state_check_at: None,
+            queued_kind: None,
+            launch_game_after_exit: false,
+        });
+        ctx.request_repaint();
+    }
+
+    fn launch_notice_visible_duration(kind: LaunchNoticeKind) -> Option<Duration> {
+        match kind {
+            LaunchNoticeKind::PromptStartSteam => Some(STEAM_PROMPT_VISIBLE_DURATION),
+            LaunchNoticeKind::SteamStarting => None,
+            LaunchNoticeKind::SteamStarted => Some(STEAM_READY_VISIBLE_DURATION),
+        }
+    }
+
+    fn launch_notice_overlay_t(notice: &LaunchNotice, now: Instant) -> f32 {
+        let stage_elapsed = now.saturating_duration_since(notice.stage_started_at);
+        let duration = STEAM_NOTICE_ANIMATION_DURATION.as_secs_f32();
+        let t = (stage_elapsed.as_secs_f32() / duration).clamp(0.0, 1.0);
+        let smootherstep = |value: f32| {
+            let value = value.clamp(0.0, 1.0);
+            value * value * value * (value * (value * 6.0 - 15.0) + 10.0)
+        };
+
+        match notice.stage {
+            LaunchNoticeStage::Entering => smootherstep(t),
+            LaunchNoticeStage::Visible => 1.0,
+            LaunchNoticeStage::Exiting => 1.0 - smootherstep(t),
+        }
+    }
+
+    fn launch_notice_text(&self, notice: &LaunchNotice) -> String {
+        match notice.kind {
+            LaunchNoticeKind::PromptStartSteam => {
+                self.language.steam_start_action_text().to_string()
+            }
+            LaunchNoticeKind::SteamStarting => self.language.steam_starting_text().to_string(),
+            LaunchNoticeKind::SteamStarted => self.language.steam_started_text().to_string(),
+        }
+    }
+
+    fn launch_notice_color(notice: &LaunchNotice) -> egui::Color32 {
+        match notice.kind {
+            LaunchNoticeKind::PromptStartSteam => {
+                egui::Color32::from_rgba_unmultiplied(0, 0, 0, 168)
+            }
+            LaunchNoticeKind::SteamStarting => {
+                egui::Color32::from_rgba_unmultiplied(154, 120, 18, 196)
+            }
+            LaunchNoticeKind::SteamStarted => {
+                egui::Color32::from_rgba_unmultiplied(34, 122, 72, 196)
+            }
+        }
+    }
+
+    fn start_selected_game_launch(&mut self, selected: usize, ctx: &egui::Context) {
+        if let Some(game) = self.games.get(selected) {
+            match launch::begin_launch(selected, game, &self.steam_paths) {
+                launch::LaunchAttemptResult::Started(state) => {
+                    self.launch_state = Some(state);
+                    self.launch_notice = None;
+                    self.launch_press_feedback = None;
+                    self.schedule_promotion(selected);
+                }
+                launch::LaunchAttemptResult::Blocked(reason) => {
+                    self.launch_state = None;
+                    match reason {
+                        launch::LaunchBlockedReason::SteamClientNotRunning => {
+                            self.show_launch_notice(selected, LaunchNoticeKind::PromptStartSteam, ctx);
+                        }
+                        launch::LaunchBlockedReason::SteamClientLoading => {
+                            self.show_launch_notice(selected, LaunchNoticeKind::SteamStarting, ctx);
+                        }
+                    }
+                }
+                launch::LaunchAttemptResult::Failed => {
+                    self.launch_state = None;
+                }
+            }
+        }
+    }
+
+    fn try_advance_launch_notice(&mut self, selected: usize, ctx: &egui::Context) -> bool {
+        if !self.game_is_steam(selected) {
+            return false;
+        }
+
+        let Some(notice) = self.launch_notice.as_mut() else {
+            return false;
+        };
+
+        notice.game_index = selected;
+
+        if notice.kind != LaunchNoticeKind::PromptStartSteam {
+            return true;
+        }
+
+        if notice.stage == LaunchNoticeStage::Exiting {
+            return true;
+        }
+
+        if !launch::start_steam_client(&self.steam_paths) {
+            return true;
+        }
+
+        notice.stage = LaunchNoticeStage::Exiting;
+        notice.stage_started_at = Instant::now();
+        notice.queued_kind = Some(LaunchNoticeKind::SteamStarting);
+        notice.launch_game_after_exit = false;
+        ctx.request_repaint();
+        true
+    }
+
+    fn update_launch_notice(&mut self, now: Instant, ctx: &egui::Context) {
+        let mut next_kind: Option<(usize, LaunchNoticeKind)> = None;
+        let mut clear_notice = false;
+        let mut launch_game_after_clear: Option<usize> = None;
+
+        self.steam_client_state_monitor.drain();
+
+        if let Some(notice) = self.launch_notice.as_mut() {
+            if notice.kind == LaunchNoticeKind::SteamStarting
+                && notice.stage != LaunchNoticeStage::Exiting
+            {
+                self.steam_client_state_monitor
+                    .poll_if_due(now, &mut notice.last_state_check_at, ctx);
+                if self.steam_client_state_monitor.cached() == launch::SteamClientState::Ready {
+                    notice.stage = LaunchNoticeStage::Exiting;
+                    notice.stage_started_at = now;
+                    notice.queued_kind = Some(LaunchNoticeKind::SteamStarted);
+                    notice.launch_game_after_exit = false;
+                }
+            }
+
+            let stage_elapsed = now.saturating_duration_since(notice.stage_started_at);
+
+            match notice.stage {
+                LaunchNoticeStage::Entering => {
+                    if stage_elapsed >= STEAM_NOTICE_ANIMATION_DURATION {
+                        notice.stage = LaunchNoticeStage::Visible;
+                        notice.stage_started_at = now;
+                    }
+                    ctx.request_repaint();
+                }
+                LaunchNoticeStage::Visible => {
+                    if let Some(duration) = Self::launch_notice_visible_duration(notice.kind) {
+                        if stage_elapsed >= duration {
+                            notice.stage = LaunchNoticeStage::Exiting;
+                            notice.stage_started_at = now;
+                            notice.launch_game_after_exit =
+                                notice.kind == LaunchNoticeKind::SteamStarted;
+                            ctx.request_repaint();
+                        } else {
+                            ctx.request_repaint_after(duration - stage_elapsed);
+                        }
+                    } else {
+                        ctx.request_repaint_after(STEAM_STATUS_POLL_INTERVAL);
+                    }
+                }
+                LaunchNoticeStage::Exiting => {
+                    if stage_elapsed >= STEAM_NOTICE_ANIMATION_DURATION {
+                        if let Some(kind) = notice.queued_kind.take() {
+                            next_kind = Some((notice.game_index, kind));
+                        } else {
+                            if notice.launch_game_after_exit {
+                                launch_game_after_clear = Some(notice.game_index);
+                            }
+                            clear_notice = true;
+                        }
+                    } else {
+                        ctx.request_repaint();
+                    }
+                }
+            }
+        }
+
+        if clear_notice {
+            self.launch_notice = None;
+        }
+
+        if let Some((game_index, kind)) = next_kind {
+            self.show_launch_notice(game_index, kind, ctx);
+        }
+
+        if let Some(game_index) = launch_game_after_clear {
+            self.start_selected_game_launch(game_index, ctx);
+        }
+    }
+
+    fn launch_selected(&mut self, selected: usize, ctx: &egui::Context) {
+        if self.try_advance_launch_notice(selected, ctx) {
+            return;
+        }
+
         if let Some(state) = self.running_games.get(&selected) {
             if let Some(focus_state) = launch::begin_focus_transition(selected, state) {
                 self.launch_state = Some(focus_state);
+                self.launch_notice = None;
                 self.schedule_promotion(selected);
             } else {
                 if launch::focus_running_game(state) {
+                    self.launch_notice = None;
                     let _ = self.promote_game_to_front(selected);
                 }
             }
             return;
         }
 
-        if let Some(game) = self.games.get(selected) {
-            self.launch_state = launch::begin_launch(selected, game, &self.steam_paths);
-            if self.launch_state.is_some() {
-                self.schedule_promotion(selected);
-            }
-        }
+        self.start_selected_game_launch(selected, ctx);
     }
 
     fn schedule_promotion(&mut self, game_index: usize) {
@@ -385,6 +779,42 @@ impl LauncherApp {
                 state.game_index = new_index;
             }
         }
+
+        if let Some(notice) = self.launch_notice.as_mut() {
+            let Some(game_key) = old_order.get(notice.game_index) else {
+                self.launch_notice = None;
+                return;
+            };
+            if let Some(&new_index) = new_positions.get(game_key) {
+                notice.game_index = new_index;
+            } else {
+                self.launch_notice = None;
+            }
+        }
+
+        if let Some(feedback) = self.launch_press_feedback.as_mut() {
+            let Some(game_key) = old_order.get(feedback.game_index) else {
+                self.launch_press_feedback = None;
+                return;
+            };
+            if let Some(&new_index) = new_positions.get(game_key) {
+                feedback.game_index = new_index;
+            } else {
+                self.launch_press_feedback = None;
+            }
+        }
+
+        if let Some(request) = self.pending_launch_request.as_mut() {
+            let Some(game_key) = old_order.get(request.game_index) else {
+                self.pending_launch_request = None;
+                return;
+            };
+            if let Some(&new_index) = new_positions.get(game_key) {
+                request.game_index = new_index;
+            } else {
+                self.pending_launch_request = None;
+            }
+        }
     }
 
     fn apply_resolution_preset(&mut self, preset: ResolutionPreset) {
@@ -415,8 +845,10 @@ impl LauncherApp {
     fn schedule_input_repaint(
         &self,
         ctx: &egui::Context,
+        _now: Instant,
         has_focus: bool,
         has_input_activity: bool,
+        controller_idle_active: bool,
     ) {
         if !has_focus {
             return;
@@ -424,9 +856,15 @@ impl LauncherApp {
 
         if has_input_activity {
             ctx.request_repaint();
-        } else {
-            ctx.request_repaint_after(IDLE_REPAINT_INTERVAL);
+            return;
         }
+
+        if controller_idle_active {
+            ctx.request_repaint_after(IDLE_REPAINT_INTERVAL);
+            return;
+        }
+
+        ctx.request_repaint();
     }
 
     fn update_cursor_visibility(&mut self, ctx: &egui::Context) {
@@ -508,16 +946,30 @@ impl eframe::App for LauncherApp {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.update_cursor_visibility(&ctx);
+        let has_focus = ctx.input(|input| input.focused);
 
         if self.send_to_background_commit_pending {
-            self.send_to_background_commit_pending = false;
-            self.send_to_background_after_frame = false;
-            if launch::send_current_app_to_background() {
-                return;
+            if has_focus {
+                self.send_to_background_commit_pending = false;
+                self.send_to_background_after_frame = false;
+            } else {
+                self.send_to_background_commit_pending = false;
+                self.send_to_background_after_frame = false;
+                if launch::send_current_app_to_background() {
+                    return;
+                }
             }
         }
 
         let now = Instant::now();
+        self.update_launch_notice(now, &ctx);
+        let steam_launch_flow_active = self.steam_launch_flow_active();
+        let controller_idle_active = self.controller_idle_active(now);
+        let idle_dim_target = if controller_idle_active && has_focus {
+            1.0
+        } else {
+            0.0
+        };
 
         if self.wake_focus_pending {
             self.wake_focus_pending = false;
@@ -525,10 +977,12 @@ impl eframe::App for LauncherApp {
             ctx.request_repaint();
         }
 
-        let has_focus = ctx.input(|input| input.focused);
         let focus = self.runtime.update_focus(has_focus, now);
 
         if focus.did_gain_focus {
+            self.pending_send_to_background = false;
+            self.send_to_background_after_frame = false;
+            self.send_to_background_commit_pending = false;
             self.apply_pending_promotion();
             self.page.start_wake_animation(now);
             self.refresh_selected_playtime(&ctx);
@@ -536,7 +990,7 @@ impl eframe::App for LauncherApp {
             ctx.request_repaint();
         }
 
-        if focus.did_lose_focus {
+        if focus.did_lose_focus && !steam_launch_flow_active {
             self.page.prepare_wake_animation();
             ctx.request_repaint();
         }
@@ -554,7 +1008,9 @@ impl eframe::App for LauncherApp {
         }
         self.input.tick();
 
-        let process_input = has_focus && !focus.in_cooldown && !self.pending_send_to_background;
+        let process_input = has_focus
+            && !focus.in_cooldown
+            && !self.pending_send_to_background;
         let modal_open = self.page.show_achievement_panel()
             || self.page.show_power_menu()
             || self.page.show_settings_page()
@@ -567,7 +1023,11 @@ impl eframe::App for LauncherApp {
             self.set_hint_icon_theme(theme, &ctx);
         }
         let guide_held = input::home_held();
-        let has_controller_activity = input_frame.has_input_activity || guide_held;
+        let has_controller_activity = input_frame.has_controller_activity || guide_held;
+
+        if has_controller_activity {
+            self.last_controller_activity_at = now;
+        }
 
         if self.pending_send_to_background {
             if input_frame.launch_held {
@@ -705,8 +1165,17 @@ impl eframe::App for LauncherApp {
                     self.input.pulse_selection_change();
                     self.refresh_selected_playtime(&ctx);
                 }
-                if result.launch_selected && !self.selected_launch_pending() {
-                    self.launch_selected();
+                if result.launch_selected
+                    && !self.selected_launch_pending()
+                    && self.pending_launch_request.is_none()
+                    && self.launch_press_feedback.is_none()
+                {
+                    let selected = self.page.selected();
+                    if self.should_queue_launch_feedback(selected) {
+                        self.queue_launch_selected(&ctx);
+                    } else {
+                        self.launch_selected(selected, &ctx);
+                    }
                 }
                 if let Some(kind) = result.launch_external_app {
                     let _ = external_apps::launch(kind, &self.power_menu_external_apps);
@@ -728,6 +1197,7 @@ impl eframe::App for LauncherApp {
             }
         }
 
+        self.drain_pending_launch_request(now, &ctx);
         self.tick_launch_progress(&ctx, input_frame.launch_held);
         self.tick_running_game_state();
         self.achievements.drain_results();
@@ -771,9 +1241,15 @@ impl eframe::App for LauncherApp {
         // curve by a huge chunk in one step (visible as the very first
         // post-idle game switch "swallowing" the icon scale animation).
         let now = Instant::now();
+        self.idle_dim_anim
+            .animate_to(idle_dim_target, IDLE_DIM_ANIMATION_SPEED, now, 0.001);
+        if self.idle_dim_anim.update(now, 0.001) {
+            ctx.request_repaint();
+        }
         self.artwork.tick_fade(&ctx, now);
         self.page.tick_animations(&ctx, now);
         self.achievements.animate_reveals(&ctx, now);
+        let idle_dim_t = self.idle_dim_anim.value();
 
         self.game_icons
             .ensure_loaded(&ctx, &self.steam_paths, &self.games, self.page.selected());
@@ -791,11 +1267,33 @@ impl eframe::App for LauncherApp {
         let achievement_refresh_loading = self.achievements.refresh_loading_for_selected(selected_game);
         let achievement_has_no_data = self.achievements.has_no_data_for_selected(selected_game);
         let running_indices: Vec<usize> = self.running_games.keys().copied().collect();
-        let launch_feedback = self
-            .launch_state
-            .as_ref()
-            .map(|state| (state.game_index, animation::scale_seconds(state.elapsed_seconds())));
-        let render_wake_anim = if has_focus && !self.send_to_background_after_frame {
+        let press_feedback = self.launch_press_feedback.as_ref().and_then(|feedback| {
+            let elapsed = animation::scale_seconds(now.duration_since(feedback.started_at).as_secs_f32());
+            (elapsed <= LAUNCH_PRESS_FEEDBACK_DURATION.as_secs_f32())
+                .then_some((feedback.game_index, elapsed))
+        });
+        if press_feedback.is_none() {
+            self.launch_press_feedback = None;
+        }
+        let launch_feedback = press_feedback;
+        let launch_notice = self.launch_notice.as_ref().and_then(|notice| {
+            self.games
+                .get(self.page.selected())
+                .filter(|game| matches!(game.source, GameSource::Steam))
+                .map(|_| {
+                    (
+                        self.page.selected(),
+                        self.launch_notice_text(notice),
+                        Self::launch_notice_overlay_t(notice, now),
+                        Self::launch_notice_color(notice),
+                        notice.kind == LaunchNoticeKind::PromptStartSteam,
+                    )
+                })
+        });
+        let launching_index = self.launch_state.as_ref().map(|state| state.game_index);
+        let render_wake_anim = if (has_focus || steam_launch_flow_active)
+            && !self.send_to_background_after_frame
+        {
             self.page.wake_anim()
         } else {
             0.0
@@ -837,7 +1335,10 @@ impl eframe::App for LauncherApp {
                     self.page.achievement_panel_anim(),
                     self.page.scroll_offset(),
                     self.game_icons.textures(),
+                    self.hint_icons.as_ref().map(|icons| &icons.btn_a),
                     launch_feedback,
+                    launch_notice,
+                    launching_index,
                     &running_indices,
                     self.page.show_achievement_panel(),
                     summary_cards_visibility,
@@ -955,6 +1456,21 @@ impl eframe::App for LauncherApp {
                     self.page.home_power_focus_anim(),
                     render_wake_anim,
                 );
+
+                if idle_dim_t > 0.001 {
+                    ui.painter().rect_filled(
+                        ui.max_rect(),
+                        egui::CornerRadius::ZERO,
+                        egui::Color32::from_rgba_unmultiplied(
+                            0,
+                            0,
+                            0,
+                            ((IDLE_DIM_OVERLAY_ALPHA as f32) * idle_dim_t)
+                                .round()
+                                .clamp(0.0, IDLE_DIM_OVERLAY_ALPHA as f32) as u8,
+                        ),
+                    );
+                }
             });
 
         if self.send_to_background_after_frame {
@@ -963,7 +1479,13 @@ impl eframe::App for LauncherApp {
             ctx.request_repaint();
         }
 
-        self.schedule_input_repaint(&ctx, has_focus, has_controller_activity);
+        self.schedule_input_repaint(
+            &ctx,
+            now,
+            has_focus,
+            has_controller_activity,
+            controller_idle_active,
+        );
 
         if !visible_achievement_icon_urls.is_empty() {
             self.achievements

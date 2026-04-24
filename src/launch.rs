@@ -1,4 +1,6 @@
 use std::collections::HashSet;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -39,12 +41,6 @@ pub struct RunningGameState {
     tracked_pids: HashSet<u32>,
 }
 
-impl LaunchState {
-    pub fn elapsed_seconds(&self) -> f32 {
-        self.started_at.elapsed().as_secs_f32()
-    }
-}
-
 impl RunningGameState {
 }
 
@@ -54,13 +50,36 @@ pub enum LaunchTickResult {
     TimedOut,
 }
 
-pub fn begin_launch(game_index: usize, game: &Game, steam_paths: &[PathBuf]) -> Option<LaunchState> {
+pub enum LaunchBlockedReason {
+    SteamClientNotRunning,
+    SteamClientLoading,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SteamClientState {
+    Ready,
+    Loading,
+    NotRunning,
+}
+
+pub enum LaunchAttemptResult {
+    Started(LaunchState),
+    Blocked(LaunchBlockedReason),
+    Failed,
+}
+
+pub fn begin_launch(
+    game_index: usize,
+    game: &Game,
+    steam_paths: &[PathBuf],
+) -> LaunchAttemptResult {
     let target_path = game.path.clone();
     let launch_target = game.launch_target.clone();
     let launch_id = game.launch_id.clone();
     let persistent_id = game.persistent_id.clone();
     let game_name = game.name.clone();
     let launch_app_id = game.app_id;
+    let mut blocked_reason: Option<LaunchBlockedReason> = None;
     #[cfg(target_os = "windows")]
     let baseline_pids = collect_process_ids();
     #[cfg(target_os = "windows")]
@@ -74,22 +93,29 @@ pub fn begin_launch(game_index: usize, game: &Game, steam_paths: &[PathBuf]) -> 
             if let Some(app_id) = game.app_id {
                 #[cfg(target_os = "windows")]
                 {
-                    let steam_exe = steam_paths
-                        .iter()
-                        .map(|path| path.join("steam.exe"))
-                        .find(|path| path.exists());
-
-                    if let Some(steam_exe) = steam_exe {
-                        Command::new(steam_exe)
-                            .args(["-applaunch", &app_id.to_string()])
-                            .spawn()
-                            .is_ok()
-                    } else {
-                        let url = format!("steam://rungameid/{}", app_id);
-                        Command::new("cmd")
-                            .args(["/C", "start", "", &url])
-                            .spawn()
-                            .is_ok()
+                    match steam_client_state() {
+                        SteamClientState::Ready => {
+                            if let Some(steam_exe) = resolve_steam_exe_path(steam_paths) {
+                                Command::new(steam_exe)
+                                    .args(["-applaunch", &app_id.to_string()])
+                                    .spawn()
+                                    .is_ok()
+                            } else {
+                                let url = format!("steam://rungameid/{}", app_id);
+                                Command::new("cmd")
+                                    .args(["/C", "start", "", &url])
+                                    .spawn()
+                                    .is_ok()
+                            }
+                        }
+                        SteamClientState::Loading => {
+                            blocked_reason = Some(LaunchBlockedReason::SteamClientLoading);
+                            false
+                        }
+                        SteamClientState::NotRunning => {
+                            blocked_reason = Some(LaunchBlockedReason::SteamClientNotRunning);
+                            false
+                        }
                     }
                 }
 
@@ -119,10 +145,12 @@ pub fn begin_launch(game_index: usize, game: &Game, steam_paths: &[PathBuf]) -> 
     };
 
     if !launched {
-        return None;
+        return blocked_reason
+            .map(LaunchAttemptResult::Blocked)
+            .unwrap_or(LaunchAttemptResult::Failed);
     }
 
-    Some(LaunchState {
+    LaunchAttemptResult::Started(LaunchState {
         game_index,
         game_name,
         started_at: Instant::now(),
@@ -327,6 +355,8 @@ const ALIGN_TOP_LEFT_APP_ID: u32 = 601150;
 const WINDOW_TRANSITION_MS: u64 = 100;
 #[cfg(target_os = "windows")]
 static CURRENT_APP_HWND: AtomicIsize = AtomicIsize::new(0);
+#[cfg(target_os = "windows")]
+static STEAM_MAIN_HWND: AtomicIsize = AtomicIsize::new(0);
 
 #[cfg(target_os = "windows")]
 struct WindowTransition {
@@ -339,6 +369,100 @@ struct WindowTransition {
 #[cfg(target_os = "windows")]
 fn normalize_windows_path(path: &Path) -> String {
     path.to_string_lossy().replace('/', "\\").to_ascii_lowercase()
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_steam_exe_path(steam_paths: &[PathBuf]) -> Option<PathBuf> {
+    steam_paths
+        .iter()
+        .map(|path| path.join("steam.exe"))
+        .find(|path| path.exists())
+}
+
+pub fn start_steam_client(steam_paths: &[PathBuf]) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(steam_exe) = resolve_steam_exe_path(steam_paths) {
+            return Command::new(steam_exe).spawn().is_ok();
+        }
+    }
+
+    let _ = steam_paths;
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn is_steam_process_path(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("steam.exe"))
+}
+
+#[cfg(target_os = "windows")]
+fn is_steam_process(pid: u32) -> bool {
+    process_image_path(pid)
+        .as_deref()
+        .is_some_and(is_steam_process_path)
+}
+
+#[cfg(target_os = "windows")]
+fn has_steam_main_window() -> bool {
+    let cached_hwnd = STEAM_MAIN_HWND.load(Ordering::Acquire);
+    if cached_hwnd != 0 && window_title(cached_hwnd as HWND) == "Steam" {
+        return true;
+    }
+
+    for (hwnd, _) in collect_titled_windows() {
+        if window_title(hwnd) == "Steam" {
+            STEAM_MAIN_HWND.store(hwnd as isize, Ordering::Release);
+            return true;
+        }
+    }
+
+    STEAM_MAIN_HWND.store(0, Ordering::Release);
+    false
+}
+
+fn append_steam_client_state_log(state: SteamClientState, elapsed_ms: u128) {
+    if !crate::config::load_steam_client_state_logging_enabled() {
+        return;
+    }
+
+    let line = format!(
+        "[steam_client_state] state={:?} elapsed_ms={}\n",
+        state, elapsed_ms
+    );
+
+    let log_path = crate::assets::cache::logs_dir().join("steam_client_state.log");
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
+        let _ = file.write_all(line.as_bytes());
+    }
+}
+
+pub fn steam_client_state() -> SteamClientState {
+    #[cfg(target_os = "windows")]
+    {
+        let started_at = Instant::now();
+        let state = if has_steam_main_window() {
+            SteamClientState::Ready
+        } else if collect_process_ids().into_iter().any(is_steam_process) {
+            SteamClientState::Loading
+        } else {
+            SteamClientState::NotRunning
+        };
+
+        append_steam_client_state_log(state, started_at.elapsed().as_millis());
+
+        state
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let started_at = Instant::now();
+        let state = SteamClientState::NotRunning;
+        append_steam_client_state_log(state, started_at.elapsed().as_millis());
+        state
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -399,6 +523,38 @@ fn collect_visible_windows() -> Vec<(HWND, u32)> {
         if IsWindowVisible(hwnd) == 0 {
             return TRUE;
         }
+        if GetWindowTextLengthW(hwnd) <= 0 {
+            return TRUE;
+        }
+
+        let mut pid: DWORD = 0;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        if pid == 0 {
+            return TRUE;
+        }
+
+        let collector = &mut *(lparam as *mut WindowCollector);
+        collector.windows.push((hwnd, pid as u32));
+        TRUE
+    }
+
+    let mut collector = WindowCollector { windows: Vec::new() };
+    unsafe {
+        EnumWindows(
+            Some(enum_windows_proc),
+            &mut collector as *mut WindowCollector as LPARAM,
+        );
+    }
+    collector.windows
+}
+
+#[cfg(target_os = "windows")]
+fn collect_titled_windows() -> Vec<(HWND, u32)> {
+    struct WindowCollector {
+        windows: Vec<(HWND, u32)>,
+    }
+
+    unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
         if GetWindowTextLengthW(hwnd) <= 0 {
             return TRUE;
         }
