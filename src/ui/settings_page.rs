@@ -6,7 +6,7 @@ use crate::system::display_mode::ResolutionOptions;
 
 use super::anim::{lerp_f32, smoothstep01};
 use super::header::{draw_selected_game_text_badge, measure_selected_game_text_badge};
-use super::text::{color_with_scaled_alpha, corner_radius};
+use super::text::{color_with_scaled_alpha, corner_radius, PANEL_CORNER_RADIUS};
 
 struct InlineButtonTitle<'a> {
     prefix: &'a str,
@@ -29,7 +29,7 @@ fn draw_settings_page_body_container(
 ) {
     painter.rect_filled(
         rect,
-        corner_radius(8.0),
+        corner_radius(PANEL_CORNER_RADIUS),
         color_with_scaled_alpha(
             egui::Color32::from_rgba_unmultiplied(14, 14, 14, 255),
             layer_t,
@@ -37,7 +37,7 @@ fn draw_settings_page_body_container(
     );
     painter.rect_stroke(
         rect,
-        corner_radius(8.0),
+        corner_radius(PANEL_CORNER_RADIUS),
         egui::Stroke::new(
             1.2,
             color_with_scaled_alpha(

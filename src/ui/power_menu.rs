@@ -6,9 +6,11 @@ use crate::i18n::AppLanguage;
 
 use super::anim::{lerp_f32, smoothstep01};
 use super::hint_icons::HintIcons;
-use super::text::{color_with_scaled_alpha, corner_radius, layout_main_clock, main_clock_right_edge};
+use super::text::{
+    color_with_scaled_alpha, corner_radius, layout_main_clock, main_clock_right_edge,
+    PANEL_CORNER_RADIUS,
+};
 
-const POWER_MENU_CORNER_RADIUS: f32 = 16.0;
 const POWER_MENU_SELECTION_CORNER_RADIUS: f32 = 12.0;
 
 pub fn draw_power_menu(
@@ -107,7 +109,7 @@ pub fn draw_power_menu(
 
     painter.rect_filled(
         dropdown_rect,
-        corner_radius(POWER_MENU_CORNER_RADIUS),
+        corner_radius(PANEL_CORNER_RADIUS),
         color_with_scaled_alpha(
             egui::Color32::from_rgba_unmultiplied(18, 19, 22, 255),
             sheet_t,
@@ -115,7 +117,7 @@ pub fn draw_power_menu(
     );
     painter.rect_stroke(
         dropdown_rect,
-        corner_radius(POWER_MENU_CORNER_RADIUS),
+        corner_radius(PANEL_CORNER_RADIUS),
         egui::Stroke::new(
             1.0,
             color_with_scaled_alpha(

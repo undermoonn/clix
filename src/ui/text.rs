@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use eframe::egui;
 
+pub(crate) const PANEL_CORNER_RADIUS: f32 = 16.0;
+
 pub(crate) fn corner_radius(value: f32) -> egui::CornerRadius {
     egui::CornerRadius::same(value.round().clamp(0.0, 255.0) as u8)
 }

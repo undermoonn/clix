@@ -17,6 +17,7 @@ use super::header::{
 };
 use super::text::{
     build_wrapped_galley, color_with_scaled_alpha, corner_radius, format_achievement_status,
+    PANEL_CORNER_RADIUS,
 };
 
 fn draw_achievement_icon(
@@ -397,7 +398,7 @@ pub fn draw_achievement_page(
 
     painter.rect_filled(
         list_rect,
-        corner_radius(8.0),
+        corner_radius(PANEL_CORNER_RADIUS),
         color_with_scaled_alpha(egui::Color32::from_rgb(14, 14, 14), wake_t),
     );
 
