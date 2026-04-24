@@ -249,6 +249,18 @@ pub fn draw_game_list(
         let offset_f = i as f32 - scroll_offset;
         let is_selected = i == selected;
 
+        // Cheap horizontal culling: skip items whose icon slot lies entirely
+        // outside the panel. Selected always renders (header/title extend
+        // beyond the icon and must be present for the meta animation).
+        if !is_selected {
+            let cull_x = item_left_for_offset(offset_f);
+            if cull_x + selected_icon_size < panel_rect.min.x
+                || cull_x > panel_rect.max.x
+            {
+                continue;
+            }
+        }
+
         let dist = offset_f.abs();
         let icon_focus_t = smoothstep01((1.0 - dist).clamp(0.0, 1.0));
         let selection_t = if is_selected {

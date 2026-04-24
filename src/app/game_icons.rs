@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use eframe::egui;
@@ -8,12 +8,14 @@ use crate::game::{Game, GameIconKey};
 
 pub struct GameIconState {
     textures: HashMap<GameIconKey, egui::TextureHandle>,
+    missing: HashSet<GameIconKey>,
 }
 
 impl GameIconState {
     pub fn new() -> Self {
         Self {
             textures: HashMap::new(),
+            missing: HashSet::new(),
         }
     }
 
@@ -26,12 +28,13 @@ impl GameIconState {
     ) {
         if games.is_empty() {
             self.textures.clear();
+            self.missing.clear();
             return;
         }
 
         for game in games {
             let icon_key = game.icon_key();
-            if self.textures.contains_key(&icon_key) {
+            if self.textures.contains_key(&icon_key) || self.missing.contains(&icon_key) {
                 continue;
             }
 
@@ -44,7 +47,14 @@ impl GameIconState {
                     format!("icon_{:?}", icon_key),
                 ) {
                     self.textures.insert(icon_key, texture);
+                } else {
+                    // Decoding failed; remember so we don't retry every frame.
+                    self.missing.insert(icon_key);
                 }
+            } else {
+                // No icon source available; remember so we don't re-run the
+                // (potentially expensive) Windows icon extraction every frame.
+                self.missing.insert(icon_key);
             }
         }
     }
