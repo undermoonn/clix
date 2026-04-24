@@ -11,6 +11,7 @@ use eframe::egui;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use crate::animation;
 use crate::game::{self, Game, GameSource};
 use crate::game_last_played;
 use crate::i18n::AppLanguage;
@@ -392,19 +393,20 @@ impl eframe::App for LauncherApp {
             }
         }
 
+        let now = Instant::now();
+
         if self.wake_focus_pending {
             self.wake_focus_pending = false;
-            self.page.start_wake_animation();
+            self.page.start_wake_animation(now);
             ctx.request_repaint();
         }
 
         let has_focus = ctx.input(|input| input.focused);
-        let now = Instant::now();
         let focus = self.runtime.update_focus(has_focus, now);
 
         if focus.did_gain_focus {
             self.apply_pending_promotion();
-            self.page.start_wake_animation();
+            self.page.start_wake_animation(now);
             self.refresh_selected_playtime(&ctx);
             self.refresh_selected_install_size(&ctx);
             ctx.request_repaint();
@@ -616,10 +618,9 @@ impl eframe::App for LauncherApp {
         }
         self.artwork.drain_pending(selected_app_id, &ctx);
 
-        let dt = ctx.input(|input| input.predicted_dt);
-        self.artwork.tick_fade(&ctx, dt);
-        self.page.tick_animations(&ctx, dt);
-        self.achievements.animate_reveals(&ctx, dt);
+        self.artwork.tick_fade(&ctx, now);
+        self.page.tick_animations(&ctx, now);
+        self.achievements.animate_reveals(&ctx, now);
 
         self.game_icons
             .ensure_loaded(&ctx, &self.steam_paths, &self.games, self.page.selected());
@@ -640,7 +641,7 @@ impl eframe::App for LauncherApp {
         let launch_feedback = self
             .launch_state
             .as_ref()
-            .map(|state| (state.game_index, state.elapsed_seconds()));
+            .map(|state| (state.game_index, animation::scale_seconds(state.elapsed_seconds())));
         let render_wake_anim = if has_focus && !self.send_to_background_after_frame {
             self.page.wake_anim()
         } else {

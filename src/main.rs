@@ -1,5 +1,6 @@
 #![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
 
+mod animation;
 mod app;
 mod assets;
 mod config;

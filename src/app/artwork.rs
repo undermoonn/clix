@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::assets::cover;
+use crate::{animation, assets::cover};
+
+const ARTWORK_FADE_SECONDS: f32 = 1.0 / 3.0;
 
 struct PendingBackgroundAssets {
     app_id: u32,
@@ -18,6 +20,7 @@ pub struct ArtworkState {
     logo_prev: Option<(u32, egui::TextureHandle)>,
     vignette: Option<egui::TextureHandle>,
     fade: f32,
+    fade_started_at: Option<Instant>,
     transition_ready: bool,
     loaded_for: Option<usize>,
     debounce_until: Option<Instant>,
@@ -41,6 +44,7 @@ impl ArtworkState {
             logo_prev: None,
             vignette,
             fade: 1.0,
+            fade_started_at: None,
             transition_ready: true,
             loaded_for: None,
             debounce_until: None,
@@ -83,10 +87,16 @@ impl ArtworkState {
         self.cover_prev = self.cover.take();
         self.logo_prev = self.logo.take();
         self.fade = 0.0;
+        self.fade_started_at = None;
         self.transition_ready = false;
 
         let Some(app_id) = selected_app_id else {
             self.transition_ready = true;
+            if self.cover_prev.is_some() || self.logo_prev.is_some() {
+                self.fade_started_at = Some(Instant::now());
+            } else {
+                self.fade = 1.0;
+            }
             return;
         };
 
@@ -136,23 +146,33 @@ impl ArtworkState {
 
                 if loaded_any || self.cover_prev.is_some() || self.logo_prev.is_some() {
                     self.fade = 0.0;
+                    self.fade_started_at = Some(Instant::now());
+                } else {
+                    self.fade = 1.0;
+                    self.fade_started_at = None;
                 }
                 self.transition_ready = true;
             }
         }
     }
 
-    pub fn tick_fade(&mut self, ctx: &egui::Context, dt: f32) {
+    pub fn tick_fade(&mut self, ctx: &egui::Context, now: Instant) {
         if self.transition_ready && self.fade < 1.0 {
-            self.fade = (self.fade + dt * 3.0).min(1.0);
+            let started_at = self.fade_started_at.get_or_insert(now);
+            self.fade = animation::linear_progress(*started_at, now, ARTWORK_FADE_SECONDS);
             if self.fade >= 0.999 {
                 self.cover_prev = None;
                 self.logo_prev = None;
+                self.fade_started_at = None;
+                self.fade = 1.0;
+            } else {
+                ctx.request_repaint();
             }
-            ctx.request_repaint();
         } else if self.transition_ready && (self.cover_prev.is_some() || self.logo_prev.is_some()) {
             self.cover_prev = None;
             self.logo_prev = None;
+            self.fade_started_at = None;
+            self.fade = 1.0;
         }
     }
 

@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::assets::cover;
+use crate::animation;
 use crate::game::Game;
 use crate::i18n::AppLanguage;
 use crate::steam::{self, AchievementSummary};
@@ -11,6 +12,7 @@ use crate::steam::{self, AchievementSummary};
 struct HiddenRevealState {
     api_name: String,
     progress: f32,
+    started_at: Instant,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,6 +32,7 @@ pub struct AchievementState {
     displayed_overview_app_id: Option<u32>,
     previous_overview: Option<AchievementSummary>,
     previous_overview_reveal: f32,
+    previous_overview_reveal_started_at: Option<Instant>,
     detail_cache: Option<(u32, AchievementSummary)>,
     revealed_hidden: HashMap<u32, HiddenRevealState>,
     pending: Arc<Mutex<Vec<PendingAchievementResult>>>,
@@ -43,10 +46,13 @@ pub struct AchievementState {
     icon_loading: HashSet<String>,
     icon_failed: HashSet<String>,
     icon_reveal: HashMap<String, f32>,
+    icon_reveal_started_at: HashMap<String, Instant>,
     percent_reveal: HashMap<String, f32>,
+    percent_reveal_started_at: HashMap<String, Instant>,
     icon_scope_app_id: Option<u32>,
     icon_generation: u64,
     text_reveal: HashMap<u32, f32>,
+    text_reveal_started_at: HashMap<u32, Instant>,
     checked_overview_for: Option<u32>,
     checked_detail_for: Option<u32>,
 }
@@ -59,6 +65,7 @@ impl AchievementState {
             displayed_overview_app_id: None,
             previous_overview: None,
             previous_overview_reveal: 0.0,
+            previous_overview_reveal_started_at: None,
             detail_cache: None,
             revealed_hidden: HashMap::new(),
             pending: Arc::new(Mutex::new(Vec::new())),
@@ -72,10 +79,13 @@ impl AchievementState {
             icon_loading: HashSet::new(),
             icon_failed: HashSet::new(),
             icon_reveal: HashMap::new(),
+            icon_reveal_started_at: HashMap::new(),
             percent_reveal: HashMap::new(),
+            percent_reveal_started_at: HashMap::new(),
             icon_scope_app_id: None,
             icon_generation: 0,
             text_reveal: HashMap::new(),
+            text_reveal_started_at: HashMap::new(),
             checked_overview_for: None,
             checked_detail_for: None,
         }
@@ -364,6 +374,7 @@ impl AchievementState {
             HiddenRevealState {
                 api_name,
                 progress: 0.0,
+                started_at: Instant::now(),
             },
         );
         true
@@ -465,6 +476,7 @@ impl AchievementState {
 
             if let Some(texture) = cover::bytes_to_achievement_icon_texture(ctx, &bytes, label) {
                 self.icon_reveal.insert(url.clone(), 0.0);
+                self.icon_reveal_started_at.insert(url.clone(), Instant::now());
                 self.icon_cache.insert(url, texture);
             } else {
                 cover::clear_cached_achievement_icon(&url);
@@ -473,69 +485,87 @@ impl AchievementState {
         }
     }
 
-    pub fn animate_reveals(&mut self, ctx: &egui::Context, dt: f32) {
-        self.icon_reveal.retain(|_, progress| {
-            if *progress >= 0.999 {
-                return false;
-            }
+    pub fn animate_reveals(&mut self, ctx: &egui::Context, now: Instant) {
+        const ACHIEVEMENT_ICON_FADE_IN_SECONDS: f32 = 0.3;
+        const ACHIEVEMENT_PERCENT_FADE_IN_SECONDS: f32 = 0.3;
+        const HIDDEN_REVEAL_SECONDS: f32 = 0.24;
+        const ACHIEVEMENT_TEXT_FADE_IN_SECONDS: f32 = 0.35;
+        const ACHIEVEMENT_TEXT_FADE_OUT_SECONDS: f32 = 0.22;
 
-            const ACHIEVEMENT_ICON_FADE_IN_SECONDS: f32 = 0.3;
-            *progress = (*progress + dt / ACHIEVEMENT_ICON_FADE_IN_SECONDS).min(1.0);
+        let mut finished_icon_reveals = Vec::new();
+        for (url, progress) in &mut self.icon_reveal {
+            let Some(started_at) = self.icon_reveal_started_at.get(url).copied() else {
+                finished_icon_reveals.push(url.clone());
+                continue;
+            };
+
+            *progress = animation::linear_progress(started_at, now, ACHIEVEMENT_ICON_FADE_IN_SECONDS);
             if *progress < 0.999 {
                 ctx.request_repaint();
-                true
             } else {
-                false
+                finished_icon_reveals.push(url.clone());
             }
-        });
+        }
+        for url in finished_icon_reveals {
+            self.icon_reveal.remove(&url);
+            self.icon_reveal_started_at.remove(&url);
+        }
 
-        self.percent_reveal.retain(|_, progress| {
-            if *progress >= 0.999 {
-                return false;
-            }
+        let mut finished_percent_reveals = Vec::new();
+        for (api_name, progress) in &mut self.percent_reveal {
+            let Some(started_at) = self.percent_reveal_started_at.get(api_name).copied() else {
+                finished_percent_reveals.push(api_name.clone());
+                continue;
+            };
 
-            const ACHIEVEMENT_PERCENT_FADE_IN_SECONDS: f32 = 0.3;
-            *progress = (*progress + dt / ACHIEVEMENT_PERCENT_FADE_IN_SECONDS).min(1.0);
+            *progress =
+                animation::linear_progress(started_at, now, ACHIEVEMENT_PERCENT_FADE_IN_SECONDS);
             if *progress < 0.999 {
                 ctx.request_repaint();
-                true
             } else {
-                false
+                finished_percent_reveals.push(api_name.clone());
             }
-        });
+        }
+        for api_name in finished_percent_reveals {
+            self.percent_reveal.remove(&api_name);
+            self.percent_reveal_started_at.remove(&api_name);
+        }
 
-        self.revealed_hidden.retain(|_, state| {
-            if state.progress >= 0.999 {
-                return true;
-            }
-
-            const HIDDEN_REVEAL_SECONDS: f32 = 0.24;
-            state.progress = (state.progress + dt / HIDDEN_REVEAL_SECONDS).min(1.0);
+        for state in self.revealed_hidden.values_mut() {
+            state.progress = animation::linear_progress(state.started_at, now, HIDDEN_REVEAL_SECONDS);
             if state.progress < 0.999 {
                 ctx.request_repaint();
             }
-            true
-        });
-
-        for progress in self.text_reveal.values_mut() {
-            if *progress < 0.999 {
-                const ACHIEVEMENT_TEXT_FADE_IN_SECONDS: f32 = 0.35;
-                *progress = (*progress + dt / ACHIEVEMENT_TEXT_FADE_IN_SECONDS).min(1.0);
-                if *progress < 0.999 {
-                    ctx.request_repaint();
-                }
-            }
         }
 
-        if self.previous_overview_reveal > 0.001 {
-            const ACHIEVEMENT_TEXT_FADE_OUT_SECONDS: f32 = 0.22;
+        let mut finished_text_reveals = Vec::new();
+        for (app_id, progress) in &mut self.text_reveal {
+            let Some(started_at) = self.text_reveal_started_at.get(app_id).copied() else {
+                continue;
+            };
+
+            *progress = animation::linear_progress(started_at, now, ACHIEVEMENT_TEXT_FADE_IN_SECONDS);
+            if *progress < 0.999 {
+                ctx.request_repaint();
+            } else {
+                *progress = 1.0;
+                finished_text_reveals.push(*app_id);
+            }
+        }
+        for app_id in finished_text_reveals {
+            self.text_reveal_started_at.remove(&app_id);
+        }
+
+        if let Some(started_at) = self.previous_overview_reveal_started_at {
             self.previous_overview_reveal =
-                (self.previous_overview_reveal - dt / ACHIEVEMENT_TEXT_FADE_OUT_SECONDS).max(0.0);
+                (1.0 - animation::linear_progress(started_at, now, ACHIEVEMENT_TEXT_FADE_OUT_SECONDS))
+                    .max(0.0);
             if self.previous_overview_reveal > 0.001 {
                 ctx.request_repaint();
             } else {
                 self.previous_overview = None;
                 self.previous_overview_reveal = 0.0;
+                self.previous_overview_reveal_started_at = None;
             }
         }
 
@@ -641,17 +671,21 @@ impl AchievementState {
                     if previous_summary.total > 0 {
                         self.previous_overview = Some(previous_summary.clone());
                         self.previous_overview_reveal = 1.0;
+                        self.previous_overview_reveal_started_at = Some(Instant::now());
                     } else {
                         self.previous_overview = None;
                         self.previous_overview_reveal = 0.0;
+                        self.previous_overview_reveal_started_at = None;
                     }
                 } else {
                     self.previous_overview = None;
                     self.previous_overview_reveal = 0.0;
+                    self.previous_overview_reveal_started_at = None;
                 }
             } else {
                 self.previous_overview = None;
                 self.previous_overview_reveal = 0.0;
+                self.previous_overview_reveal_started_at = None;
             }
             self.displayed_overview_app_id = app_id;
         }
@@ -669,10 +703,12 @@ impl AchievementState {
         {
             self.detail_cache = None;
             self.percent_reveal.clear();
+            self.percent_reveal_started_at.clear();
         }
         if app_id.is_none() {
             self.checked_detail_for = None;
             self.percent_reveal.clear();
+            self.percent_reveal_started_at.clear();
         }
     }
 
@@ -687,6 +723,7 @@ impl AchievementState {
         self.icon_loading.clear();
         self.icon_failed.clear();
         self.icon_reveal.clear();
+        self.icon_reveal_started_at.clear();
     }
 
     fn store_overview_summary(
@@ -699,8 +736,10 @@ impl AchievementState {
         self.overview_cache.insert(app_id, summary);
         if animate_reveal && !had_summary {
             self.text_reveal.insert(app_id, 0.0);
+            self.text_reveal_started_at.insert(app_id, Instant::now());
         } else {
             self.text_reveal.insert(app_id, 1.0);
+            self.text_reveal_started_at.remove(&app_id);
         }
     }
 
@@ -734,7 +773,9 @@ impl AchievementState {
         previous_percents: &HashMap<String, f32>,
         animate_reveal: bool,
     ) {
+        let now = Instant::now();
         let mut next_reveal = HashMap::new();
+        let mut next_started_at = HashMap::new();
         for item in &summary.items {
             let Some(_) = item.global_percent else {
                 continue;
@@ -751,9 +792,19 @@ impl AchievementState {
                 1.0
             };
             next_reveal.insert(item.api_name.clone(), progress);
+
+            if progress < 0.999 {
+                let started_at = self
+                    .percent_reveal_started_at
+                    .get(&item.api_name)
+                    .copied()
+                    .unwrap_or(now);
+                next_started_at.insert(item.api_name.clone(), started_at);
+            }
         }
 
         self.percent_reveal = next_reveal;
+        self.percent_reveal_started_at = next_started_at;
     }
 }
 

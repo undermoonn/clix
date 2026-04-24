@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 #[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicIsize, Ordering};
 
+use crate::animation;
 use crate::game::{Game, GameSource};
 
 pub struct LaunchState {
@@ -542,7 +543,9 @@ fn finish_window_transition(transition: &WindowTransition) {
 #[cfg(target_os = "windows")]
 fn tick_window_transition(transition: &mut WindowTransition) -> bool {
     let elapsed = Instant::now().duration_since(transition.started_at);
-    let progress = (elapsed.as_secs_f32() / (WINDOW_TRANSITION_MS as f32 / 1000.0)).clamp(0.0, 1.0);
+    let progress = (animation::scale_seconds(elapsed.as_secs_f32())
+        / (WINDOW_TRANSITION_MS as f32 / 1000.0))
+        .clamp(0.0, 1.0);
     let target_alpha = (progress * 255.0).round().clamp(0.0, 255.0) as u8;
 
     if !set_window_alpha(transition.target_hwnd, target_alpha) {

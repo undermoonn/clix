@@ -1,9 +1,13 @@
+use std::time::Instant;
+
 use eframe::egui;
 
+use crate::animation::ExponentialAnimation;
 use crate::power_menu_structure::{PowerMenuLayout, PowerMenuOption};
 use crate::input::ControllerAction;
 use crate::system::external_apps::ExternalAppKind;
 
+const ANIMATION_EPSILON: f32 = 0.001;
 const SETTINGS_PAGE_ENTER_ANIM_SPEED: f32 = 5.0;
 const SETTINGS_PAGE_EXIT_ANIM_SPEED: f32 = 8.0;
 const SETTINGS_SUBMENU_ENTER_ANIM_SPEED: f32 = 4.0;
@@ -78,27 +82,26 @@ pub struct PageActionResult {
 pub struct PageState {
     selected: usize,
     home_settings_selected: bool,
-    home_settings_focus_anim: f32,
+    home_settings_focus_anim: ExponentialAnimation,
     home_power_selected: bool,
-    home_power_focus_anim: f32,
+    home_power_focus_anim: ExponentialAnimation,
     cover_nav_dir: f32,
-    select_anim: f32,
+    select_anim: ExponentialAnimation,
     select_anim_target: Option<usize>,
-    summary_cards_visibility: f32,
-    wake_anim: f32,
-    wake_anim_running: bool,
-    scroll_offset: f32,
+    summary_cards_visibility: ExponentialAnimation,
+    wake_anim: ExponentialAnimation,
+    scroll_offset: ExponentialAnimation,
     show_power_menu: bool,
-    power_menu_anim: f32,
+    power_menu_anim: ExponentialAnimation,
     power_menu_selected: usize,
-    power_menu_select_anim: f32,
+    power_menu_select_anim: ExponentialAnimation,
     power_menu_select_anim_target: Option<usize>,
     power_menu_layout: PowerMenuLayout,
     power_menu_scroll_offset: f32,
     show_settings_page: bool,
-    settings_page_anim: f32,
-    settings_submenu_anim: f32,
-    settings_select_anim: f32,
+    settings_page_anim: ExponentialAnimation,
+    settings_submenu_anim: ExponentialAnimation,
+    settings_select_anim: ExponentialAnimation,
     settings_select_anim_target: Option<u8>,
     settings_section: SettingsSection,
     settings_in_submenu: bool,
@@ -106,11 +109,11 @@ pub struct PageState {
     settings_screen_selected: usize,
     settings_apps_selected: usize,
     show_achievement_panel: bool,
-    achievement_panel_anim: f32,
+    achievement_panel_anim: ExponentialAnimation,
     achievement_selected: usize,
-    achievement_select_anim: f32,
+    achievement_select_anim: ExponentialAnimation,
     achievement_select_anim_target: Option<usize>,
-    achievement_scroll_offset: f32,
+    achievement_scroll_offset: ExponentialAnimation,
 }
 
 impl PageState {
@@ -118,27 +121,26 @@ impl PageState {
         Self {
             selected: 0,
             home_settings_selected: false,
-            home_settings_focus_anim: 0.0,
+            home_settings_focus_anim: ExponentialAnimation::new(0.0),
             home_power_selected: false,
-            home_power_focus_anim: 0.0,
+            home_power_focus_anim: ExponentialAnimation::new(0.0),
             cover_nav_dir: 0.0,
-            select_anim: 0.0,
+            select_anim: ExponentialAnimation::new(0.0),
             select_anim_target: None,
-            summary_cards_visibility: 1.0,
-            wake_anim: 1.0,
-            wake_anim_running: false,
-            scroll_offset: 0.0,
+            summary_cards_visibility: ExponentialAnimation::new(1.0),
+            wake_anim: ExponentialAnimation::new(1.0),
+            scroll_offset: ExponentialAnimation::new(0.0),
             show_power_menu: false,
-            power_menu_anim: 0.0,
+            power_menu_anim: ExponentialAnimation::new(0.0),
             power_menu_selected: 0,
-            power_menu_select_anim: 0.0,
+            power_menu_select_anim: ExponentialAnimation::new(0.0),
             power_menu_select_anim_target: None,
             power_menu_layout: PowerMenuLayout::default(),
             power_menu_scroll_offset: 0.0,
             show_settings_page: false,
-            settings_page_anim: 0.0,
-            settings_submenu_anim: 0.0,
-            settings_select_anim: 0.0,
+            settings_page_anim: ExponentialAnimation::new(0.0),
+            settings_submenu_anim: ExponentialAnimation::new(0.0),
+            settings_select_anim: ExponentialAnimation::new(0.0),
             settings_select_anim_target: None,
             settings_section: SettingsSection::System,
             settings_in_submenu: false,
@@ -146,11 +148,11 @@ impl PageState {
             settings_screen_selected: 0,
             settings_apps_selected: 0,
             show_achievement_panel: false,
-            achievement_panel_anim: 0.0,
+            achievement_panel_anim: ExponentialAnimation::new(0.0),
             achievement_selected: 0,
-            achievement_select_anim: 0.0,
+            achievement_select_anim: ExponentialAnimation::new(0.0),
             achievement_select_anim_target: None,
-            achievement_scroll_offset: 0.0,
+            achievement_scroll_offset: ExponentialAnimation::new(0.0),
         }
     }
 
@@ -171,15 +173,17 @@ impl PageState {
     }
 
     pub fn home_settings_focus_anim(&self) -> f32 {
-        self.home_settings_focus_anim
+        self.home_settings_focus_anim.value()
     }
 
     pub fn home_power_focus_anim(&self) -> f32 {
-        self.home_power_focus_anim
+        self.home_power_focus_anim.value()
     }
 
     pub fn home_top_focus_anim(&self) -> f32 {
-        self.home_settings_focus_anim.max(self.home_power_focus_anim)
+        self.home_settings_focus_anim
+            .value()
+            .max(self.home_power_focus_anim.value())
     }
 
     pub fn show_achievement_panel(&self) -> bool {
@@ -199,31 +203,31 @@ impl PageState {
     }
 
     pub fn select_anim(&self) -> f32 {
-        self.select_anim
+        self.select_anim.value()
     }
 
     pub fn scroll_offset(&self) -> f32 {
-        self.scroll_offset
+        self.scroll_offset.value()
     }
 
     pub fn is_fast_scrolling(&self) -> bool {
-        (self.selected as f32 - self.scroll_offset).abs() > 0.1
+        (self.selected as f32 - self.scroll_offset.value()).abs() > 0.1
     }
 
     pub fn summary_cards_visibility(&self) -> f32 {
-        self.summary_cards_visibility
+        self.summary_cards_visibility.value()
     }
 
     pub fn wake_anim(&self) -> f32 {
-        self.wake_anim
+        self.wake_anim.value()
     }
 
     pub fn power_menu_anim(&self) -> f32 {
-        self.power_menu_anim
+        self.power_menu_anim.value()
     }
 
     pub fn power_menu_select_anim(&self) -> f32 {
-        self.power_menu_select_anim
+        self.power_menu_select_anim.value()
     }
 
     pub fn power_menu_scroll_offset(&self) -> f32 {
@@ -231,15 +235,15 @@ impl PageState {
     }
 
     pub fn settings_page_anim(&self) -> f32 {
-        self.settings_page_anim
+        self.settings_page_anim.value()
     }
 
     pub fn settings_submenu_anim(&self) -> f32 {
-        self.settings_submenu_anim
+        self.settings_submenu_anim.value()
     }
 
     pub fn settings_select_anim(&self) -> f32 {
-        self.settings_select_anim
+        self.settings_select_anim.value()
     }
 
     pub fn settings_section_index(&self) -> usize {
@@ -264,7 +268,7 @@ impl PageState {
     }
 
     pub fn achievement_panel_anim(&self) -> f32 {
-        self.achievement_panel_anim
+        self.achievement_panel_anim.value()
     }
 
     pub fn achievement_selected(&self) -> usize {
@@ -272,38 +276,37 @@ impl PageState {
     }
 
     pub fn achievement_select_anim(&self) -> f32 {
-        self.achievement_select_anim
+        self.achievement_select_anim.value()
     }
 
     pub fn achievement_scroll_offset(&self) -> f32 {
-        self.achievement_scroll_offset
+        self.achievement_scroll_offset.value()
     }
 
     pub fn prepare_wake_animation(&mut self) {
-        self.wake_anim = 0.0;
-        self.wake_anim_running = false;
+        self.wake_anim.set_immediate(0.0);
     }
 
-    pub fn start_wake_animation(&mut self) {
-        self.wake_anim_running = true;
+    pub fn start_wake_animation(&mut self, now: Instant) {
+        self.wake_anim.restart(0.0, 1.0, 8.0, now);
     }
 
     pub fn force_select(&mut self, selected: usize) {
         self.selected = selected;
         self.clear_home_top_button_selection();
-        self.home_settings_focus_anim = 0.0;
-        self.home_power_focus_anim = 0.0;
+        self.home_settings_focus_anim.set_immediate(0.0);
+        self.home_power_focus_anim.set_immediate(0.0);
         self.cover_nav_dir = 0.0;
-        self.select_anim = 0.0;
+        self.select_anim.set_immediate(0.0);
         self.select_anim_target = None;
-        self.scroll_offset = selected as f32;
+        self.scroll_offset.set_immediate(selected as f32);
         self.show_settings_page = false;
-        self.settings_page_anim = 0.0;
-        self.settings_select_anim = 0.0;
+        self.settings_page_anim.set_immediate(0.0);
+        self.settings_select_anim.set_immediate(0.0);
         self.settings_select_anim_target = None;
         self.reset_settings_navigation();
         self.show_achievement_panel = false;
-        self.achievement_panel_anim = 0.0;
+        self.achievement_panel_anim.set_immediate(0.0);
         self.reset_achievement_selection();
     }
 
@@ -316,15 +319,15 @@ impl PageState {
         // animation tick doesn't think the selection just changed and reset
         // `select_anim` back to 0 (which would re-shrink the title/badge).
         self.select_anim_target = Some(selected);
-        self.scroll_offset = selected as f32;
+        self.scroll_offset.set_immediate(selected as f32);
     }
 
     pub fn open_power_menu(&mut self, layout: PowerMenuLayout) {
         let default_selected = layout.default_selected();
         self.power_menu_layout = layout;
-        self.power_menu_anim = 0.0;
+        self.power_menu_anim.set_immediate(0.0);
         self.power_menu_selected = default_selected;
-        self.power_menu_select_anim = 0.0;
+        self.power_menu_select_anim.set_immediate(0.0);
         self.power_menu_select_anim_target = None;
         self.power_menu_scroll_offset = 0.0;
         self.show_power_menu = true;
@@ -577,103 +580,81 @@ impl PageState {
         result
     }
 
-    pub fn tick_animations(&mut self, ctx: &egui::Context, dt: f32) {
-        if self.wake_anim_running {
-            self.wake_anim = 1.0 - (1.0 - self.wake_anim) * (-8.0 * dt).exp();
-            if self.wake_anim < 0.999 {
-                ctx.request_repaint();
-            } else {
-                self.wake_anim = 1.0;
-                self.wake_anim_running = false;
-            }
+    pub fn tick_animations(&mut self, ctx: &egui::Context, now: Instant) {
+        if self.wake_anim.update(now, ANIMATION_EPSILON) {
+            ctx.request_repaint();
         }
 
         if self.select_anim_target != Some(self.selected) {
             self.select_anim_target = Some(self.selected);
-            self.select_anim = 0.0;
+            self.select_anim.restart(0.0, 1.0, 10.0, now);
         }
-        self.select_anim = 1.0 - (1.0 - self.select_anim) * (-10.0 * dt).exp();
-        if self.select_anim < 0.999 {
+        if self.select_anim.update(now, ANIMATION_EPSILON) {
             ctx.request_repaint();
         }
 
         let panel_target = if self.show_achievement_panel { 1.0 } else { 0.0 };
-        let panel_diff = panel_target - self.achievement_panel_anim;
-        if panel_diff.abs() > 0.001 {
-            self.achievement_panel_anim += panel_diff * (1.0 - (-5.4 * dt).exp());
+        self.achievement_panel_anim
+            .animate_to(panel_target, 5.4, now, ANIMATION_EPSILON);
+        if self.achievement_panel_anim.update(now, ANIMATION_EPSILON) {
             ctx.request_repaint();
-        } else {
-            self.achievement_panel_anim = panel_target;
         }
 
         let home_settings_target = if self.home_settings_selected { 1.0 } else { 0.0 };
-        let home_settings_diff = home_settings_target - self.home_settings_focus_anim;
-        if home_settings_diff.abs() > 0.001 {
-            self.home_settings_focus_anim +=
-                home_settings_diff * (1.0 - (-11.0 * dt).exp());
+        self.home_settings_focus_anim
+            .animate_to(home_settings_target, 11.0, now, ANIMATION_EPSILON);
+        if self.home_settings_focus_anim.update(now, ANIMATION_EPSILON) {
             ctx.request_repaint();
-        } else {
-            self.home_settings_focus_anim = home_settings_target;
         }
 
         let home_power_target = if self.home_power_selected { 1.0 } else { 0.0 };
-        let home_power_diff = home_power_target - self.home_power_focus_anim;
-        if home_power_diff.abs() > 0.001 {
-            self.home_power_focus_anim += home_power_diff * (1.0 - (-11.0 * dt).exp());
+        self.home_power_focus_anim
+            .animate_to(home_power_target, 11.0, now, ANIMATION_EPSILON);
+        if self.home_power_focus_anim.update(now, ANIMATION_EPSILON) {
             ctx.request_repaint();
-        } else {
-            self.home_power_focus_anim = home_power_target;
         }
 
         if self.show_power_menu {
-            let power_menu_diff = 1.0 - self.power_menu_anim;
-            if power_menu_diff.abs() > 0.001 {
-                self.power_menu_anim += power_menu_diff * (1.0 - (-4.8 * dt).exp());
+            self.power_menu_anim
+                .animate_to(1.0, 4.8, now, ANIMATION_EPSILON);
+            if self.power_menu_anim.update(now, ANIMATION_EPSILON) {
                 ctx.request_repaint();
-            } else {
-                self.power_menu_anim = 1.0;
             }
 
             let power_menu_select_target = Some(self.power_menu_selected);
             if self.power_menu_select_anim_target != power_menu_select_target {
                 self.power_menu_select_anim_target = power_menu_select_target;
-                self.power_menu_select_anim = 0.0;
+                self.power_menu_select_anim.restart(0.0, 1.0, 11.0, now);
             }
-            let power_menu_select_diff = 1.0 - self.power_menu_select_anim;
-            if power_menu_select_diff.abs() > 0.001 {
-                self.power_menu_select_anim += power_menu_select_diff * (1.0 - (-11.0 * dt).exp());
+            if self.power_menu_select_anim.update(now, ANIMATION_EPSILON) {
                 ctx.request_repaint();
-            } else {
-                self.power_menu_select_anim = 1.0;
             }
 
             self.power_menu_scroll_offset = self.power_menu_selected as f32;
         } else {
-            let power_menu_diff = -self.power_menu_anim;
-            if power_menu_diff.abs() > 0.001 {
-                self.power_menu_anim += power_menu_diff * (1.0 - (-6.5 * dt).exp());
+            self.power_menu_anim
+                .animate_to(0.0, 6.5, now, ANIMATION_EPSILON);
+            if self.power_menu_anim.update(now, ANIMATION_EPSILON) {
                 ctx.request_repaint();
             } else {
-                self.power_menu_anim = 0.0;
                 self.power_menu_selected = self.power_menu_layout.clamp_selected(0);
-                self.power_menu_select_anim = 0.0;
+                self.power_menu_select_anim.set_immediate(0.0);
                 self.power_menu_select_anim_target = None;
             }
             self.power_menu_scroll_offset = self.power_menu_selected as f32;
         }
 
         let settings_target = if self.show_settings_page { 1.0 } else { 0.0 };
-        let settings_diff = settings_target - self.settings_page_anim;
-        if settings_diff.abs() > 0.001 {
-            let settings_anim_speed = if settings_diff < 0.0 {
-                SETTINGS_PAGE_EXIT_ANIM_SPEED
-            } else {
-                SETTINGS_PAGE_ENTER_ANIM_SPEED
-            };
-            self.settings_page_anim += settings_diff * (1.0 - (-settings_anim_speed * dt).exp());
-            ctx.request_repaint();
+        let settings_diff = settings_target - self.settings_page_anim.value_at(now);
+        let settings_anim_speed = if settings_diff < 0.0 {
+            SETTINGS_PAGE_EXIT_ANIM_SPEED
         } else {
-            self.settings_page_anim = settings_target;
+            SETTINGS_PAGE_ENTER_ANIM_SPEED
+        };
+        self.settings_page_anim
+            .animate_to(settings_target, settings_anim_speed, now, ANIMATION_EPSILON);
+        if self.settings_page_anim.update(now, ANIMATION_EPSILON) {
+            ctx.request_repaint();
         }
 
         let submenu_target = if self.show_settings_page && self.settings_in_submenu {
@@ -681,18 +662,16 @@ impl PageState {
         } else {
             0.0
         };
-        let submenu_diff = submenu_target - self.settings_submenu_anim;
-        if submenu_diff.abs() > 0.001 {
-            let submenu_anim_speed = if submenu_diff < 0.0 {
-                SETTINGS_SUBMENU_EXIT_ANIM_SPEED
-            } else {
-                SETTINGS_SUBMENU_ENTER_ANIM_SPEED
-            };
-            self.settings_submenu_anim +=
-                submenu_diff * (1.0 - (-submenu_anim_speed * dt).exp());
-            ctx.request_repaint();
+        let submenu_diff = submenu_target - self.settings_submenu_anim.value_at(now);
+        let submenu_anim_speed = if submenu_diff < 0.0 {
+            SETTINGS_SUBMENU_EXIT_ANIM_SPEED
         } else {
-            self.settings_submenu_anim = submenu_target;
+            SETTINGS_SUBMENU_ENTER_ANIM_SPEED
+        };
+        self.settings_submenu_anim
+            .animate_to(submenu_target, submenu_anim_speed, now, ANIMATION_EPSILON);
+        if self.settings_submenu_anim.update(now, ANIMATION_EPSILON) {
+            ctx.request_repaint();
         }
 
         let settings_select_target = if self.show_settings_page {
@@ -702,62 +681,55 @@ impl PageState {
         };
         if self.settings_select_anim_target != settings_select_target {
             self.settings_select_anim_target = settings_select_target;
-            self.settings_select_anim = 0.0;
+            if settings_select_target.is_some() {
+                self.settings_select_anim.restart(0.0, 1.0, 11.0, now);
+            } else {
+                self.settings_select_anim.set_immediate(0.0);
+            }
         }
-        let settings_select_value_target = if settings_select_target.is_some() { 1.0 } else { 0.0 };
-        let settings_select_diff = settings_select_value_target - self.settings_select_anim;
-        if settings_select_diff.abs() > 0.001 {
-            self.settings_select_anim += settings_select_diff * (1.0 - (-11.0 * dt).exp());
+        if settings_select_target.is_some()
+            && self.settings_select_anim.update(now, ANIMATION_EPSILON)
+        {
             ctx.request_repaint();
-        } else {
-            self.settings_select_anim = settings_select_value_target;
         }
 
         let scroll_target = self.selected as f32;
-        let scroll_diff = scroll_target - self.scroll_offset;
-        if scroll_diff.abs() > 0.001 {
-            self.scroll_offset += scroll_diff * (1.0 - (-14.0 * dt).exp());
+        self.scroll_offset
+            .animate_to(scroll_target, 14.0, now, ANIMATION_EPSILON);
+        if self.scroll_offset.update(now, ANIMATION_EPSILON) {
             ctx.request_repaint();
-        } else {
-            self.scroll_offset = scroll_target;
         }
 
         let summary_cards_target = if self.is_fast_scrolling() { 0.0 } else { 1.0 };
-        let summary_cards_diff = summary_cards_target - self.summary_cards_visibility;
-        if summary_cards_diff.abs() > 0.001 {
-            let fade_speed = if summary_cards_diff < 0.0 { 18.0 } else { 10.0 };
-            self.summary_cards_visibility +=
-                summary_cards_diff * (1.0 - (-fade_speed * dt).exp());
+        let summary_cards_diff = summary_cards_target - self.summary_cards_visibility.value_at(now);
+        let fade_speed = if summary_cards_diff < 0.0 { 18.0 } else { 10.0 };
+        self.summary_cards_visibility
+            .animate_to(summary_cards_target, fade_speed, now, ANIMATION_EPSILON);
+        if self.summary_cards_visibility.update(now, ANIMATION_EPSILON) {
             ctx.request_repaint();
-        } else {
-            self.summary_cards_visibility = summary_cards_target;
         }
 
         if self.achievement_select_anim_target != Some(self.achievement_selected) {
             self.achievement_select_anim_target = Some(self.achievement_selected);
-            self.achievement_select_anim = 0.0;
+            self.achievement_select_anim.restart(0.0, 1.0, 10.0, now);
         }
-        self.achievement_select_anim =
-            1.0 - (1.0 - self.achievement_select_anim) * (-10.0 * dt).exp();
-        if self.achievement_select_anim < 0.999 {
+        if self.achievement_select_anim.update(now, ANIMATION_EPSILON) {
             ctx.request_repaint();
         }
 
         let ach_target = self.achievement_selected.saturating_sub(2) as f32;
-        let ach_diff = ach_target - self.achievement_scroll_offset;
-        if ach_diff.abs() > 0.001 {
-            self.achievement_scroll_offset += ach_diff * (1.0 - (-14.0 * dt).exp());
+        self.achievement_scroll_offset
+            .animate_to(ach_target, 14.0, now, ANIMATION_EPSILON);
+        if self.achievement_scroll_offset.update(now, ANIMATION_EPSILON) {
             ctx.request_repaint();
-        } else {
-            self.achievement_scroll_offset = ach_target;
         }
     }
 
     fn reset_achievement_selection(&mut self) {
         self.achievement_selected = 0;
-        self.achievement_select_anim = 0.0;
+        self.achievement_select_anim.set_immediate(0.0);
         self.achievement_select_anim_target = None;
-        self.achievement_scroll_offset = 0.0;
+        self.achievement_scroll_offset.set_immediate(0.0);
     }
 
     fn close_achievement_panel(&mut self) {
@@ -774,8 +746,8 @@ impl PageState {
         self.close_achievement_panel();
         self.select_home_settings_button();
         self.show_settings_page = true;
-        self.settings_page_anim = 0.0;
-        self.settings_submenu_anim = 0.0;
+        self.settings_page_anim.set_immediate(0.0);
+        self.settings_submenu_anim.set_immediate(0.0);
         self.reset_settings_navigation();
     }
 
@@ -851,6 +823,8 @@ impl PageState {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
     use super::{
         PageState, PowerAction, ResolutionPreset, SETTINGS_PAGE_ENTER_ANIM_SPEED,
         SETTINGS_SUBMENU_ENTER_ANIM_SPEED,
@@ -862,6 +836,11 @@ mod tests {
     fn open_settings_page(page: &mut PageState) {
         let _ = page.handle_action(&ControllerAction::Settings, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+    }
+
+    fn tick_animation_frame(page: &mut PageState, ctx: &eframe::egui::Context, now: &mut Instant) {
+        *now += Duration::from_secs_f32(1.0 / 60.0);
+        page.tick_animations(ctx, *now);
     }
 
     #[cfg(target_os = "windows")]
@@ -904,8 +883,10 @@ mod tests {
     fn quit_on_power_menu_keeps_exit_animation_running() {
         let mut page = PageState::new();
         let ctx = eframe::egui::Context::default();
+        let mut now = Instant::now();
         page.open_power_menu(power_menu_layout());
-        page.tick_animations(&ctx, 1.0 / 60.0);
+        tick_animation_frame(&mut page, &ctx, &mut now);
+        tick_animation_frame(&mut page, &ctx, &mut now);
         assert!(page.power_menu_anim() > 0.0);
 
         let anim_before_close = page.power_menu_anim();
@@ -915,7 +896,9 @@ mod tests {
         assert!(!page.show_power_menu());
         assert_eq!(page.power_menu_anim(), anim_before_close);
 
-        page.tick_animations(&ctx, 1.0 / 60.0);
+        for _ in 0..10 {
+            tick_animation_frame(&mut page, &ctx, &mut now);
+        }
         assert!(page.power_menu_anim() < anim_before_close);
         assert!(page.power_menu_anim() > 0.0);
     }
@@ -1091,15 +1074,19 @@ mod tests {
     fn home_top_focus_animation_tracks_selection_handoff() {
         let mut page = PageState::new();
         let ctx = eframe::egui::Context::default();
+        let mut now = Instant::now();
 
         let _ = page.handle_action(&ControllerAction::Settings, 3, true, 4);
-        page.tick_animations(&ctx, 1.0 / 60.0);
+        tick_animation_frame(&mut page, &ctx, &mut now);
+        tick_animation_frame(&mut page, &ctx, &mut now);
         assert!(page.home_settings_focus_anim() > 0.0);
         assert_eq!(page.home_power_focus_anim(), 0.0);
 
         let anim_while_selected = page.home_settings_focus_anim();
         let _ = page.handle_action(&ControllerAction::Left, 3, true, 4);
-        page.tick_animations(&ctx, 1.0 / 60.0);
+        for _ in 0..10 {
+            tick_animation_frame(&mut page, &ctx, &mut now);
+        }
 
         assert!(!page.home_settings_selected());
         assert!(page.home_power_selected());
@@ -1176,14 +1163,17 @@ mod tests {
     fn power_menu_selection_animation_resets_when_selection_changes() {
         let mut page = PageState::new();
         let ctx = eframe::egui::Context::default();
+        let mut now = Instant::now();
         page.open_power_menu(power_menu_layout());
 
-        page.tick_animations(&ctx, 1.0 / 60.0);
+        tick_animation_frame(&mut page, &ctx, &mut now);
+        tick_animation_frame(&mut page, &ctx, &mut now);
         let first_anim = page.power_menu_select_anim();
         assert!(first_anim > 0.0);
 
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
-        page.tick_animations(&ctx, 1.0 / 60.0);
+        tick_animation_frame(&mut page, &ctx, &mut now);
+        tick_animation_frame(&mut page, &ctx, &mut now);
 
         assert!(page.power_menu_select_anim() > 0.0);
         assert!(page.power_menu_select_anim() <= first_anim + 0.001);
@@ -1246,17 +1236,21 @@ mod tests {
     fn settings_submenu_animation_tracks_submenu_state() {
         let mut page = PageState::new();
         let ctx = eframe::egui::Context::default();
+        let mut now = Instant::now();
 
         open_settings_page(&mut page);
         let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
-        page.tick_animations(&ctx, 1.0 / 60.0);
+        tick_animation_frame(&mut page, &ctx, &mut now);
+        tick_animation_frame(&mut page, &ctx, &mut now);
 
         assert!(page.settings_in_submenu());
         assert!(page.settings_submenu_anim() > 0.0);
 
         let entered_anim = page.settings_submenu_anim();
         let _ = page.handle_action(&ControllerAction::Quit, 3, true, 4);
-        page.tick_animations(&ctx, 1.0 / 60.0);
+        for _ in 0..20 {
+            tick_animation_frame(&mut page, &ctx, &mut now);
+        }
 
         assert!(!page.settings_in_submenu());
         assert!(page.settings_submenu_anim() < entered_anim);
@@ -1266,9 +1260,11 @@ mod tests {
     fn settings_page_open_animation_uses_slower_enter_speed() {
         let mut page = PageState::new();
         let ctx = eframe::egui::Context::default();
+        let mut now = Instant::now();
 
         open_settings_page(&mut page);
-        page.tick_animations(&ctx, 1.0 / 60.0);
+        tick_animation_frame(&mut page, &ctx, &mut now);
+        tick_animation_frame(&mut page, &ctx, &mut now);
 
         let expected = 1.0 - (-SETTINGS_PAGE_ENTER_ANIM_SPEED / 60.0).exp();
         assert!((page.settings_page_anim() - expected).abs() < 1e-6);
@@ -1278,10 +1274,12 @@ mod tests {
     fn settings_submenu_enter_animation_uses_slower_enter_speed() {
         let mut page = PageState::new();
         let ctx = eframe::egui::Context::default();
+        let mut now = Instant::now();
 
         open_settings_page(&mut page);
         let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
-        page.tick_animations(&ctx, 1.0 / 60.0);
+        tick_animation_frame(&mut page, &ctx, &mut now);
+        tick_animation_frame(&mut page, &ctx, &mut now);
 
         let expected = 1.0 - (-SETTINGS_SUBMENU_ENTER_ANIM_SPEED / 60.0).exp();
         assert!((page.settings_submenu_anim() - expected).abs() < 1e-6);
@@ -1291,14 +1289,17 @@ mod tests {
     fn settings_selection_animation_resets_when_selection_changes() {
         let mut page = PageState::new();
         let ctx = eframe::egui::Context::default();
+        let mut now = Instant::now();
 
         open_settings_page(&mut page);
-        page.tick_animations(&ctx, 1.0 / 60.0);
+        tick_animation_frame(&mut page, &ctx, &mut now);
+        tick_animation_frame(&mut page, &ctx, &mut now);
         let first_anim = page.settings_select_anim();
         assert!(first_anim > 0.0);
 
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
-        page.tick_animations(&ctx, 1.0 / 60.0);
+        tick_animation_frame(&mut page, &ctx, &mut now);
+        tick_animation_frame(&mut page, &ctx, &mut now);
 
         assert!(page.settings_select_anim() > 0.0);
         assert!(page.settings_select_anim() <= first_anim + 0.001);
@@ -1308,9 +1309,11 @@ mod tests {
     fn closing_settings_page_keeps_exit_animation_running() {
         let mut page = PageState::new();
         let ctx = eframe::egui::Context::default();
+        let mut now = Instant::now();
 
         open_settings_page(&mut page);
-        page.tick_animations(&ctx, 1.0 / 60.0);
+        tick_animation_frame(&mut page, &ctx, &mut now);
+        tick_animation_frame(&mut page, &ctx, &mut now);
         assert!(page.settings_page_anim() > 0.0);
 
         let anim_before_close = page.settings_page_anim();
@@ -1319,7 +1322,9 @@ mod tests {
         assert!(!page.show_settings_page());
         assert_eq!(page.settings_page_anim(), anim_before_close);
 
-        page.tick_animations(&ctx, 1.0 / 60.0);
+        for _ in 0..10 {
+            tick_animation_frame(&mut page, &ctx, &mut now);
+        }
         assert!(page.settings_page_anim() < anim_before_close);
         assert!(page.settings_page_anim() > 0.0);
     }
