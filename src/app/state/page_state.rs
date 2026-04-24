@@ -68,6 +68,7 @@ pub struct PageActionResult {
     pub open_power_menu: bool,
     pub reveal_hidden_achievement: bool,
     pub refresh_achievements: bool,
+    pub cycle_language_setting: bool,
     pub toggle_launch_on_startup: bool,
     pub toggle_background_home_wake: bool,
     pub toggle_controller_vibration_feedback: bool,
@@ -349,6 +350,7 @@ impl PageState {
             open_power_menu: false,
             reveal_hidden_achievement: false,
             refresh_achievements: false,
+            cycle_language_setting: false,
             toggle_launch_on_startup: false,
             toggle_background_home_wake: false,
             toggle_controller_vibration_feedback: false,
@@ -436,6 +438,7 @@ impl PageState {
                                     2 => result.toggle_detect_xbox_games = true,
                                     3 => result.toggle_background_home_wake = true,
                                     4 => result.toggle_controller_vibration_feedback = true,
+                                    5 => result.cycle_language_setting = true,
                                     _ => result.toggle_launch_on_startup = true,
                                 }
                             }
@@ -819,7 +822,7 @@ impl PageState {
             SettingsSection::CloseApp => return,
         };
         let max_index = match self.settings_section {
-            SettingsSection::System => 5,
+            SettingsSection::System => 6,
             SettingsSection::Screen => 1,
             SettingsSection::Apps => 1,
             SettingsSection::CloseApp => 0,
@@ -1279,11 +1282,12 @@ mod tests {
         assert!(!result.toggle_launch_on_startup);
         assert!(!result.toggle_background_home_wake);
         assert!(result.toggle_controller_vibration_feedback);
+        assert!(!result.cycle_language_setting);
         assert!(page.show_settings_page());
     }
 
     #[test]
-    fn launch_on_sixth_system_setting_toggles_launch_on_startup() {
+    fn launch_on_sixth_system_setting_cycles_language_setting() {
         let mut page = PageState::new();
 
         open_settings_page(&mut page);
@@ -1295,9 +1299,31 @@ mod tests {
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
 
+        assert!(!result.toggle_launch_on_startup);
+        assert!(!result.toggle_background_home_wake);
+        assert!(!result.toggle_controller_vibration_feedback);
+        assert!(result.cycle_language_setting);
+        assert!(page.show_settings_page());
+    }
+
+    #[test]
+    fn launch_on_seventh_system_setting_toggles_launch_on_startup() {
+        let mut page = PageState::new();
+
+        open_settings_page(&mut page);
+        let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
         assert!(result.toggle_launch_on_startup);
         assert!(!result.toggle_background_home_wake);
         assert!(!result.toggle_controller_vibration_feedback);
+        assert!(!result.cycle_language_setting);
         assert!(page.show_settings_page());
     }
 

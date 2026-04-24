@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 
 use crate::game::GameScanOptions;
+use crate::i18n::AppLanguageSetting;
 
 const CONFIG_FILE_NAME: &str = "settings.ini";
 const UI_SECTION: &str = "ui";
 const GAMES_SECTION: &str = "games";
 const HINT_ICON_THEME_KEY: &str = "hint_icon_theme";
+const LANGUAGE_KEY: &str = "language";
 const BACKGROUND_HOME_WAKE_ENABLED_KEY: &str = "background_home_wake_enabled";
 const CONTROLLER_VIBRATION_ENABLED_KEY: &str = "controller_vibration_enabled";
 const DETECT_STEAM_GAMES_KEY: &str = "detect_steam_games";
@@ -41,6 +43,7 @@ impl PromptIconTheme {
 #[derive(Clone, Copy)]
 struct AppConfig {
     hint_icon_theme: PromptIconTheme,
+    language: AppLanguageSetting,
     background_home_wake_enabled: bool,
     controller_vibration_enabled: bool,
     game_scan_options: GameScanOptions,
@@ -50,6 +53,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             hint_icon_theme: PromptIconTheme::Xbox,
+            language: AppLanguageSetting::Auto,
             background_home_wake_enabled: true,
             controller_vibration_enabled: false,
             game_scan_options: GameScanOptions::default(),
@@ -111,6 +115,9 @@ fn parse_config(contents: &str) -> AppConfig {
             if key.eq_ignore_ascii_case(HINT_ICON_THEME_KEY) {
                 config.hint_icon_theme = PromptIconTheme::from_config_value(value)
                     .unwrap_or(PromptIconTheme::Xbox);
+            } else if key.eq_ignore_ascii_case(LANGUAGE_KEY) {
+                config.language =
+                    AppLanguageSetting::from_config_value(value).unwrap_or(AppLanguageSetting::Auto);
             } else if key.eq_ignore_ascii_case(BACKGROUND_HOME_WAKE_ENABLED_KEY) {
                 config.background_home_wake_enabled =
                     parse_bool_config_value(value).unwrap_or(true);
@@ -137,10 +144,12 @@ fn parse_config(contents: &str) -> AppConfig {
 
 fn serialize_config(config: AppConfig) -> String {
     format!(
-        "[{}]\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n{}={}\n{}={}\n",
+        "[{}]\n{}={}\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n{}={}\n{}={}\n",
         UI_SECTION,
         HINT_ICON_THEME_KEY,
         config.hint_icon_theme.as_config_value(),
+        LANGUAGE_KEY,
+        config.language.as_config_value(),
         BACKGROUND_HOME_WAKE_ENABLED_KEY,
         config.background_home_wake_enabled,
         CONTROLLER_VIBRATION_ENABLED_KEY,
@@ -171,9 +180,19 @@ pub fn load_hint_icon_theme() -> PromptIconTheme {
     load_config().hint_icon_theme
 }
 
+pub fn load_app_language_setting() -> AppLanguageSetting {
+    load_config().language
+}
+
 pub fn store_hint_icon_theme(theme: PromptIconTheme) {
     let mut config = load_config();
     config.hint_icon_theme = theme;
+    store_config(config);
+}
+
+pub fn store_app_language_setting(language: AppLanguageSetting) {
+    let mut config = load_config();
+    config.language = language;
     store_config(config);
 }
 

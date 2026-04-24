@@ -52,7 +52,7 @@ fn load_first_available_font(file_names: &[&str]) -> Option<egui::FontData> {
 }
 
 #[cfg(target_os = "windows")]
-fn configure_fonts(ctx: &egui::Context, language: i18n::AppLanguage) {
+pub(crate) fn configure_fonts(ctx: &egui::Context, language: i18n::AppLanguage) {
     let (regular_candidates, bold_candidates): (&[&str], &[&str]) = match language {
         i18n::AppLanguage::English => (
             &["segoeui.ttf"],
@@ -101,7 +101,7 @@ fn configure_fonts(ctx: &egui::Context, language: i18n::AppLanguage) {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn configure_fonts(_ctx: &egui::Context, _language: i18n::AppLanguage) {}
+pub(crate) fn configure_fonts(_ctx: &egui::Context, _language: i18n::AppLanguage) {}
 
 #[cfg(target_os = "windows")]
 fn cache_root_window_handle(cc: &eframe::CreationContext<'_>) {
@@ -120,7 +120,8 @@ fn cache_root_window_handle(cc: &eframe::CreationContext<'_>) {
 fn cache_root_window_handle(_cc: &eframe::CreationContext<'_>) {}
 
 fn main() {
-    let language = i18n::AppLanguage::detect_system();
+    let language_setting = config::load_app_language_setting();
+    let language = language_setting.resolve();
     let viewport = if let Some(icon) = load_app_icon() {
         egui::ViewportBuilder::default()
             .with_fullscreen(true)

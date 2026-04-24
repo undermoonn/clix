@@ -12,9 +12,10 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use crate::animation;
+use crate::config::PromptIconTheme;
 use crate::game::{self, Game, GameSource};
 use crate::game_last_played;
-use crate::i18n::AppLanguage;
+use crate::i18n::{AppLanguage, AppLanguageSetting};
 use crate::input::{self, InputController};
 use crate::launch::{self, LaunchState};
 use crate::system::{
@@ -43,7 +44,8 @@ pub struct LauncherApp {
     steam_paths: Vec<std::path::PathBuf>,
     artwork: ArtworkState,
     page: PageState,
-    hint_icon_theme: crate::config::PromptIconTheme,
+    hint_icon_theme: PromptIconTheme,
+    language_setting: AppLanguageSetting,
     hint_icons: Option<ui::HintIcons>,
     settings_icon: Option<egui::TextureHandle>,
     settings_system_icon: Option<egui::TextureHandle>,
@@ -98,6 +100,7 @@ impl LauncherApp {
         let launch_on_startup_enabled = startup::is_enabled();
         let power_menu_external_apps = external_apps::detect_installed();
         let hint_icon_theme = crate::config::load_hint_icon_theme();
+        let language_setting = crate::config::load_app_language_setting();
         let controller_vibration_enabled = crate::config::load_controller_vibration_enabled();
         let mut input = InputController::new();
         input.set_selection_vibration_enabled(controller_vibration_enabled);
@@ -109,6 +112,7 @@ impl LauncherApp {
             artwork: ArtworkState::new(ctx),
             page: PageState::new(),
             hint_icon_theme,
+            language_setting,
             hint_icons: ui::load_hint_icons(ctx, hint_icon_theme),
             settings_icon: load_settings_icon(ctx),
             settings_system_icon: load_settings_system_icon(ctx),
@@ -153,6 +157,15 @@ impl LauncherApp {
         self.hint_icon_theme = theme;
         self.hint_icons = ui::load_hint_icons(ctx, theme);
         crate::config::store_hint_icon_theme(theme);
+        ctx.request_repaint();
+    }
+
+    fn cycle_language_setting(&mut self, ctx: &egui::Context) {
+        let next_setting = self.language_setting.next();
+        self.language_setting = next_setting;
+        self.language = next_setting.resolve();
+        crate::config::store_app_language_setting(next_setting);
+        crate::configure_fonts(ctx, self.language);
         ctx.request_repaint();
     }
 
@@ -615,6 +628,9 @@ impl eframe::App for LauncherApp {
                 if result.toggle_controller_vibration_feedback {
                     self.set_controller_vibration_enabled(!self.controller_vibration_enabled, &ctx);
                 }
+                if result.cycle_language_setting {
+                    self.cycle_language_setting(&ctx);
+                }
                 if result.toggle_detect_steam_games {
                     let mut options = self.game_scan_options;
                     options.detect_steam_games = !options.detect_steam_games;
@@ -807,6 +823,7 @@ impl eframe::App for LauncherApp {
                 ui::draw_settings_page(
                     ui,
                     self.language,
+                    self.language_setting,
                     self.settings_system_icon.as_ref(),
                     self.settings_screen_icon.as_ref(),
                     self.settings_apps_icon.as_ref(),
@@ -835,9 +852,9 @@ impl eframe::App for LauncherApp {
                         None
                     };
                     let home_top_action_label = if self.page.home_settings_selected() {
-                        Some(self.language.settings_text())
+                        Some(self.language.confirm_text())
                     } else if self.page.home_power_selected() {
-                        Some(self.language.power_text())
+                        Some(self.language.confirm_text())
                     } else {
                         None
                     };

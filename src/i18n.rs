@@ -4,6 +4,64 @@ pub enum AppLanguage {
     SimplifiedChinese,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AppLanguageSetting {
+    #[default]
+    Auto,
+    English,
+    SimplifiedChinese,
+}
+
+impl AppLanguageSetting {
+    pub fn resolve(self) -> AppLanguage {
+        match self {
+            Self::Auto => AppLanguage::detect_system(),
+            Self::English => AppLanguage::English,
+            Self::SimplifiedChinese => AppLanguage::SimplifiedChinese,
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::Auto => Self::English,
+            Self::English => Self::SimplifiedChinese,
+            Self::SimplifiedChinese => Self::Auto,
+        }
+    }
+
+    pub fn as_config_value(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::English => "english",
+            Self::SimplifiedChinese => "simplified_chinese",
+        }
+    }
+
+    pub fn from_config_value(value: &str) -> Option<Self> {
+        if value.eq_ignore_ascii_case("auto") {
+            Some(Self::Auto)
+        } else if value.eq_ignore_ascii_case("english") || value.eq_ignore_ascii_case("en") {
+            Some(Self::English)
+        } else if value.eq_ignore_ascii_case("simplified_chinese")
+            || value.eq_ignore_ascii_case("simplified-chinese")
+            || value.eq_ignore_ascii_case("zh-cn")
+            || value.eq_ignore_ascii_case("schinese")
+        {
+            Some(Self::SimplifiedChinese)
+        } else {
+            None
+        }
+    }
+
+    pub fn display_text(self, language: AppLanguage) -> &'static str {
+        match self {
+            Self::Auto => language.auto_text(),
+            Self::English => language.english_text(),
+            Self::SimplifiedChinese => language.simplified_chinese_text(),
+        }
+    }
+}
+
 impl AppLanguage {
     pub fn detect_system() -> Self {
         sys_locale::get_locale()
@@ -60,13 +118,6 @@ impl AppLanguage {
         match self {
             Self::English => "Close App",
             Self::SimplifiedChinese => "关闭应用",
-        }
-    }
-
-    pub fn power_text(self) -> &'static str {
-        match self {
-            Self::English => "Power",
-            Self::SimplifiedChinese => "电源",
         }
     }
 
@@ -147,9 +198,16 @@ impl AppLanguage {
         }
     }
 
+    pub fn language_setting_text(self) -> &'static str {
+        match self {
+            Self::English => "Language",
+            Self::SimplifiedChinese => "语言",
+        }
+    }
+
     pub fn client_games_detection_text(self) -> &'static str {
         match self {
-            Self::English => "Client Games Detection",
+            Self::English => "Games Detection",
             Self::SimplifiedChinese => "游戏识别",
         }
     }
@@ -193,6 +251,27 @@ impl AppLanguage {
         match self {
             Self::English => "Off",
             Self::SimplifiedChinese => "关闭",
+        }
+    }
+
+    pub fn auto_text(self) -> &'static str {
+        match self {
+            Self::English => "Auto",
+            Self::SimplifiedChinese => "自动",
+        }
+    }
+
+    pub fn english_text(self) -> &'static str {
+        match self {
+            Self::English => "English",
+            Self::SimplifiedChinese => "英文",
+        }
+    }
+
+    pub fn simplified_chinese_text(self) -> &'static str {
+        match self {
+            Self::English => "Simplified Chinese",
+            Self::SimplifiedChinese => "简体中文",
         }
     }
 

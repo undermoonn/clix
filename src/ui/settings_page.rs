@@ -1,7 +1,7 @@
 use eframe::egui;
 
 use crate::game::GameSource;
-use crate::i18n::AppLanguage;
+use crate::i18n::{AppLanguage, AppLanguageSetting};
 use crate::system::display_mode::ResolutionOptions;
 
 use super::anim::{lerp_f32, smoothstep01};
@@ -386,6 +386,7 @@ fn draw_settings_section_header(
 pub fn draw_settings_page(
     ui: &mut egui::Ui,
     language: AppLanguage,
+    selected_language_setting: AppLanguageSetting,
     system_icon: Option<&egui::TextureHandle>,
     screen_icon: Option<&egui::TextureHandle>,
     apps_icon: Option<&egui::TextureHandle>,
@@ -642,7 +643,13 @@ pub fn draw_settings_page(
                 let final_row_offset_y = 8.0;
                 let body_top_padding = 14.0;
                 let body_bottom_padding = 12.0;
-                let body_height = system_row_spacing * 2.0
+                let top_body_height = system_row_spacing * 2.0
+                    + submenu_row_height
+                    + initial_row_offset_y
+                    + final_row_offset_y
+                    + body_top_padding
+                    + body_bottom_padding;
+                let lower_body_height = system_row_spacing * 3.0
                     + submenu_row_height
                     + initial_row_offset_y
                     + final_row_offset_y
@@ -652,14 +659,14 @@ pub fn draw_settings_page(
                     egui::pos2(submenu_content_rect.min.x, header_rect.max.y + 28.0),
                     egui::pos2(
                         submenu_content_rect.max.x,
-                        header_rect.max.y + 28.0 + body_height,
+                        header_rect.max.y + 28.0 + top_body_height,
                     ),
                 );
                 let lower_body_rect = egui::Rect::from_min_max(
                     egui::pos2(submenu_content_rect.min.x, top_body_rect.max.y + section_gap),
                     egui::pos2(
                         submenu_content_rect.max.x,
-                        top_body_rect.max.y + section_gap + body_height,
+                        top_body_rect.max.y + section_gap + lower_body_height,
                     ),
                 );
                 draw_settings_page_body_container(painter, top_body_rect, submenu_layer_t);
@@ -830,6 +837,29 @@ pub fn draw_settings_page(
                     None,
                     None,
                     None,
+                    language.language_setting_text(),
+                    false,
+                    Some(selected_language_setting.display_text(language)),
+                    if selected_language_setting == AppLanguageSetting::Auto {
+                        Some(enabled_subtitle_color)
+                    } else {
+                        None
+                    },
+                    None,
+                    selected_item_index == 5,
+                    true,
+                    submenu_layer_t,
+                );
+
+                draw_row(
+                    lower_list_inner_rect,
+                    lower_rows_origin_y,
+                    system_row_spacing,
+                    submenu_row_height,
+                    3,
+                    None,
+                    None,
+                    None,
                     language.launch_on_startup_text(),
                     false,
                     Some(if launch_on_startup_enabled {
@@ -843,7 +873,7 @@ pub fn draw_settings_page(
                         None
                     },
                     None,
-                    selected_item_index == 5,
+                    selected_item_index == 6,
                     true,
                     submenu_layer_t,
                 );
