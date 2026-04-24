@@ -4,6 +4,8 @@ mod xinput;
 
 use std::collections::HashMap;
 use std::time::Instant;
+#[cfg(target_os = "windows")]
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use buttons::Buttons;
 use crate::config::PromptIconTheme;
@@ -22,6 +24,9 @@ pub const NAV_REPEAT_INTERVAL_STAGE2_MS: u128 = 45;
 pub const FOCUS_COOLDOWN_MS: u128 = 100;
 
 #[cfg(target_os = "windows")]
+static BACKGROUND_HOME_WAKE_ENABLED: AtomicBool = AtomicBool::new(true);
+
+#[cfg(target_os = "windows")]
 pub fn start_watchers(ctx: egui::Context) {
     xinput::start(ctx.clone());
     dualsense::start(ctx);
@@ -29,6 +34,24 @@ pub fn start_watchers(ctx: egui::Context) {
 
 #[cfg(not(target_os = "windows"))]
 pub fn start_watchers(_ctx: eframe::egui::Context) {}
+
+#[cfg(target_os = "windows")]
+pub fn set_background_home_wake_enabled(enabled: bool) {
+    BACKGROUND_HOME_WAKE_ENABLED.store(enabled, Ordering::Release);
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn set_background_home_wake_enabled(_enabled: bool) {}
+
+#[cfg(target_os = "windows")]
+pub(super) fn background_home_wake_enabled() -> bool {
+    BACKGROUND_HOME_WAKE_ENABLED.load(Ordering::Acquire)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(super) fn background_home_wake_enabled() -> bool {
+    false
+}
 
 #[cfg(target_os = "windows")]
 pub fn take_wake_request() -> bool {

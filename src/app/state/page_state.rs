@@ -69,6 +69,7 @@ pub struct PageActionResult {
     pub reveal_hidden_achievement: bool,
     pub refresh_achievements: bool,
     pub toggle_launch_on_startup: bool,
+    pub toggle_background_home_wake: bool,
     pub toggle_controller_vibration_feedback: bool,
     pub toggle_detect_steam_games: bool,
     pub toggle_detect_epic_games: bool,
@@ -349,6 +350,7 @@ impl PageState {
             reveal_hidden_achievement: false,
             refresh_achievements: false,
             toggle_launch_on_startup: false,
+            toggle_background_home_wake: false,
             toggle_controller_vibration_feedback: false,
             toggle_detect_steam_games: false,
             toggle_detect_epic_games: false,
@@ -432,7 +434,8 @@ impl PageState {
                                     0 => result.toggle_detect_steam_games = true,
                                     1 => result.toggle_detect_epic_games = true,
                                     2 => result.toggle_detect_xbox_games = true,
-                                    3 => result.toggle_controller_vibration_feedback = true,
+                                    3 => result.toggle_background_home_wake = true,
+                                    4 => result.toggle_controller_vibration_feedback = true,
                                     _ => result.toggle_launch_on_startup = true,
                                 }
                             }
@@ -816,7 +819,7 @@ impl PageState {
             SettingsSection::CloseApp => return,
         };
         let max_index = match self.settings_section {
-            SettingsSection::System => 4,
+            SettingsSection::System => 5,
             SettingsSection::Screen => 1,
             SettingsSection::Apps => 1,
             SettingsSection::CloseApp => 0,
@@ -1208,6 +1211,7 @@ mod tests {
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
 
         assert!(!result.toggle_launch_on_startup);
+        assert!(!result.toggle_background_home_wake);
         assert!(result.toggle_detect_steam_games);
         assert!(page.show_settings_page());
     }
@@ -1244,7 +1248,7 @@ mod tests {
     }
 
     #[test]
-    fn launch_on_fourth_system_setting_toggles_controller_vibration() {
+    fn launch_on_fourth_system_setting_toggles_background_home_wake() {
         let mut page = PageState::new();
 
         open_settings_page(&mut page);
@@ -1255,12 +1259,13 @@ mod tests {
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
 
         assert!(!result.toggle_launch_on_startup);
-        assert!(result.toggle_controller_vibration_feedback);
+        assert!(result.toggle_background_home_wake);
+        assert!(!result.toggle_controller_vibration_feedback);
         assert!(page.show_settings_page());
     }
 
     #[test]
-    fn launch_on_fifth_system_setting_toggles_launch_on_startup() {
+    fn launch_on_fifth_system_setting_toggles_controller_vibration() {
         let mut page = PageState::new();
 
         open_settings_page(&mut page);
@@ -1271,7 +1276,27 @@ mod tests {
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
 
+        assert!(!result.toggle_launch_on_startup);
+        assert!(!result.toggle_background_home_wake);
+        assert!(result.toggle_controller_vibration_feedback);
+        assert!(page.show_settings_page());
+    }
+
+    #[test]
+    fn launch_on_sixth_system_setting_toggles_launch_on_startup() {
+        let mut page = PageState::new();
+
+        open_settings_page(&mut page);
+        let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
         assert!(result.toggle_launch_on_startup);
+        assert!(!result.toggle_background_home_wake);
         assert!(!result.toggle_controller_vibration_feedback);
         assert!(page.show_settings_page());
     }

@@ -6,6 +6,7 @@ const CONFIG_FILE_NAME: &str = "settings.ini";
 const UI_SECTION: &str = "ui";
 const GAMES_SECTION: &str = "games";
 const HINT_ICON_THEME_KEY: &str = "hint_icon_theme";
+const BACKGROUND_HOME_WAKE_ENABLED_KEY: &str = "background_home_wake_enabled";
 const CONTROLLER_VIBRATION_ENABLED_KEY: &str = "controller_vibration_enabled";
 const DETECT_STEAM_GAMES_KEY: &str = "detect_steam_games";
 const DETECT_EPIC_GAMES_KEY: &str = "detect_epic_games";
@@ -40,6 +41,7 @@ impl PromptIconTheme {
 #[derive(Clone, Copy)]
 struct AppConfig {
     hint_icon_theme: PromptIconTheme,
+    background_home_wake_enabled: bool,
     controller_vibration_enabled: bool,
     game_scan_options: GameScanOptions,
 }
@@ -48,6 +50,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             hint_icon_theme: PromptIconTheme::Xbox,
+            background_home_wake_enabled: true,
             controller_vibration_enabled: false,
             game_scan_options: GameScanOptions::default(),
         }
@@ -108,6 +111,9 @@ fn parse_config(contents: &str) -> AppConfig {
             if key.eq_ignore_ascii_case(HINT_ICON_THEME_KEY) {
                 config.hint_icon_theme = PromptIconTheme::from_config_value(value)
                     .unwrap_or(PromptIconTheme::Xbox);
+            } else if key.eq_ignore_ascii_case(BACKGROUND_HOME_WAKE_ENABLED_KEY) {
+                config.background_home_wake_enabled =
+                    parse_bool_config_value(value).unwrap_or(true);
             } else if key.eq_ignore_ascii_case(CONTROLLER_VIBRATION_ENABLED_KEY) {
                 config.controller_vibration_enabled =
                     parse_bool_config_value(value).unwrap_or(false);
@@ -131,10 +137,12 @@ fn parse_config(contents: &str) -> AppConfig {
 
 fn serialize_config(config: AppConfig) -> String {
     format!(
-        "[{}]\n{}={}\n{}={}\n\n[{}]\n{}={}\n{}={}\n{}={}\n",
+        "[{}]\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n{}={}\n{}={}\n",
         UI_SECTION,
         HINT_ICON_THEME_KEY,
         config.hint_icon_theme.as_config_value(),
+        BACKGROUND_HOME_WAKE_ENABLED_KEY,
+        config.background_home_wake_enabled,
         CONTROLLER_VIBRATION_ENABLED_KEY,
         config.controller_vibration_enabled,
         GAMES_SECTION,
@@ -171,6 +179,16 @@ pub fn store_hint_icon_theme(theme: PromptIconTheme) {
 
 pub fn load_controller_vibration_enabled() -> bool {
     load_config().controller_vibration_enabled
+}
+
+pub fn load_background_home_wake_enabled() -> bool {
+    load_config().background_home_wake_enabled
+}
+
+pub fn store_background_home_wake_enabled(enabled: bool) {
+    let mut config = load_config();
+    config.background_home_wake_enabled = enabled;
+    store_config(config);
 }
 
 pub fn store_controller_vibration_enabled(enabled: bool) {

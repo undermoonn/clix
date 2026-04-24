@@ -50,6 +50,8 @@ pub struct LauncherApp {
     settings_screen_icon: Option<egui::TextureHandle>,
     settings_apps_icon: Option<egui::TextureHandle>,
     settings_exit_icon: Option<egui::TextureHandle>,
+    xbox_guide_icon: Option<egui::TextureHandle>,
+    playstation_home_icon: Option<egui::TextureHandle>,
     power_sleep_icon: Option<egui::TextureHandle>,
     power_reboot_icon: Option<egui::TextureHandle>,
     power_off_icon: Option<egui::TextureHandle>,
@@ -70,6 +72,7 @@ pub struct LauncherApp {
     resolution_options: ResolutionOptions,
     game_scan_options: game::GameScanOptions,
     launch_on_startup_enabled: bool,
+    background_home_wake_enabled: bool,
     controller_vibration_enabled: bool,
     power_menu_external_apps: Vec<ExternalApp>,
     wake_focus_pending: bool,
@@ -80,14 +83,18 @@ pub struct LauncherApp {
 
 impl LauncherApp {
     pub fn new(language: AppLanguage, ctx: &egui::Context) -> Self {
+        let background_home_wake_enabled = crate::config::load_background_home_wake_enabled();
         #[cfg(target_os = "windows")]
-        input::start_watchers(ctx.clone());
+        {
+            input::set_background_home_wake_enabled(background_home_wake_enabled);
+            input::start_watchers(ctx.clone());
+        }
         #[cfg(not(target_os = "windows"))]
         let _ = ctx;
 
         let steam_paths = steam::find_steam_paths();
-    let game_scan_options = crate::config::load_game_scan_options();
-    let games = game::scan_installed_games(&steam_paths, &game_scan_options);
+        let game_scan_options = crate::config::load_game_scan_options();
+        let games = game::scan_installed_games(&steam_paths, &game_scan_options);
         let launch_on_startup_enabled = startup::is_enabled();
         let power_menu_external_apps = external_apps::detect_installed();
         let hint_icon_theme = crate::config::load_hint_icon_theme();
@@ -108,6 +115,8 @@ impl LauncherApp {
             settings_screen_icon: load_settings_screen_icon(ctx),
             settings_apps_icon: load_settings_apps_icon(ctx),
             settings_exit_icon: load_settings_exit_icon(ctx),
+            xbox_guide_icon: load_xbox_guide_icon(ctx),
+            playstation_home_icon: load_playstation_home_icon(ctx),
             power_sleep_icon: load_power_sleep_icon(ctx),
             power_reboot_icon: load_power_reboot_icon(ctx),
             power_off_icon: load_power_off_icon(ctx),
@@ -124,6 +133,7 @@ impl LauncherApp {
             resolution_options: display_mode::detect_resolution_options(),
             game_scan_options,
             launch_on_startup_enabled,
+            background_home_wake_enabled,
             controller_vibration_enabled,
             power_menu_external_apps,
             wake_focus_pending: false,
@@ -154,6 +164,17 @@ impl LauncherApp {
         self.controller_vibration_enabled = enabled;
         self.input.set_selection_vibration_enabled(enabled);
         crate::config::store_controller_vibration_enabled(enabled);
+        ctx.request_repaint();
+    }
+
+    fn set_background_home_wake_enabled(&mut self, enabled: bool, ctx: &egui::Context) {
+        if self.background_home_wake_enabled == enabled {
+            return;
+        }
+
+        self.background_home_wake_enabled = enabled;
+        input::set_background_home_wake_enabled(enabled);
+        crate::config::store_background_home_wake_enabled(enabled);
         ctx.request_repaint();
     }
 
@@ -455,7 +476,8 @@ impl eframe::App for LauncherApp {
             ctx.request_repaint();
         }
 
-        if input::take_wake_request() {
+        let wake_requested = input::take_wake_request();
+        if wake_requested && self.background_home_wake_enabled {
             self.page.prepare_wake_animation();
             self.wake_focus_pending = true;
             self.runtime.suppress_home_hold_until_release();
@@ -586,6 +608,9 @@ impl eframe::App for LauncherApp {
                         self.launch_on_startup_enabled = startup::is_enabled();
                     }
                     ctx.request_repaint();
+                }
+                if result.toggle_background_home_wake {
+                    self.set_background_home_wake_enabled(!self.background_home_wake_enabled, &ctx);
                 }
                 if result.toggle_controller_vibration_feedback {
                     self.set_controller_vibration_enabled(!self.controller_vibration_enabled, &ctx);
@@ -786,7 +811,10 @@ impl eframe::App for LauncherApp {
                     self.settings_screen_icon.as_ref(),
                     self.settings_apps_icon.as_ref(),
                     self.settings_exit_icon.as_ref(),
+                    self.xbox_guide_icon.as_ref(),
+                    self.playstation_home_icon.as_ref(),
                     self.launch_on_startup_enabled,
+                    self.background_home_wake_enabled,
                     self.controller_vibration_enabled,
                     self.game_scan_options.detect_steam_games,
                     self.game_scan_options.detect_epic_games,
@@ -907,6 +935,22 @@ fn load_settings_exit_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
     )
 }
 
+fn load_xbox_guide_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_embedded_png_texture(
+        ctx,
+        include_bytes!("../icons/Xbox Series/xbox_guide.png"),
+        "settings_xbox_guide_icon",
+    )
+}
+
+fn load_playstation_home_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_embedded_png_texture(
+        ctx,
+        include_bytes!("../icons/PlayStation Series/playstation_home.png"),
+        "settings_playstation_home_icon",
+    )
+}
+
 fn load_power_sleep_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
     load_generated_icon(
         ctx,
@@ -932,6 +976,14 @@ fn load_power_off_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
 }
 
 fn load_generated_icon(
+    ctx: &egui::Context,
+    bytes: &[u8],
+    texture_name: &str,
+) -> Option<egui::TextureHandle> {
+    load_embedded_png_texture(ctx, bytes, texture_name)
+}
+
+fn load_embedded_png_texture(
     ctx: &egui::Context,
     bytes: &[u8],
     texture_name: &str,

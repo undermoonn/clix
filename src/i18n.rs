@@ -126,6 +126,20 @@ impl AppLanguage {
         }
     }
 
+    pub fn background_home_wake_prefix_text(self) -> &'static str {
+        match self {
+            Self::English => "Wake App via",
+            Self::SimplifiedChinese => "通过",
+        }
+    }
+
+    pub fn background_home_wake_suffix_text(self) -> &'static str {
+        match self {
+            Self::English => "buttons",
+            Self::SimplifiedChinese => "键唤醒应用",
+        }
+    }
+
     pub fn controller_vibration_feedback_text(self) -> &'static str {
         match self {
             Self::English => "Controller Vibration Feedback",

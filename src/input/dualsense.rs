@@ -273,7 +273,7 @@ fn run_dualsense_watcher(ctx: egui::Context) {
                 store_snapshot(snapshot);
 
                 if pressed_now {
-                    if app_is_background {
+                    if app_is_background && super::background_home_wake_enabled() {
                         WAKE_PENDING.store(true, Ordering::Release);
                         let _ = crate::launch::focus_current_app_window();
                     }

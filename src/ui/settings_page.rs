@@ -8,11 +8,45 @@ use super::anim::{lerp_f32, smoothstep01};
 use super::header::{draw_selected_game_text_badge, measure_selected_game_text_badge};
 use super::text::{color_with_scaled_alpha, corner_radius};
 
+struct InlineButtonTitle<'a> {
+    prefix: &'a str,
+    suffix: &'a str,
+    left_icon: &'a egui::TextureHandle,
+    right_icon: &'a egui::TextureHandle,
+}
+
 struct SettingsLayerState {
     top_layer_t: f32,
     submenu_layer_t: f32,
     top_motion_t: f32,
     submenu_motion_t: f32,
+}
+
+fn draw_settings_page_body_container(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    layer_t: f32,
+) {
+    painter.rect_filled(
+        rect,
+        corner_radius(8.0),
+        color_with_scaled_alpha(
+            egui::Color32::from_rgba_unmultiplied(14, 14, 14, 255),
+            layer_t,
+        ),
+    );
+    painter.rect_stroke(
+        rect,
+        corner_radius(8.0),
+        egui::Stroke::new(
+            1.2,
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 42),
+                layer_t,
+            ),
+        ),
+        egui::StrokeKind::Middle,
+    );
 }
 
 fn settings_layer_state(
@@ -55,6 +89,7 @@ fn draw_settings_list_row(
     title_tag: Option<&str>,
     title_tag_align_width: Option<f32>,
     title: &str,
+    inline_button_title: Option<&InlineButtonTitle<'_>>,
     subtitle: Option<&str>,
     subtitle_color: Option<egui::Color32>,
     trailing: Option<&str>,
@@ -132,14 +167,18 @@ fn draw_settings_list_row(
     } else {
         content_rect.min.x
     };
-    let title_galley = painter.layout_no_wrap(
-        title.to_string(),
-        egui::FontId::proportional(26.0),
-        color_with_scaled_alpha(
-            egui::Color32::from_rgba_unmultiplied(242, 245, 248, 255),
-            settings_t,
-        ),
+    let title_font = egui::FontId::proportional(26.0);
+    let title_color = color_with_scaled_alpha(
+        egui::Color32::from_rgba_unmultiplied(242, 245, 248, 255),
+        settings_t,
     );
+    let title_galley = painter.layout_no_wrap(title.to_string(), title_font.clone(), title_color);
+    let inline_prefix_galley = inline_button_title.map(|inline| {
+        painter.layout_no_wrap(inline.prefix.to_string(), title_font.clone(), title_color)
+    });
+    let inline_suffix_galley = inline_button_title.map(|inline| {
+        painter.layout_no_wrap(inline.suffix.to_string(), title_font.clone(), title_color)
+    });
     let subtitle_galley = subtitle.map(|subtitle| {
         painter.layout_no_wrap(
             subtitle.to_string(),
@@ -151,7 +190,18 @@ fn draw_settings_list_row(
             ),
         )
     });
-    let title_height = title_galley.size().y;
+    let left_inline_icon_size = 30.0;
+    let right_inline_icon_size = 36.0;
+    let title_height = if let (Some(prefix), Some(suffix)) = (&inline_prefix_galley, &inline_suffix_galley) {
+        prefix
+            .size()
+            .y
+            .max(suffix.size().y)
+            .max(left_inline_icon_size)
+            .max(right_inline_icon_size)
+    } else {
+        title_galley.size().y
+    };
 
     if let Some(trailing) = trailing {
         let status_galley = painter.layout_no_wrap(
@@ -204,19 +254,72 @@ fn draw_settings_list_row(
         title_height
     };
     let title_y = content_rect.center().y - text_block_height * 0.5;
-    let mut title_x = text_start_x;
+    let title_x = text_start_x;
     if let Some(title_tag) = title_tag {
         let title_tag_gap = 16.0;
-        let badge_size = draw_selected_game_text_badge(
+        let _ = title_tag_align_width;
+        painter.galley(egui::pos2(title_x, title_y), title_galley.clone(), egui::Color32::WHITE);
+        let badge_x = title_x + title_galley.size().x + title_tag_gap;
+        draw_selected_game_text_badge(
             painter,
             title_tag,
-            egui::pos2(text_start_x, title_y),
+            egui::pos2(badge_x, title_y),
             title_galley.size(),
             settings_t,
         );
-        title_x += title_tag_align_width.unwrap_or(badge_size.x) + title_tag_gap;
     }
-    painter.galley(egui::pos2(title_x, title_y), title_galley, egui::Color32::WHITE);
+    if let (Some(inline_title), Some(prefix), Some(suffix)) = (
+        inline_button_title,
+        inline_prefix_galley,
+        inline_suffix_galley,
+    ) {
+        let text_gap = 10.0;
+        let icon_gap = 10.0;
+        let mut cursor_x = title_x;
+        let prefix_width = prefix.size().x;
+
+        painter.galley(
+            egui::pos2(cursor_x, title_y + (title_height - prefix.size().y) * 0.5),
+            prefix,
+            egui::Color32::WHITE,
+        );
+        cursor_x += prefix_width + text_gap;
+
+        let left_icon_rect = egui::Rect::from_min_size(
+            egui::pos2(cursor_x, title_y + (title_height - left_inline_icon_size) * 0.5),
+            egui::vec2(left_inline_icon_size, left_inline_icon_size),
+        );
+        painter.image(
+            inline_title.left_icon.id(),
+            left_icon_rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            color_with_scaled_alpha(egui::Color32::WHITE, settings_t),
+        );
+        cursor_x += left_inline_icon_size + icon_gap;
+
+        let right_icon_rect = egui::Rect::from_min_size(
+            egui::pos2(cursor_x, title_y + (title_height - right_inline_icon_size) * 0.5),
+            egui::vec2(right_inline_icon_size, right_inline_icon_size),
+        );
+        painter.image(
+            inline_title.right_icon.id(),
+            right_icon_rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            color_with_scaled_alpha(egui::Color32::WHITE, settings_t),
+        );
+        cursor_x += right_inline_icon_size;
+
+        if !inline_title.suffix.is_empty() {
+            cursor_x += text_gap;
+            painter.galley(
+                egui::pos2(cursor_x, title_y + (title_height - suffix.size().y) * 0.5),
+                suffix,
+                egui::Color32::WHITE,
+            );
+        }
+    } else if title_tag.is_none() {
+        painter.galley(egui::pos2(title_x, title_y), title_galley, egui::Color32::WHITE);
+    }
     if let Some(subtitle_galley) = subtitle_galley {
         let subtitle_y = title_y + title_height + subtitle_gap;
         painter.galley(
@@ -287,7 +390,10 @@ pub fn draw_settings_page(
     screen_icon: Option<&egui::TextureHandle>,
     apps_icon: Option<&egui::TextureHandle>,
     exit_icon: Option<&egui::TextureHandle>,
+    xbox_guide_icon: Option<&egui::TextureHandle>,
+    playstation_home_icon: Option<&egui::TextureHandle>,
     launch_on_startup_enabled: bool,
+    background_home_wake_enabled: bool,
     controller_vibration_enabled: bool,
     detect_steam_games_enabled: bool,
     detect_epic_games_enabled: bool,
@@ -319,34 +425,10 @@ pub fn draw_settings_page(
     .translate(egui::vec2(0.0, lerp_f32(18.0, 0.0, settings_t)));
     let submenu_t = smoothstep01(submenu_anim);
 
-    let draw_page_shell = |content_rect: egui::Rect, layer_t: f32, title_text: &str| {
+    let draw_page_header = |content_rect: egui::Rect, layer_t: f32, title_text: &str| {
         let header_rect = egui::Rect::from_min_max(
             egui::pos2(content_rect.min.x, content_rect.min.y),
             egui::pos2(content_rect.max.x, content_rect.min.y + 78.0),
-        );
-        let body_rect = egui::Rect::from_min_max(
-            egui::pos2(content_rect.min.x, header_rect.max.y + 28.0),
-            egui::pos2(content_rect.max.x, content_rect.max.y - 56.0),
-        );
-        painter.rect_filled(
-            body_rect,
-            corner_radius(8.0),
-            color_with_scaled_alpha(
-                egui::Color32::from_rgba_unmultiplied(14, 14, 14, 255),
-                layer_t,
-            ),
-        );
-        painter.rect_stroke(
-            body_rect,
-            corner_radius(8.0),
-            egui::Stroke::new(
-                1.2,
-                color_with_scaled_alpha(
-                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 42),
-                    layer_t,
-                ),
-            ),
-            egui::StrokeKind::Middle,
         );
 
         let title = painter.layout_no_wrap(
@@ -356,6 +438,17 @@ pub fn draw_settings_page(
         );
         let top_left = header_rect.min + egui::vec2(8.0, 8.0);
         painter.galley(top_left, title, egui::Color32::WHITE);
+
+        header_rect
+    };
+
+    let draw_page_shell = |content_rect: egui::Rect, layer_t: f32, title_text: &str| {
+        let header_rect = draw_page_header(content_rect, layer_t, title_text);
+        let body_rect = egui::Rect::from_min_max(
+            egui::pos2(content_rect.min.x, header_rect.max.y + 28.0),
+            egui::pos2(content_rect.max.x, content_rect.max.y - 56.0),
+        );
+        draw_settings_page_body_container(painter, body_rect, layer_t);
 
         egui::Rect::from_min_max(
             egui::pos2(body_rect.min.x + 6.0, body_rect.min.y + 14.0),
@@ -372,12 +465,25 @@ pub fn draw_settings_page(
                     title_tag: Option<&str>,
                     title_tag_align_width: Option<f32>,
                     title: &str,
+                    use_inline_button_title: bool,
                     subtitle: Option<&str>,
                     subtitle_color: Option<egui::Color32>,
                     trailing: Option<&str>,
                     selected: bool,
                     show_focus_outline: bool,
                     layer_t: f32| {
+        let inline_button_title = if use_inline_button_title {
+            xbox_guide_icon.zip(playstation_home_icon).map(
+                |(xbox_guide_icon, playstation_home_icon)| InlineButtonTitle {
+                    prefix: language.background_home_wake_prefix_text(),
+                    suffix: language.background_home_wake_suffix_text(),
+                    left_icon: xbox_guide_icon,
+                    right_icon: playstation_home_icon,
+                },
+            )
+        } else {
+            None
+        };
         let row_top = rows_origin_y + index as f32 * row_spacing;
         let list_painter = painter.with_clip_rect(list_inner_rect);
         let row_side_inset = 6.0;
@@ -394,6 +500,7 @@ pub fn draw_settings_page(
             title_tag,
             title_tag_align_width,
             title,
+            inline_button_title.as_ref(),
             subtitle,
             subtitle_color,
             trailing,
@@ -432,6 +539,7 @@ pub fn draw_settings_page(
             None,
             None,
             language.system_text(),
+            false,
             None,
             None,
             None,
@@ -449,6 +557,7 @@ pub fn draw_settings_page(
             None,
             None,
             language.screen_text(),
+            false,
             None,
             None,
             None,
@@ -466,6 +575,7 @@ pub fn draw_settings_page(
             None,
             None,
             language.apps_text(),
+            false,
             None,
             None,
             None,
@@ -483,6 +593,7 @@ pub fn draw_settings_page(
             None,
             None,
             language.close_app_text(),
+            false,
             None,
             None,
             None,
@@ -519,16 +630,51 @@ pub fn draw_settings_page(
             _ => language.close_app_text(),
         };
         let page_title = format!("{} / {}", language.settings_text(), breadcrumb_section_name);
-        let submenu_list_inner_rect = draw_page_shell(submenu_content_rect, submenu_layer_t, &page_title);
-        let submenu_list_painter = painter.with_clip_rect(submenu_list_inner_rect);
         let submenu_row_spacing = 112.0;
         let submenu_row_height = 98.0;
         let enabled_subtitle_color = egui::Color32::from_rgba_unmultiplied(122, 214, 145, 255);
         match selected_section_index {
             0 => {
-                let system_rows_origin_y = submenu_list_inner_rect.min.y + 8.0;
+                let header_rect = draw_page_header(submenu_content_rect, submenu_layer_t, &page_title);
                 let system_row_spacing = submenu_row_height + 16.0;
-                let divider_padding = 18.0;
+                let section_gap = 28.0;
+                let initial_row_offset_y = 8.0;
+                let final_row_offset_y = 8.0;
+                let body_top_padding = 14.0;
+                let body_bottom_padding = 12.0;
+                let body_height = system_row_spacing * 2.0
+                    + submenu_row_height
+                    + initial_row_offset_y
+                    + final_row_offset_y
+                    + body_top_padding
+                    + body_bottom_padding;
+                let top_body_rect = egui::Rect::from_min_max(
+                    egui::pos2(submenu_content_rect.min.x, header_rect.max.y + 28.0),
+                    egui::pos2(
+                        submenu_content_rect.max.x,
+                        header_rect.max.y + 28.0 + body_height,
+                    ),
+                );
+                let lower_body_rect = egui::Rect::from_min_max(
+                    egui::pos2(submenu_content_rect.min.x, top_body_rect.max.y + section_gap),
+                    egui::pos2(
+                        submenu_content_rect.max.x,
+                        top_body_rect.max.y + section_gap + body_height,
+                    ),
+                );
+                draw_settings_page_body_container(painter, top_body_rect, submenu_layer_t);
+                draw_settings_page_body_container(painter, lower_body_rect, submenu_layer_t);
+                let top_list_inner_rect = egui::Rect::from_min_max(
+                    egui::pos2(top_body_rect.min.x + 6.0, top_body_rect.min.y + body_top_padding),
+                    egui::pos2(top_body_rect.max.x - 6.0, top_body_rect.max.y - body_bottom_padding),
+                );
+                let lower_list_inner_rect = egui::Rect::from_min_max(
+                    egui::pos2(lower_body_rect.min.x + 6.0, lower_body_rect.min.y + body_top_padding),
+                    egui::pos2(lower_body_rect.max.x - 6.0, lower_body_rect.max.y - body_bottom_padding),
+                );
+                let submenu_list_painter = painter.with_clip_rect(top_list_inner_rect.union(lower_list_inner_rect));
+                let system_rows_origin_y = top_list_inner_rect.min.y + initial_row_offset_y;
+                let lower_rows_origin_y = lower_list_inner_rect.min.y + initial_row_offset_y;
                 let detection_title_align_width = [GameSource::Steam, GameSource::Epic, GameSource::Xbox]
                     .into_iter()
                     .map(|source| {
@@ -541,7 +687,7 @@ pub fn draw_settings_page(
                     })
                     .fold(0.0, f32::max);
                 draw_row(
-                    submenu_list_inner_rect,
+                    top_list_inner_rect,
                     system_rows_origin_y,
                     system_row_spacing,
                     submenu_row_height,
@@ -550,6 +696,7 @@ pub fn draw_settings_page(
                     Some(GameSource::Steam.badge_label()),
                     Some(detection_title_align_width),
                     language.client_games_detection_text(),
+                    false,
                     Some(if detect_steam_games_enabled {
                         language.enabled_text()
                     } else {
@@ -567,7 +714,7 @@ pub fn draw_settings_page(
                 );
 
                 draw_row(
-                    submenu_list_inner_rect,
+                    top_list_inner_rect,
                     system_rows_origin_y,
                     system_row_spacing,
                     submenu_row_height,
@@ -576,6 +723,7 @@ pub fn draw_settings_page(
                     Some(GameSource::Epic.badge_label()),
                     Some(detection_title_align_width),
                     language.client_games_detection_text(),
+                    false,
                     Some(if detect_epic_games_enabled {
                         language.enabled_text()
                     } else {
@@ -593,7 +741,7 @@ pub fn draw_settings_page(
                 );
 
                 draw_row(
-                    submenu_list_inner_rect,
+                    top_list_inner_rect,
                     system_rows_origin_y,
                     system_row_spacing,
                     submenu_row_height,
@@ -602,6 +750,7 @@ pub fn draw_settings_page(
                     Some(GameSource::Xbox.badge_label()),
                     Some(detection_title_align_width),
                     language.client_games_detection_text(),
+                    false,
                     Some(if detect_xbox_games_enabled {
                         language.enabled_text()
                     } else {
@@ -618,26 +767,8 @@ pub fn draw_settings_page(
                     submenu_layer_t,
                 );
 
-                let top_section_end_y =
-                    system_rows_origin_y + system_row_spacing * 2.0 + submenu_row_height;
-                let divider_y = top_section_end_y + divider_padding;
-                let lower_rows_origin_y = divider_y + divider_padding;
-                painter.line_segment(
-                    [
-                        egui::pos2(submenu_list_inner_rect.min.x - 6.0, divider_y),
-                        egui::pos2(submenu_list_inner_rect.max.x + 6.0, divider_y),
-                    ],
-                    egui::Stroke::new(
-                        1.0,
-                        color_with_scaled_alpha(
-                            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 42),
-                            submenu_layer_t,
-                        ),
-                    ),
-                );
-
                 draw_row(
-                    submenu_list_inner_rect,
+                    lower_list_inner_rect,
                     lower_rows_origin_y,
                     system_row_spacing,
                     submenu_row_height,
@@ -645,13 +776,14 @@ pub fn draw_settings_page(
                     None,
                     None,
                     None,
-                    language.controller_vibration_feedback_text(),
-                    Some(if controller_vibration_enabled {
+                    "",
+                    true,
+                    Some(if background_home_wake_enabled {
                         language.enabled_text()
                     } else {
                         language.disabled_text()
                     }),
-                    if controller_vibration_enabled {
+                    if background_home_wake_enabled {
                         Some(enabled_subtitle_color)
                     } else {
                         None
@@ -663,7 +795,7 @@ pub fn draw_settings_page(
                 );
 
                 draw_row(
-                    submenu_list_inner_rect,
+                    lower_list_inner_rect,
                     lower_rows_origin_y,
                     system_row_spacing,
                     submenu_row_height,
@@ -671,7 +803,35 @@ pub fn draw_settings_page(
                     None,
                     None,
                     None,
+                    language.controller_vibration_feedback_text(),
+                    false,
+                    Some(if controller_vibration_enabled {
+                        language.enabled_text()
+                    } else {
+                        language.disabled_text()
+                    }),
+                    if controller_vibration_enabled {
+                        Some(enabled_subtitle_color)
+                    } else {
+                        None
+                    },
+                    None,
+                    selected_item_index == 4,
+                    true,
+                    submenu_layer_t,
+                );
+
+                draw_row(
+                    lower_list_inner_rect,
+                    lower_rows_origin_y,
+                    system_row_spacing,
+                    submenu_row_height,
+                    2,
+                    None,
+                    None,
+                    None,
                     language.launch_on_startup_text(),
+                    false,
                     Some(if launch_on_startup_enabled {
                         language.enabled_text()
                     } else {
@@ -683,12 +843,14 @@ pub fn draw_settings_page(
                         None
                     },
                     None,
-                    selected_item_index == 4,
+                    selected_item_index == 5,
                     true,
                     submenu_layer_t,
                 );
             }
             1 => {
+                let submenu_list_inner_rect = draw_page_shell(submenu_content_rect, submenu_layer_t, &page_title);
+                let submenu_list_painter = painter.with_clip_rect(submenu_list_inner_rect);
                 let header_rect = egui::Rect::from_min_max(
                     egui::pos2(submenu_list_inner_rect.min.x + 18.0, submenu_list_inner_rect.min.y + 8.0),
                     egui::pos2(submenu_list_inner_rect.max.x - 18.0, submenu_list_inner_rect.min.y + 96.0),
@@ -712,6 +874,7 @@ pub fn draw_settings_page(
                     None,
                     None,
                     &resolution_options.half_refresh.label,
+                    false,
                     None,
                     None,
                     None,
@@ -729,6 +892,7 @@ pub fn draw_settings_page(
                     None,
                     None,
                     &resolution_options.max_refresh.label,
+                    false,
                     None,
                     None,
                     None,
@@ -738,6 +902,8 @@ pub fn draw_settings_page(
                 );
             }
             _ => {
+                let submenu_list_inner_rect = draw_page_shell(submenu_content_rect, submenu_layer_t, &page_title);
+                let submenu_list_painter = painter.with_clip_rect(submenu_list_inner_rect);
                 let header_rect = egui::Rect::from_min_max(
                     egui::pos2(submenu_list_inner_rect.min.x + 18.0, submenu_list_inner_rect.min.y + 8.0),
                     egui::pos2(submenu_list_inner_rect.max.x - 18.0, submenu_list_inner_rect.min.y + 96.0),
@@ -761,6 +927,7 @@ pub fn draw_settings_page(
                     None,
                     None,
                     language.dlss_swapper_text(),
+                    false,
                     None,
                     None,
                     None,
@@ -778,6 +945,7 @@ pub fn draw_settings_page(
                     None,
                     None,
                     language.nvidia_app_text(),
+                    false,
                     None,
                     None,
                     None,
