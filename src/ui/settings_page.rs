@@ -22,6 +22,30 @@ struct SettingsLayerState {
     submenu_motion_t: f32,
 }
 
+const SETTINGS_BACKDROP_PHASE: f32 = 0.18;
+
+fn should_force_top_level_entry_layer(
+    show_settings_page: bool,
+    settings_in_submenu: bool,
+    submenu_t: f32,
+    content_anim_t: f32,
+) -> bool {
+    show_settings_page
+        && !settings_in_submenu
+        && submenu_t <= 0.001
+        && content_anim_t > 0.001
+        && content_anim_t < 1.0
+}
+
+fn staged_settings_entry_progress(settings_anim: f32) -> (f32, f32) {
+    let settings_anim = settings_anim.clamp(0.0, 1.0);
+    let backdrop_t = smoothstep01((settings_anim / SETTINGS_BACKDROP_PHASE).clamp(0.0, 1.0));
+    let content_t = ((settings_anim - SETTINGS_BACKDROP_PHASE) / (1.0 - SETTINGS_BACKDROP_PHASE))
+        .clamp(0.0, 1.0);
+
+    (backdrop_t, content_t)
+}
+
 fn draw_settings_page_body_container(
     painter: &egui::Painter,
     rect: egui::Rect,
@@ -58,18 +82,18 @@ fn settings_layer_state(
         let top_exit_t = (submenu_t * 2.0).clamp(0.0, 1.0);
         let submenu_enter_t = ((submenu_t - 0.5) * 2.0).clamp(0.0, 1.0);
         (
-            settings_t * (1.0 - top_exit_t),
+            if submenu_t <= 0.5 { settings_t } else { 0.0 },
             top_exit_t,
-            settings_t * submenu_enter_t,
+            if submenu_t > 0.5 { settings_t } else { 0.0 },
             submenu_enter_t,
         )
     } else {
         let top_enter_t = (1.0 - submenu_t * 2.0).clamp(0.0, 1.0);
         let submenu_exit_t = ((submenu_t - 0.5) * 2.0).clamp(0.0, 1.0);
         (
-            settings_t * top_enter_t,
+            if submenu_t < 0.5 { settings_t } else { 0.0 },
             1.0 - top_enter_t,
-            settings_t * submenu_exit_t,
+            if submenu_t >= 0.5 { settings_t } else { 0.0 },
             submenu_exit_t,
         )
     };
@@ -402,21 +426,31 @@ pub fn draw_settings_page(
     resolution_options: &ResolutionOptions,
     selected_section_index: usize,
     selected_item_index: usize,
+    show_settings_page: bool,
     settings_in_submenu: bool,
     settings_anim: f32,
     submenu_anim: f32,
     settings_select_anim: f32,
 ) {
-    let settings_t = smoothstep01(settings_anim);
-    if settings_t <= 0.001 {
+    let (backdrop_t, content_anim_t) = staged_settings_entry_progress(settings_anim);
+    if backdrop_t <= 0.001 {
         return;
     }
+
+    let settings_t = smoothstep01(content_anim_t);
 
     let scale_t = lerp_f32(0.94, 1.0, settings_t);
 
     let panel_rect = ui.available_rect_before_wrap();
     let painter = ui.painter();
-    painter.rect_filled(panel_rect, egui::CornerRadius::ZERO, egui::Color32::from_rgb(18, 18, 18));
+    painter.rect_filled(
+        panel_rect,
+        egui::CornerRadius::ZERO,
+        color_with_scaled_alpha(
+            egui::Color32::from_rgba_unmultiplied(18, 18, 18, 255),
+            backdrop_t,
+        ),
+    );
 
     let base_content_rect = panel_rect.shrink2(egui::vec2(52.0, 52.0));
     let page_rect = egui::Rect::from_center_size(
@@ -515,8 +549,17 @@ pub fn draw_settings_page(
         );
     };
 
-    let layer_state = settings_layer_state(settings_t, submenu_t, settings_in_submenu);
-    let top_layer_t = layer_state.top_layer_t;
+    let layer_state = settings_layer_state(content_anim_t, submenu_t, settings_in_submenu);
+    let top_layer_t = if should_force_top_level_entry_layer(
+        show_settings_page,
+        settings_in_submenu,
+        submenu_t,
+        content_anim_t,
+    ) {
+        1.0
+    } else {
+        layer_state.top_layer_t
+    };
     let submenu_layer_t = layer_state.submenu_layer_t;
 
     if top_layer_t > 0.001 {
@@ -990,7 +1033,34 @@ pub fn draw_settings_page(
 
 #[cfg(test)]
 mod tests {
-    use super::settings_layer_state;
+    use super::{
+        settings_layer_state, should_force_top_level_entry_layer, staged_settings_entry_progress,
+        SETTINGS_BACKDROP_PHASE,
+    };
+
+    #[test]
+    fn top_level_entry_force_only_applies_to_initial_open() {
+        assert!(should_force_top_level_entry_layer(true, false, 0.0, 0.3));
+        assert!(!should_force_top_level_entry_layer(true, false, 0.4, 0.3));
+        assert!(!should_force_top_level_entry_layer(true, true, 0.0, 0.3));
+        assert!(!should_force_top_level_entry_layer(false, false, 0.0, 0.3));
+    }
+
+    #[test]
+    fn settings_entry_uses_backdrop_before_content() {
+        let (backdrop_t, content_t) = staged_settings_entry_progress(SETTINGS_BACKDROP_PHASE * 0.5);
+
+        assert!(backdrop_t > 0.0);
+        assert!(content_t.abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn settings_entry_starts_content_after_backdrop_phase() {
+        let (backdrop_t, content_t) = staged_settings_entry_progress(SETTINGS_BACKDROP_PHASE + 0.1);
+
+        assert!((backdrop_t - 1.0).abs() < f32::EPSILON);
+        assert!(content_t > 0.0);
+    }
 
     #[test]
     fn returning_from_submenu_hides_top_level_until_exit_finishes() {
@@ -999,7 +1069,7 @@ mod tests {
         assert!(layer_state.top_layer_t.abs() < f32::EPSILON);
         assert!((layer_state.top_motion_t - 1.0).abs() < f32::EPSILON);
         assert!((layer_state.submenu_motion_t - 0.2).abs() < 1e-6);
-        assert!((layer_state.submenu_layer_t - 0.2).abs() < 1e-6);
+        assert!((layer_state.submenu_layer_t - 1.0).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -1015,7 +1085,7 @@ mod tests {
     fn entering_submenu_hides_submenu_until_top_level_exits() {
         let layer_state = settings_layer_state(1.0, 0.4, true);
 
-        assert!((layer_state.top_layer_t - 0.2).abs() < 1e-6);
+        assert!((layer_state.top_layer_t - 1.0).abs() < f32::EPSILON);
         assert!((layer_state.top_motion_t - 0.8).abs() < 1e-6);
         assert!(layer_state.submenu_motion_t.abs() < f32::EPSILON);
         assert!(layer_state.submenu_layer_t.abs() < f32::EPSILON);
@@ -1028,6 +1098,22 @@ mod tests {
         assert!(layer_state.top_layer_t.abs() < f32::EPSILON);
         assert!((layer_state.top_motion_t - 1.0).abs() < f32::EPSILON);
         assert!((layer_state.submenu_motion_t - 0.2).abs() < 1e-6);
-        assert!((layer_state.submenu_layer_t - 0.2).abs() < 1e-6);
+        assert!((layer_state.submenu_layer_t - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn entering_submenu_midpoint_keeps_top_level_visible_without_crossfade() {
+        let layer_state = settings_layer_state(1.0, 0.5, true);
+
+        assert!((layer_state.top_layer_t - 1.0).abs() < f32::EPSILON);
+        assert!(layer_state.submenu_layer_t.abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn returning_from_submenu_midpoint_keeps_submenu_visible_without_crossfade() {
+        let layer_state = settings_layer_state(1.0, 0.5, false);
+
+        assert!(layer_state.top_layer_t.abs() < f32::EPSILON);
+        assert!((layer_state.submenu_layer_t - 1.0).abs() < f32::EPSILON);
     }
 }

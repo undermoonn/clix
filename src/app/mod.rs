@@ -839,6 +839,7 @@ impl eframe::App for LauncherApp {
                     &self.resolution_options,
                     self.page.settings_section_index(),
                     self.page.settings_selected_item_index(),
+                    self.page.show_settings_page(),
                     self.page.settings_in_submenu(),
                     self.page.settings_page_anim(),
                     self.page.settings_submenu_anim(),

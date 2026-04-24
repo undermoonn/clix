@@ -12,6 +12,7 @@ const SETTINGS_PAGE_ENTER_ANIM_SPEED: f32 = 5.0;
 const SETTINGS_PAGE_EXIT_ANIM_SPEED: f32 = 8.0;
 const SETTINGS_SUBMENU_ENTER_ANIM_SPEED: f32 = 4.0;
 const SETTINGS_SUBMENU_EXIT_ANIM_SPEED: f32 = 4.0;
+const SETTINGS_PAGE_ENTER_INITIAL_PROGRESS: f32 = 0.18;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResolutionPreset {
@@ -761,7 +762,8 @@ impl PageState {
         self.close_achievement_panel();
         self.select_home_settings_button();
         self.show_settings_page = true;
-        self.settings_page_anim.set_immediate(0.0);
+        self.settings_page_anim
+            .set_immediate(SETTINGS_PAGE_ENTER_INITIAL_PROGRESS);
         self.settings_submenu_anim.set_immediate(0.0);
         self.reset_settings_navigation();
     }
@@ -842,6 +844,7 @@ mod tests {
 
     use super::{
         PageState, PowerAction, ResolutionPreset, SETTINGS_PAGE_ENTER_ANIM_SPEED,
+        SETTINGS_PAGE_ENTER_INITIAL_PROGRESS,
         SETTINGS_SUBMENU_ENTER_ANIM_SPEED,
     };
     use crate::power_menu_structure::PowerMenuLayout;
@@ -1376,8 +1379,19 @@ mod tests {
         tick_animation_frame(&mut page, &ctx, &mut now);
         tick_animation_frame(&mut page, &ctx, &mut now);
 
-        let expected = 1.0 - (-SETTINGS_PAGE_ENTER_ANIM_SPEED / 60.0).exp();
+        let expected = 1.0
+            - (1.0 - SETTINGS_PAGE_ENTER_INITIAL_PROGRESS)
+                * (-(SETTINGS_PAGE_ENTER_ANIM_SPEED * 1.5) / 60.0).exp();
         assert!((page.settings_page_anim() - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn opening_settings_page_seeds_backdrop_phase_immediately() {
+        let mut page = PageState::new();
+
+        open_settings_page(&mut page);
+
+        assert_eq!(page.settings_page_anim(), SETTINGS_PAGE_ENTER_INITIAL_PROGRESS);
     }
 
     #[test]
