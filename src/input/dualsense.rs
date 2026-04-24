@@ -1,9 +1,11 @@
 #[cfg(target_os = "windows")]
-use std::time::Instant;
-#[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "windows")]
+use std::sync::mpsc::{self, Sender};
+#[cfg(target_os = "windows")]
 use std::sync::{Mutex, Once, OnceLock};
+#[cfg(target_os = "windows")]
+use std::time::{Duration, Instant};
 
 #[cfg(target_os = "windows")]
 use crc32fast::Hasher;
@@ -59,7 +61,9 @@ static WAKE_PENDING: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "windows")]
 static SNAPSHOT: OnceLock<Mutex<DualSenseSnapshot>> = OnceLock::new();
 #[cfg(target_os = "windows")]
-static RUMBLE: OnceLock<Mutex<Option<DualSenseRumble>>> = OnceLock::new();
+static DEVICE_PRESENT: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "windows")]
+static RUMBLE_TX: OnceLock<Mutex<Option<Sender<RumbleCommand>>>> = OnceLock::new();
 
 #[cfg(target_os = "windows")]
 #[derive(Clone, Copy, Default)]
@@ -138,17 +142,10 @@ pub(super) fn remap_state() -> Option<(Buttons, i32)> {
 
 #[cfg(target_os = "windows")]
 pub(super) fn start_selection_rumble() -> bool {
-    let settings = selection_rumble_settings();
-    let mut rumble = rumble_state()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-    if start_rumble_with_state(&mut rumble, settings) {
-        return true;
+    if !DEVICE_PRESENT.load(Ordering::Acquire) {
+        return false;
     }
-
-    *rumble = None;
-    start_rumble_with_state(&mut rumble, settings)
+    send_rumble_command(RumbleCommand::Start(selection_rumble_settings()))
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -158,17 +155,8 @@ pub(super) fn start_selection_rumble() -> bool {
 
 #[cfg(target_os = "windows")]
 pub(super) fn tick_rumble() {
-    let should_stop = rumble_state()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .as_ref()
-        .and_then(|rumble| rumble.active_until)
-        .map(|active_until| Instant::now() >= active_until)
-        .unwrap_or(false);
-
-    if should_stop {
-        stop_rumble();
-    }
+    // No-op: the rumble worker manages its own auto-stop deadline. Kept for
+    // API symmetry with the xinput backend.
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -176,19 +164,7 @@ pub(super) fn tick_rumble() {}
 
 #[cfg(target_os = "windows")]
 pub(super) fn stop_rumble() {
-    let mut rumble = rumble_state()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(state) = rumble.as_mut() else {
-        return;
-    };
-
-    if state.connection.write_rumble(0, 0).is_err() {
-        *rumble = None;
-        return;
-    }
-
-    state.active_until = None;
+    let _ = send_rumble_command(RumbleCommand::Stop);
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -200,38 +176,98 @@ fn snapshot_state() -> &'static Mutex<DualSenseSnapshot> {
 }
 
 #[cfg(target_os = "windows")]
-fn rumble_state() -> &'static Mutex<Option<DualSenseRumble>> {
-    RUMBLE.get_or_init(|| Mutex::new(None))
+fn rumble_tx_slot() -> &'static Mutex<Option<Sender<RumbleCommand>>> {
+    RUMBLE_TX.get_or_init(|| Mutex::new(None))
 }
 
 #[cfg(target_os = "windows")]
-fn start_rumble_with_state(
-    rumble: &mut Option<DualSenseRumble>,
-    settings: RumbleSettings,
-) -> bool {
-    let state = match rumble.as_mut() {
-        Some(state) => state,
-        None => {
-            *rumble = DualSenseRumble::open();
-            let Some(state) = rumble.as_mut() else {
-                return false;
-            };
-            state
-        }
-    };
+fn send_rumble_command(command: RumbleCommand) -> bool {
+    let mut slot = rumble_tx_slot()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    if state
-        .connection
-        .write_rumble(settings.weak_motor, settings.strong_motor)
-        .is_err()
-    {
-        return false;
+    if let Some(tx) = slot.as_ref() {
+        match tx.send(command) {
+            Ok(()) => return true,
+            Err(mpsc::SendError(returned)) => {
+                // Worker died; fall through to respawn it and resend.
+                *slot = None;
+                let (tx, rx) = mpsc::channel();
+                if tx.send(returned).is_err() {
+                    return false;
+                }
+                std::thread::spawn(move || run_rumble_worker(rx));
+                *slot = Some(tx);
+                return true;
+            }
+        }
     }
 
-    state.active_until = Some(
-        Instant::now() + std::time::Duration::from_millis(settings.duration_ms as u64),
-    );
+    let (tx, rx) = mpsc::channel();
+    if tx.send(command).is_err() {
+        return false;
+    }
+    std::thread::spawn(move || run_rumble_worker(rx));
+    *slot = Some(tx);
     true
+}
+
+#[cfg(target_os = "windows")]
+fn run_rumble_worker(rx: mpsc::Receiver<RumbleCommand>) {
+    let mut device: Option<ConnectedDualSense> = None;
+    let mut deadline: Option<Instant> = None;
+
+    loop {
+        let recv_result = match deadline {
+            Some(at) => {
+                let now = Instant::now();
+                let remaining = at.saturating_duration_since(now);
+                rx.recv_timeout(remaining)
+            }
+            None => rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected),
+        };
+
+        match recv_result {
+            Ok(RumbleCommand::Start(settings)) => {
+                if device.is_none() {
+                    device = ConnectedDualSense::open();
+                }
+                if let Some(connection) = device.as_mut() {
+                    if connection
+                        .write_rumble(settings.weak_motor, settings.strong_motor)
+                        .is_err()
+                    {
+                        device = None;
+                        deadline = None;
+                        continue;
+                    }
+                    deadline = Some(
+                        Instant::now()
+                            + Duration::from_millis(settings.duration_ms as u64),
+                    );
+                } else {
+                    deadline = None;
+                }
+            }
+            Ok(RumbleCommand::Stop) => {
+                if let Some(connection) = device.as_mut() {
+                    if connection.write_rumble(0, 0).is_err() {
+                        device = None;
+                    }
+                }
+                deadline = None;
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if let Some(connection) = device.as_mut() {
+                    if connection.write_rumble(0, 0).is_err() {
+                        device = None;
+                    }
+                }
+                deadline = None;
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => return,
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -251,6 +287,7 @@ fn run_dualsense_watcher(ctx: egui::Context) {
             connection = ConnectedDualSense::open();
 
             if connection.is_none() {
+                DEVICE_PRESENT.store(false, Ordering::Release);
                 if previous.has_input_activity {
                     previous = DualSenseSnapshot::default();
                     store_snapshot(previous);
@@ -259,6 +296,7 @@ fn run_dualsense_watcher(ctx: egui::Context) {
                 std::thread::sleep(std::time::Duration::from_millis(500));
                 continue;
             }
+            DEVICE_PRESENT.store(true, Ordering::Release);
         }
 
         let result = connection.as_mut().unwrap().read_snapshot();
@@ -290,6 +328,7 @@ fn run_dualsense_watcher(ctx: egui::Context) {
                 previous = DualSenseSnapshot::default();
                 store_snapshot(previous);
                 connection = None;
+                DEVICE_PRESENT.store(false, Ordering::Release);
                 std::thread::sleep(std::time::Duration::from_millis(250));
             }
         }
@@ -304,9 +343,9 @@ struct ConnectedDualSense {
 }
 
 #[cfg(target_os = "windows")]
-struct DualSenseRumble {
-    connection: ConnectedDualSense,
-    active_until: Option<Instant>,
+enum RumbleCommand {
+    Start(RumbleSettings),
+    Stop,
 }
 
 #[cfg(target_os = "windows")]
@@ -373,16 +412,6 @@ impl ConnectedDualSense {
 
         let _ = self.device.write(&bytes)?;
         Ok(())
-    }
-}
-
-#[cfg(target_os = "windows")]
-impl DualSenseRumble {
-    fn open() -> Option<Self> {
-        Some(Self {
-            connection: ConnectedDualSense::open()?,
-            active_until: None,
-        })
     }
 }
 
