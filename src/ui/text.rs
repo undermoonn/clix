@@ -79,6 +79,11 @@ pub(crate) fn layout_main_clock(painter: &egui::Painter, wake_t: f32) -> Arc<egu
     )
 }
 
+pub(crate) fn main_clock_right_edge(anchor_rect: egui::Rect) -> f32 {
+    let margin_x = anchor_rect.width() * 0.042;
+    anchor_rect.max.x - margin_x
+}
+
 pub(crate) fn draw_main_clock(painter: &egui::Painter, time_pos: egui::Pos2, wake_t: f32) {
     if wake_t <= 0.001 {
         return;

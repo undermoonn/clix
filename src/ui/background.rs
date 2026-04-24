@@ -3,7 +3,7 @@ use eframe::egui;
 use super::anim::{lerp_f32, smoothstep01};
 use super::text::{
     color_with_scaled_alpha, corner_radius, draw_main_clock, layout_main_clock, main_clock_color,
-    scale_alpha,
+    main_clock_right_edge, scale_alpha,
 };
 
 fn draw_top_right_vignette(
@@ -136,10 +136,9 @@ pub fn draw_background(
         }
 
         let clock_galley = layout_main_clock(&bg_painter, wake_t);
-        let margin_x = clock_anchor_rect.width() * 0.042;
         let margin_y = hero_rect.height() * 0.075;
         let clock_pos = egui::pos2(
-            clock_anchor_rect.max.x - margin_x - clock_galley.size().x,
+            main_clock_right_edge(clock_anchor_rect) - clock_galley.size().x,
             hero_rect.min.y + margin_y,
         );
 

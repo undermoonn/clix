@@ -6,7 +6,7 @@ use crate::i18n::AppLanguage;
 
 use super::hint_icons::HintIcons;
 use super::anim::{lerp_f32, smoothstep01};
-use super::text::color_with_scaled_alpha;
+use super::text::{color_with_scaled_alpha, main_clock_right_edge};
 
 pub fn draw_hint_bar(
     ui: &mut egui::Ui,
@@ -37,6 +37,10 @@ pub fn draw_hint_bar(
     let group_gap = 30.0_f32;
     let row_h = action_icon_h;
     let hint_y = padded_rect.max.y - 10.0 + lerp_f32(24.0, 0.0, wake_t);
+    let clock_anchor_rect = egui::Rect::from_min_size(
+        panel_rect.min,
+        egui::vec2(panel_rect.width(), panel_rect.width() * (1240.0 / 3840.0)),
+    );
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
 
     let painter = ui.painter();
@@ -131,7 +135,7 @@ pub fn draw_hint_bar(
         );
     };
     let group_width = |galley: &Arc<egui::Galley>| action_icon_h + 6.0 + galley.size().x;
-    let mut next_group_x = padded_rect.max.x;
+    let mut next_group_x = main_clock_right_edge(clock_anchor_rect);
     let mut reserve_group = |galley: &Arc<egui::Galley>| {
         let x = next_group_x - group_width(galley);
         next_group_x = x - group_gap;

@@ -6,7 +6,7 @@ use crate::i18n::AppLanguage;
 
 use super::anim::{lerp_f32, smoothstep01};
 use super::hint_icons::HintIcons;
-use super::text::{color_with_scaled_alpha, corner_radius, layout_main_clock};
+use super::text::{color_with_scaled_alpha, corner_radius, layout_main_clock, main_clock_right_edge};
 
 const POWER_MENU_CORNER_RADIUS: f32 = 16.0;
 const POWER_MENU_SELECTION_CORNER_RADIUS: f32 = 12.0;
@@ -66,10 +66,9 @@ pub fn draw_power_menu(
         panel_rect.min,
         egui::vec2(panel_rect.width(), panel_rect.width() * (1240.0 / 3840.0)),
     );
-    let clock_margin_x = clock_anchor_rect.width() * 0.042;
     let clock_margin_y = clock_anchor_rect.height() * 0.075;
     let clock_pos = egui::pos2(
-        clock_anchor_rect.max.x - clock_margin_x - clock_galley.size().x,
+        main_clock_right_edge(clock_anchor_rect) - clock_galley.size().x,
         clock_anchor_rect.min.y + clock_margin_y,
     );
     let top_icon_size = clock_galley.size().y * 0.63;
