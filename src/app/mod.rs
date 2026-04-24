@@ -81,6 +81,8 @@ pub struct LauncherApp {
     pending_send_to_background: bool,
     send_to_background_after_frame: bool,
     send_to_background_commit_pending: bool,
+    last_pointer_pos: Option<egui::Pos2>,
+    last_pointer_activity: Option<Instant>,
 }
 
 impl LauncherApp {
@@ -144,6 +146,8 @@ impl LauncherApp {
             pending_send_to_background: false,
             send_to_background_after_frame: false,
             send_to_background_commit_pending: false,
+            last_pointer_pos: None,
+            last_pointer_activity: None,
         };
         app.refresh_selected_install_size(ctx);
         app
@@ -425,6 +429,54 @@ impl LauncherApp {
         }
     }
 
+    fn update_cursor_visibility(&mut self, ctx: &egui::Context) {
+        const HIDE_AFTER: Duration = Duration::from_secs(1);
+
+        let now = Instant::now();
+        let activity = ctx.input(|i| {
+            let mut active = false;
+            let pos = i.pointer.latest_pos();
+            if let Some(pos) = pos {
+                if self.last_pointer_pos.map_or(true, |prev| prev != pos) {
+                    active = true;
+                }
+                self.last_pointer_pos = Some(pos);
+            }
+            if !active {
+                for event in &i.events {
+                    match event {
+                        egui::Event::PointerMoved(_)
+                        | egui::Event::PointerButton { .. }
+                        | egui::Event::MouseWheel { .. } => {
+                            active = true;
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            active
+        });
+
+        if activity {
+            self.last_pointer_activity = Some(now);
+        }
+
+        let visible = match self.last_pointer_activity {
+            Some(t) => now.duration_since(t) < HIDE_AFTER,
+            None => false,
+        };
+
+        if !visible {
+            ctx.output_mut(|output| output.cursor_icon = egui::CursorIcon::None);
+        } else if let Some(t) = self.last_pointer_activity {
+            let elapsed = now.duration_since(t);
+            if elapsed < HIDE_AFTER {
+                ctx.request_repaint_after(HIDE_AFTER - elapsed);
+            }
+        }
+    }
+
     fn apply_power_action(
         &mut self,
         action: PowerAction,
@@ -455,7 +507,7 @@ impl LauncherApp {
 impl eframe::App for LauncherApp {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        ctx.output_mut(|output| output.cursor_icon = egui::CursorIcon::None);
+        self.update_cursor_visibility(&ctx);
 
         if self.send_to_background_commit_pending {
             self.send_to_background_commit_pending = false;
