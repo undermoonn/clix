@@ -70,6 +70,9 @@ pub struct PageActionResult {
     pub refresh_achievements: bool,
     pub toggle_launch_on_startup: bool,
     pub toggle_controller_vibration_feedback: bool,
+    pub toggle_detect_steam_games: bool,
+    pub toggle_detect_epic_games: bool,
+    pub toggle_detect_xbox_games: bool,
     pub launch_selected: bool,
     pub launch_external_app: Option<ExternalAppKind>,
     pub selected_changed: bool,
@@ -347,6 +350,9 @@ impl PageState {
             refresh_achievements: false,
             toggle_launch_on_startup: false,
             toggle_controller_vibration_feedback: false,
+            toggle_detect_steam_games: false,
+            toggle_detect_epic_games: false,
+            toggle_detect_xbox_games: false,
             launch_selected: false,
             launch_external_app: None,
             selected_changed: false,
@@ -423,7 +429,10 @@ impl PageState {
                         match self.settings_section {
                             SettingsSection::System => {
                                 match self.settings_system_selected {
-                                    0 => result.toggle_controller_vibration_feedback = true,
+                                    0 => result.toggle_detect_steam_games = true,
+                                    1 => result.toggle_detect_epic_games = true,
+                                    2 => result.toggle_detect_xbox_games = true,
+                                    3 => result.toggle_controller_vibration_feedback = true,
                                     _ => result.toggle_launch_on_startup = true,
                                 }
                             }
@@ -807,7 +816,7 @@ impl PageState {
             SettingsSection::CloseApp => return,
         };
         let max_index = match self.settings_section {
-            SettingsSection::System => 1,
+            SettingsSection::System => 4,
             SettingsSection::Screen => 1,
             SettingsSection::Apps => 1,
             SettingsSection::CloseApp => 0,
@@ -1191,11 +1200,58 @@ mod tests {
     }
 
     #[test]
-    fn launch_in_settings_page_toggles_controller_vibration_without_closing_page() {
+    fn launch_in_settings_page_toggles_steam_game_detection_without_closing_page() {
         let mut page = PageState::new();
 
         open_settings_page(&mut page);
         let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert!(!result.toggle_launch_on_startup);
+        assert!(result.toggle_detect_steam_games);
+        assert!(page.show_settings_page());
+    }
+
+    #[test]
+    fn launch_on_second_system_setting_toggles_epic_game_detection() {
+        let mut page = PageState::new();
+
+        open_settings_page(&mut page);
+        let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert!(!result.toggle_detect_steam_games);
+        assert!(result.toggle_detect_epic_games);
+        assert!(!result.toggle_detect_xbox_games);
+        assert!(page.show_settings_page());
+    }
+
+    #[test]
+    fn launch_on_third_system_setting_toggles_xbox_game_detection() {
+        let mut page = PageState::new();
+
+        open_settings_page(&mut page);
+        let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert!(!result.toggle_detect_steam_games);
+        assert!(!result.toggle_detect_epic_games);
+        assert!(result.toggle_detect_xbox_games);
+        assert!(page.show_settings_page());
+    }
+
+    #[test]
+    fn launch_on_fourth_system_setting_toggles_controller_vibration() {
+        let mut page = PageState::new();
+
+        open_settings_page(&mut page);
+        let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
 
         assert!(!result.toggle_launch_on_startup);
@@ -1204,11 +1260,14 @@ mod tests {
     }
 
     #[test]
-    fn launch_on_second_system_setting_toggles_launch_on_startup() {
+    fn launch_on_fifth_system_setting_toggles_launch_on_startup() {
         let mut page = PageState::new();
 
         open_settings_page(&mut page);
         let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
 

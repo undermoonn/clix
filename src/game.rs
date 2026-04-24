@@ -3,6 +3,23 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GameScanOptions {
+    pub detect_steam_games: bool,
+    pub detect_epic_games: bool,
+    pub detect_xbox_games: bool,
+}
+
+impl Default for GameScanOptions {
+    fn default() -> Self {
+        Self {
+            detect_steam_games: true,
+            detect_epic_games: false,
+            detect_xbox_games: false,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum GameSource {
     #[default]
@@ -81,19 +98,25 @@ pub fn sort_games_by_last_played(games: &mut [Game]) {
     });
 }
 
-pub fn scan_installed_games(steam_paths: &[PathBuf]) -> Vec<Game> {
+pub fn scan_installed_games(steam_paths: &[PathBuf], options: &GameScanOptions) -> Vec<Game> {
     let mut games = Vec::new();
-    games.extend(scan_platform_games("steam", || {
-        crate::steam::scan_games_with_paths(steam_paths)
-    }));
-    games.extend(scan_platform_games(
-        "epic",
-        crate::game_platforms::epic::scan_games,
-    ));
-    games.extend(scan_platform_games(
-        "xbox",
-        crate::game_platforms::xbox::scan_games,
-    ));
+    if options.detect_steam_games {
+        games.extend(scan_platform_games("steam", || {
+            crate::steam::scan_games_with_paths(steam_paths)
+        }));
+    }
+    if options.detect_epic_games {
+        games.extend(scan_platform_games(
+            "epic",
+            crate::game_platforms::epic::scan_games,
+        ));
+    }
+    if options.detect_xbox_games {
+        games.extend(scan_platform_games(
+            "xbox",
+            crate::game_platforms::xbox::scan_games,
+        ));
+    }
     crate::game_last_played::merge_into_games(&mut games);
     sort_games_by_last_played(&mut games);
     games

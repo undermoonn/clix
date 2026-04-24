@@ -68,6 +68,7 @@ pub struct LauncherApp {
     dlss: DlssState,
     runtime: RuntimeState,
     resolution_options: ResolutionOptions,
+    game_scan_options: game::GameScanOptions,
     launch_on_startup_enabled: bool,
     controller_vibration_enabled: bool,
     power_menu_external_apps: Vec<ExternalApp>,
@@ -85,7 +86,8 @@ impl LauncherApp {
         let _ = ctx;
 
         let steam_paths = steam::find_steam_paths();
-        let games = game::scan_installed_games(&steam_paths);
+    let game_scan_options = crate::config::load_game_scan_options();
+    let games = game::scan_installed_games(&steam_paths, &game_scan_options);
         let launch_on_startup_enabled = startup::is_enabled();
         let power_menu_external_apps = external_apps::detect_installed();
         let hint_icon_theme = crate::config::load_hint_icon_theme();
@@ -120,6 +122,7 @@ impl LauncherApp {
             dlss: DlssState::new(),
             runtime: RuntimeState::new(),
             resolution_options: display_mode::detect_resolution_options(),
+            game_scan_options,
             launch_on_startup_enabled,
             controller_vibration_enabled,
             power_menu_external_apps,
@@ -152,6 +155,41 @@ impl LauncherApp {
         self.input.set_selection_vibration_enabled(enabled);
         crate::config::store_controller_vibration_enabled(enabled);
         ctx.request_repaint();
+    }
+
+    fn set_game_scan_options(&mut self, options: game::GameScanOptions, ctx: &egui::Context) {
+        if self.game_scan_options == options {
+            return;
+        }
+
+        self.game_scan_options = options;
+        crate::config::store_game_scan_options(options);
+        self.refresh_game_list(ctx);
+        ctx.request_repaint();
+    }
+
+    fn refresh_game_list(&mut self, ctx: &egui::Context) {
+        let previous_selected = self.page.selected();
+        let selected_key = self.games.get(previous_selected).map(Game::persistent_key);
+
+        self.games = game::scan_installed_games(&self.steam_paths, &self.game_scan_options);
+        self.running_games.clear();
+        self.launch_state = None;
+        self.pending_promotion = None;
+
+        if let Some(index) = selected_key
+            .as_ref()
+            .and_then(|key| self.games.iter().position(|game| game.persistent_key() == *key))
+        {
+            self.page.relocate_selection(index);
+        } else if !self.games.is_empty() {
+            self.page
+                .relocate_selection(previous_selected.min(self.games.len() - 1));
+        }
+
+        self.refresh_selected_playtime(ctx);
+        self.refresh_selected_install_size(ctx);
+        self.refresh_selected_dlss(ctx);
     }
 
     fn can_open_achievement_panel_for_selected(&self) -> bool {
@@ -552,6 +590,21 @@ impl eframe::App for LauncherApp {
                 if result.toggle_controller_vibration_feedback {
                     self.set_controller_vibration_enabled(!self.controller_vibration_enabled, &ctx);
                 }
+                if result.toggle_detect_steam_games {
+                    let mut options = self.game_scan_options;
+                    options.detect_steam_games = !options.detect_steam_games;
+                    self.set_game_scan_options(options, &ctx);
+                }
+                if result.toggle_detect_epic_games {
+                    let mut options = self.game_scan_options;
+                    options.detect_epic_games = !options.detect_epic_games;
+                    self.set_game_scan_options(options, &ctx);
+                }
+                if result.toggle_detect_xbox_games {
+                    let mut options = self.game_scan_options;
+                    options.detect_xbox_games = !options.detect_xbox_games;
+                    self.set_game_scan_options(options, &ctx);
+                }
                 if achievement_selection_changed {
                     self.input.pulse_selection_change();
                 }
@@ -735,6 +788,9 @@ impl eframe::App for LauncherApp {
                     self.settings_exit_icon.as_ref(),
                     self.launch_on_startup_enabled,
                     self.controller_vibration_enabled,
+                    self.game_scan_options.detect_steam_games,
+                    self.game_scan_options.detect_epic_games,
+                    self.game_scan_options.detect_xbox_games,
                     &self.resolution_options,
                     self.page.settings_section_index(),
                     self.page.settings_selected_item_index(),

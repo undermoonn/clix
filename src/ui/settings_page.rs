@@ -1,9 +1,11 @@
 use eframe::egui;
 
+use crate::game::GameSource;
 use crate::i18n::AppLanguage;
 use crate::system::display_mode::ResolutionOptions;
 
 use super::anim::{lerp_f32, smoothstep01};
+use super::header::{draw_selected_game_text_badge, measure_selected_game_text_badge};
 use super::text::{color_with_scaled_alpha, corner_radius};
 
 struct SettingsLayerState {
@@ -50,6 +52,8 @@ fn draw_settings_list_row(
     painter: &egui::Painter,
     rect: egui::Rect,
     leading_icon: Option<&egui::TextureHandle>,
+    title_tag: Option<&str>,
+    title_tag_align_width: Option<f32>,
     title: &str,
     subtitle: Option<&str>,
     subtitle_color: Option<egui::Color32>,
@@ -200,11 +204,19 @@ fn draw_settings_list_row(
         title_height
     };
     let title_y = content_rect.center().y - text_block_height * 0.5;
-    painter.galley(
-        egui::pos2(text_start_x, title_y),
-        title_galley,
-        egui::Color32::WHITE,
-    );
+    let mut title_x = text_start_x;
+    if let Some(title_tag) = title_tag {
+        let title_tag_gap = 16.0;
+        let badge_size = draw_selected_game_text_badge(
+            painter,
+            title_tag,
+            egui::pos2(text_start_x, title_y),
+            title_galley.size(),
+            settings_t,
+        );
+        title_x += title_tag_align_width.unwrap_or(badge_size.x) + title_tag_gap;
+    }
+    painter.galley(egui::pos2(title_x, title_y), title_galley, egui::Color32::WHITE);
     if let Some(subtitle_galley) = subtitle_galley {
         let subtitle_y = title_y + title_height + subtitle_gap;
         painter.galley(
@@ -277,6 +289,9 @@ pub fn draw_settings_page(
     exit_icon: Option<&egui::TextureHandle>,
     launch_on_startup_enabled: bool,
     controller_vibration_enabled: bool,
+    detect_steam_games_enabled: bool,
+    detect_epic_games_enabled: bool,
+    detect_xbox_games_enabled: bool,
     resolution_options: &ResolutionOptions,
     selected_section_index: usize,
     selected_item_index: usize,
@@ -354,6 +369,8 @@ pub fn draw_settings_page(
                     row_height: f32,
                     index: usize,
                     leading_icon: Option<&egui::TextureHandle>,
+                    title_tag: Option<&str>,
+                    title_tag_align_width: Option<f32>,
                     title: &str,
                     subtitle: Option<&str>,
                     subtitle_color: Option<egui::Color32>,
@@ -374,6 +391,8 @@ pub fn draw_settings_page(
             &list_painter,
             row_rect,
             leading_icon,
+            title_tag,
+            title_tag_align_width,
             title,
             subtitle,
             subtitle_color,
@@ -410,6 +429,8 @@ pub fn draw_settings_page(
             top_row_height,
             0,
             system_icon,
+            None,
+            None,
             language.system_text(),
             None,
             None,
@@ -425,6 +446,8 @@ pub fn draw_settings_page(
             top_row_height,
             1,
             screen_icon,
+            None,
+            None,
             language.screen_text(),
             None,
             None,
@@ -440,6 +463,8 @@ pub fn draw_settings_page(
             top_row_height,
             2,
             apps_icon,
+            None,
+            None,
             language.apps_text(),
             None,
             None,
@@ -455,6 +480,8 @@ pub fn draw_settings_page(
             top_row_height,
             3,
             exit_icon,
+            None,
+            None,
             language.close_app_text(),
             None,
             None,
@@ -499,13 +526,124 @@ pub fn draw_settings_page(
         let enabled_subtitle_color = egui::Color32::from_rgba_unmultiplied(122, 214, 145, 255);
         match selected_section_index {
             0 => {
-                let vibration_row_top = submenu_list_inner_rect.min.y + 8.0;
+                let system_rows_origin_y = submenu_list_inner_rect.min.y + 8.0;
+                let system_row_spacing = submenu_row_height + 16.0;
+                let divider_padding = 18.0;
+                let detection_title_align_width = [GameSource::Steam, GameSource::Epic, GameSource::Xbox]
+                    .into_iter()
+                    .map(|source| {
+                        measure_selected_game_text_badge(
+                            &submenu_list_painter,
+                            source.badge_label(),
+                            egui::vec2(0.0, 26.0),
+                        )
+                        .x
+                    })
+                    .fold(0.0, f32::max);
                 draw_row(
                     submenu_list_inner_rect,
-                    vibration_row_top,
-                    1.0,
+                    system_rows_origin_y,
+                    system_row_spacing,
                     submenu_row_height,
                     0,
+                    None,
+                    Some(GameSource::Steam.badge_label()),
+                    Some(detection_title_align_width),
+                    language.client_games_detection_text(),
+                    Some(if detect_steam_games_enabled {
+                        language.enabled_text()
+                    } else {
+                        language.disabled_text()
+                    }),
+                    if detect_steam_games_enabled {
+                        Some(enabled_subtitle_color)
+                    } else {
+                        None
+                    },
+                    None,
+                    selected_item_index == 0,
+                    true,
+                    submenu_layer_t,
+                );
+
+                draw_row(
+                    submenu_list_inner_rect,
+                    system_rows_origin_y,
+                    system_row_spacing,
+                    submenu_row_height,
+                    1,
+                    None,
+                    Some(GameSource::Epic.badge_label()),
+                    Some(detection_title_align_width),
+                    language.client_games_detection_text(),
+                    Some(if detect_epic_games_enabled {
+                        language.enabled_text()
+                    } else {
+                        language.disabled_text()
+                    }),
+                    if detect_epic_games_enabled {
+                        Some(enabled_subtitle_color)
+                    } else {
+                        None
+                    },
+                    None,
+                    selected_item_index == 1,
+                    true,
+                    submenu_layer_t,
+                );
+
+                draw_row(
+                    submenu_list_inner_rect,
+                    system_rows_origin_y,
+                    system_row_spacing,
+                    submenu_row_height,
+                    2,
+                    None,
+                    Some(GameSource::Xbox.badge_label()),
+                    Some(detection_title_align_width),
+                    language.client_games_detection_text(),
+                    Some(if detect_xbox_games_enabled {
+                        language.enabled_text()
+                    } else {
+                        language.disabled_text()
+                    }),
+                    if detect_xbox_games_enabled {
+                        Some(enabled_subtitle_color)
+                    } else {
+                        None
+                    },
+                    None,
+                    selected_item_index == 2,
+                    true,
+                    submenu_layer_t,
+                );
+
+                let top_section_end_y =
+                    system_rows_origin_y + system_row_spacing * 2.0 + submenu_row_height;
+                let divider_y = top_section_end_y + divider_padding;
+                let lower_rows_origin_y = divider_y + divider_padding;
+                painter.line_segment(
+                    [
+                        egui::pos2(submenu_list_inner_rect.min.x - 6.0, divider_y),
+                        egui::pos2(submenu_list_inner_rect.max.x + 6.0, divider_y),
+                    ],
+                    egui::Stroke::new(
+                        1.0,
+                        color_with_scaled_alpha(
+                            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 42),
+                            submenu_layer_t,
+                        ),
+                    ),
+                );
+
+                draw_row(
+                    submenu_list_inner_rect,
+                    lower_rows_origin_y,
+                    system_row_spacing,
+                    submenu_row_height,
+                    0,
+                    None,
+                    None,
                     None,
                     language.controller_vibration_feedback_text(),
                     Some(if controller_vibration_enabled {
@@ -519,19 +657,19 @@ pub fn draw_settings_page(
                         None
                     },
                     None,
-                    selected_item_index == 0,
+                    selected_item_index == 3,
                     true,
                     submenu_layer_t,
                 );
 
-                let startup_rows_origin_y = vibration_row_top + submenu_row_height + 26.0;
-
                 draw_row(
                     submenu_list_inner_rect,
-                    startup_rows_origin_y,
-                    1.0,
+                    lower_rows_origin_y,
+                    system_row_spacing,
                     submenu_row_height,
-                    0,
+                    1,
+                    None,
+                    None,
                     None,
                     language.launch_on_startup_text(),
                     Some(if launch_on_startup_enabled {
@@ -545,7 +683,7 @@ pub fn draw_settings_page(
                         None
                     },
                     None,
-                    selected_item_index == 1,
+                    selected_item_index == 4,
                     true,
                     submenu_layer_t,
                 );
@@ -571,6 +709,8 @@ pub fn draw_settings_page(
                     submenu_row_height,
                     0,
                     None,
+                    None,
+                    None,
                     &resolution_options.half_refresh.label,
                     None,
                     None,
@@ -585,6 +725,8 @@ pub fn draw_settings_page(
                     submenu_row_spacing,
                     submenu_row_height,
                     1,
+                    None,
+                    None,
                     None,
                     &resolution_options.max_refresh.label,
                     None,
@@ -616,6 +758,8 @@ pub fn draw_settings_page(
                     submenu_row_height,
                     0,
                     None,
+                    None,
+                    None,
                     language.dlss_swapper_text(),
                     None,
                     None,
@@ -630,6 +774,8 @@ pub fn draw_settings_page(
                     submenu_row_spacing,
                     submenu_row_height,
                     1,
+                    None,
+                    None,
                     None,
                     language.nvidia_app_text(),
                     None,

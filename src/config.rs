@@ -1,9 +1,15 @@
 use std::path::PathBuf;
 
+use crate::game::GameScanOptions;
+
 const CONFIG_FILE_NAME: &str = "settings.ini";
 const UI_SECTION: &str = "ui";
+const GAMES_SECTION: &str = "games";
 const HINT_ICON_THEME_KEY: &str = "hint_icon_theme";
 const CONTROLLER_VIBRATION_ENABLED_KEY: &str = "controller_vibration_enabled";
+const DETECT_STEAM_GAMES_KEY: &str = "detect_steam_games";
+const DETECT_EPIC_GAMES_KEY: &str = "detect_epic_games";
+const DETECT_XBOX_GAMES_KEY: &str = "detect_xbox_games";
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum PromptIconTheme {
@@ -35,6 +41,7 @@ impl PromptIconTheme {
 struct AppConfig {
     hint_icon_theme: PromptIconTheme,
     controller_vibration_enabled: bool,
+    game_scan_options: GameScanOptions,
 }
 
 impl Default for AppConfig {
@@ -42,6 +49,7 @@ impl Default for AppConfig {
         Self {
             hint_icon_theme: PromptIconTheme::Xbox,
             controller_vibration_enabled: false,
+            game_scan_options: GameScanOptions::default(),
         }
     }
 }
@@ -93,16 +101,27 @@ fn parse_config(contents: &str) -> AppConfig {
             continue;
         };
 
-        if current_section.eq_ignore_ascii_case(UI_SECTION) {
-            let key = key.trim();
-            let value = value.trim();
+        let key = key.trim();
+        let value = value.trim();
 
+        if current_section.eq_ignore_ascii_case(UI_SECTION) {
             if key.eq_ignore_ascii_case(HINT_ICON_THEME_KEY) {
                 config.hint_icon_theme = PromptIconTheme::from_config_value(value)
                     .unwrap_or(PromptIconTheme::Xbox);
             } else if key.eq_ignore_ascii_case(CONTROLLER_VIBRATION_ENABLED_KEY) {
                 config.controller_vibration_enabled =
                     parse_bool_config_value(value).unwrap_or(false);
+            }
+        } else if current_section.eq_ignore_ascii_case(GAMES_SECTION) {
+            if key.eq_ignore_ascii_case(DETECT_STEAM_GAMES_KEY) {
+                config.game_scan_options.detect_steam_games =
+                    parse_bool_config_value(value).unwrap_or(GameScanOptions::default().detect_steam_games);
+            } else if key.eq_ignore_ascii_case(DETECT_EPIC_GAMES_KEY) {
+                config.game_scan_options.detect_epic_games =
+                    parse_bool_config_value(value).unwrap_or(GameScanOptions::default().detect_epic_games);
+            } else if key.eq_ignore_ascii_case(DETECT_XBOX_GAMES_KEY) {
+                config.game_scan_options.detect_xbox_games =
+                    parse_bool_config_value(value).unwrap_or(GameScanOptions::default().detect_xbox_games);
             }
         }
     }
@@ -112,12 +131,19 @@ fn parse_config(contents: &str) -> AppConfig {
 
 fn serialize_config(config: AppConfig) -> String {
     format!(
-        "[{}]\n{}={}\n{}={}\n",
+        "[{}]\n{}={}\n{}={}\n\n[{}]\n{}={}\n{}={}\n{}={}\n",
         UI_SECTION,
         HINT_ICON_THEME_KEY,
         config.hint_icon_theme.as_config_value(),
         CONTROLLER_VIBRATION_ENABLED_KEY,
-        config.controller_vibration_enabled
+        config.controller_vibration_enabled,
+        GAMES_SECTION,
+        DETECT_STEAM_GAMES_KEY,
+        config.game_scan_options.detect_steam_games,
+        DETECT_EPIC_GAMES_KEY,
+        config.game_scan_options.detect_epic_games,
+        DETECT_XBOX_GAMES_KEY,
+        config.game_scan_options.detect_xbox_games,
     )
 }
 
@@ -150,5 +176,15 @@ pub fn load_controller_vibration_enabled() -> bool {
 pub fn store_controller_vibration_enabled(enabled: bool) {
     let mut config = load_config();
     config.controller_vibration_enabled = enabled;
+    store_config(config);
+}
+
+pub fn load_game_scan_options() -> GameScanOptions {
+    load_config().game_scan_options
+}
+
+pub fn store_game_scan_options(options: GameScanOptions) {
+    let mut config = load_config();
+    config.game_scan_options = options;
     store_config(config);
 }

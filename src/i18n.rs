@@ -133,6 +133,13 @@ impl AppLanguage {
         }
     }
 
+    pub fn client_games_detection_text(self) -> &'static str {
+        match self {
+            Self::English => "Client Games Detection",
+            Self::SimplifiedChinese => "游戏识别",
+        }
+    }
+
     pub fn settings_text(self) -> &'static str {
         match self {
             Self::English => "Settings",
