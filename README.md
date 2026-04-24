@@ -1,21 +1,35 @@
 # Big Screen Launcher
 
-A controller-first launcher designed to deliver a console-like user experience for Windows built with Rust and eframe (egui).
+[简体中文](./README.zh-cn.md)
+
+A controller-first game launcher for Windows, built with Rust and eframe (egui), designed to deliver a console-like experience on PC.
 
 ## Features
 
-Detects locally installed Steam games and supports displaying achievement lists.
-Controller input currently supports XInput and DualSense connected with USB.
+- Library support
+	- Detects locally installed Steam games and supports viewing achievement lists.
+	- Detects locally installed Epic games.
+	- Detects locally installed Xbox games.
+- Controller support
+	- Xbox controllers (XInput)
+	- DualSense over USB
+- Supports returning from games with the Xbox Home / PS button
+- Supports controller vibration feedback in the app UI
+- Smooth page animations
+- Launch at system startup
+- System power actions: shut down, sleep, and restart
 
 ## Screenshots
 
-Examples of the current UI are shown below:
+![Screenshot 1](./screenshots/en/big-screen-launcher_2026_04_24_18_44_38_769.png)
 
-![Home Screen](./screenshots/Big%20Screen%20Launcher%202026_4_21%2018_33_42.png)
+![Screenshot 2](./screenshots/en/big-screen-launcher_2026_04_24_18_44_45_549.png)
 
-![Settings Screen](./screenshots/Big%20Screen%20Launcher%202026_4_21%2018_33_51.png)
+![Screenshot 3](./screenshots/en/big-screen-launcher_2026_04_24_18_44_50_215.png)
 
-![Achievements Screen](./screenshots/Big%20Screen%20Launcher%202026_4_21%2018_33_47.png)
+![Screenshot 4](./screenshots/en/big-screen-launcher_2026_04_24_18_44_56_155.png)
+
+![Screenshot 5](./screenshots/en/big-screen-launcher_2026_04_24_18_45_01_029.png)
 
 ## License
 
