@@ -46,4 +46,6 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          files: target/release/big-screen-launcher-${{ github.ref_name }}-windows.zip
+          files: |
+            target/release/big-screen-launcher-${{ github.ref_name }}-windows.zip
+            target/release/big-screen-launcher.exe
