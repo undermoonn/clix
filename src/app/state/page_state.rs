@@ -847,6 +847,7 @@ mod tests {
         SETTINGS_PAGE_ENTER_INITIAL_PROGRESS,
         SETTINGS_SUBMENU_ENTER_ANIM_SPEED,
     };
+    use crate::animation::scale_seconds;
     use crate::power_menu_structure::PowerMenuLayout;
     use crate::input::ControllerAction;
     use crate::system::external_apps::ExternalAppKind;
@@ -1405,7 +1406,7 @@ mod tests {
         tick_animation_frame(&mut page, &ctx, &mut now);
         tick_animation_frame(&mut page, &ctx, &mut now);
 
-        let expected = 1.0 - (-SETTINGS_SUBMENU_ENTER_ANIM_SPEED / 60.0).exp();
+        let expected = 1.0 - (-(SETTINGS_SUBMENU_ENTER_ANIM_SPEED * scale_seconds(1.0 / 60.0))).exp();
         assert!((page.settings_submenu_anim() - expected).abs() < 1e-6);
     }
 

@@ -709,7 +709,8 @@ mod tests {
         let mut input = InputController::new();
         let now = Instant::now();
 
-        let frame = input.poll_with_raw_held(raw_held(&[InputAction::Down]), true, false, None, now);
+        let frame =
+            input.poll_with_raw_held(raw_held(&[InputAction::Down]), true, false, false, None, now);
 
         assert!(matches!(frame.actions.as_slice(), [ControllerAction::Down]));
     }
@@ -719,10 +720,12 @@ mod tests {
         let mut input = InputController::new();
         let now = Instant::now();
 
-        let first = input.poll_with_raw_held(raw_held(&[InputAction::Right]), true, false, None, now);
+        let first =
+            input.poll_with_raw_held(raw_held(&[InputAction::Right]), true, false, false, None, now);
         let before_delay = input.poll_with_raw_held(
             raw_held(&[InputAction::Right]),
             true,
+            false,
             false,
             None,
             now + Duration::from_millis((NAV_INITIAL_DELAY_MS - 1) as u64),
@@ -731,6 +734,7 @@ mod tests {
             raw_held(&[InputAction::Right]),
             true,
             false,
+            false,
             None,
             now + Duration::from_millis((NAV_INITIAL_DELAY_MS + 1) as u64),
         );
@@ -738,12 +742,14 @@ mod tests {
             raw_held(&[InputAction::Right]),
             true,
             false,
+            false,
             None,
             now + Duration::from_millis((NAV_INITIAL_DELAY_MS + NAV_REPEAT_INTERVAL_MS - 1) as u64),
         );
         let after_repeat = input.poll_with_raw_held(
             raw_held(&[InputAction::Right]),
             true,
+            false,
             false,
             None,
             now + Duration::from_millis((NAV_INITIAL_DELAY_MS + NAV_REPEAT_INTERVAL_MS + 1) as u64),
@@ -766,12 +772,14 @@ mod tests {
             raw_held(&[InputAction::Refresh]),
             true,
             false,
+            false,
             None,
             now,
         );
         let held = input.poll_with_raw_held(
             raw_held(&[InputAction::Refresh]),
             true,
+            false,
             false,
             None,
             held_until,
@@ -791,12 +799,14 @@ mod tests {
             raw_held(&[InputAction::Settings]),
             true,
             false,
+            false,
             None,
             now,
         );
         let held = input.poll_with_raw_held(
             raw_held(&[InputAction::Settings]),
             true,
+            false,
             false,
             None,
             held_until,
@@ -815,6 +825,7 @@ mod tests {
             raw_held(&[InputAction::Quit]),
             true,
             false,
+            false,
             None,
             now,
         );
@@ -822,6 +833,7 @@ mod tests {
             raw_held(&[InputAction::Quit]),
             true,
             true,
+            false,
             None,
             now + Duration::from_millis(1),
         );
@@ -835,11 +847,12 @@ mod tests {
         let mut input = InputController::new();
         let now = Instant::now();
 
-        let _ = input.poll_with_raw_held(raw_held(&[InputAction::Up]), true, false, None, now);
+        let _ = input.poll_with_raw_held(raw_held(&[InputAction::Up]), true, false, false, None, now);
         input.clear_held();
         let frame = input.poll_with_raw_held(
             raw_held(&[InputAction::Up]),
             true,
+            false,
             false,
             None,
             now + Duration::from_millis((NAV_INITIAL_DELAY_MS / 2) as u64),

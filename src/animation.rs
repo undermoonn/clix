@@ -126,7 +126,7 @@ mod tests {
         let now = started_at + Duration::from_secs_f32(1.0 / 60.0);
         assert!(animation.update(now, 0.000_001));
 
-        let expected = 1.0_f32 - (-10.0_f32 / 60.0_f32).exp();
+        let expected = 1.0_f32 - (-(10.0_f32 * scale_seconds(1.0_f32 / 60.0_f32))).exp();
         assert!((animation.value() - expected).abs() < 1e-6);
     }
 }
