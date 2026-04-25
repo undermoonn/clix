@@ -36,8 +36,8 @@ use self::install_size::InstallSizeState;
 use self::playtime::PlaytimeState;
 use self::state::{PageState, PowerAction, ResolutionPreset, RuntimeState};
 
-const IDLE_REPAINT_INTERVAL: Duration = Duration::from_secs(1);
-const CONTROLLER_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const PASSIVE_REPAINT_INTERVAL: Duration = Duration::from_secs(1);
+const CONTROLLER_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const IDLE_DIM_OVERLAY_ALPHA: u8 = 200;
 const IDLE_DIM_ANIMATION_SPEED: f32 = 4.0;
 const LAUNCH_PRESS_FEEDBACK_DURATION: Duration = Duration::from_millis(200);
@@ -845,10 +845,8 @@ impl LauncherApp {
     fn schedule_input_repaint(
         &self,
         ctx: &egui::Context,
-        _now: Instant,
         has_focus: bool,
         has_input_activity: bool,
-        controller_idle_active: bool,
     ) {
         if !has_focus {
             return;
@@ -859,12 +857,9 @@ impl LauncherApp {
             return;
         }
 
-        if controller_idle_active {
-            ctx.request_repaint_after(IDLE_REPAINT_INTERVAL);
-            return;
-        }
-
-        ctx.request_repaint();
+        // Keep a low-frequency tick for the clock and running-game polling
+        // without redrawing the focused UI at full frame rate while idle.
+        ctx.request_repaint_after(PASSIVE_REPAINT_INTERVAL);
     }
 
     fn update_cursor_visibility(&mut self, ctx: &egui::Context) {
@@ -1480,10 +1475,8 @@ impl eframe::App for LauncherApp {
 
         self.schedule_input_repaint(
             &ctx,
-            now,
             has_focus,
             has_controller_activity,
-            controller_idle_active,
         );
 
         if !visible_achievement_icon_urls.is_empty() {
