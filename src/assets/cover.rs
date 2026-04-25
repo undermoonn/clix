@@ -187,8 +187,14 @@ fn encode_game_icon_cache_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
     png_bytes_from_rgba(rgba.width(), rgba.height(), rgba.as_raw())
 }
 
+fn has_png_cache_signature(bytes: &[u8]) -> bool {
+    // Texture creation will do the full decode later. Keep cache hits to a
+    // cheap signature check so cached PNGs are not decoded twice.
+    is_png_bytes(bytes)
+}
+
 fn game_icon_cache_bytes_are_valid(bytes: &[u8]) -> bool {
-    is_png_bytes(bytes) && image::load_from_memory(bytes).is_ok()
+    has_png_cache_signature(bytes)
 }
 
 fn load_cached_game_icon_bytes(game: &crate::game::Game, source: &str) -> Option<Vec<u8>> {
@@ -223,7 +229,7 @@ fn encode_achievement_icon_cache_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
 }
 
 fn achievement_icon_cache_bytes_are_valid(bytes: &[u8]) -> bool {
-    is_png_bytes(bytes) && image::load_from_memory(bytes).is_ok()
+    has_png_cache_signature(bytes)
 }
 
 pub fn clear_cached_achievement_icon(url: &str) {
