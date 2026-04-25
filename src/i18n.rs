@@ -116,7 +116,7 @@ impl AppLanguage {
 
     pub fn close_app_text(self) -> &'static str {
         match self {
-            Self::English => "Close App",
+            Self::English => "Exit App",
             Self::SimplifiedChinese => "关闭应用",
         }
     }
@@ -179,22 +179,22 @@ impl AppLanguage {
 
     pub fn background_home_wake_prefix_text(self) -> &'static str {
         match self {
-            Self::English => "Wake App via",
+            Self::English => "Use",
             Self::SimplifiedChinese => "通过",
         }
     }
 
     pub fn background_home_wake_suffix_text(self) -> &'static str {
         match self {
-            Self::English => "buttons",
+            Self::English => "to wake app",
             Self::SimplifiedChinese => "键唤醒应用",
         }
     }
 
     pub fn controller_vibration_feedback_text(self) -> &'static str {
         match self {
-            Self::English => "Controller Vibration Feedback",
-            Self::SimplifiedChinese => "应用内手柄震动反馈",
+            Self::English => "UI Vibration Feedback",
+            Self::SimplifiedChinese => "界面操作震动反馈",
         }
     }
 
@@ -207,7 +207,7 @@ impl AppLanguage {
 
     pub fn client_games_detection_text(self) -> &'static str {
         match self {
-            Self::English => "Games Detection",
+            Self::English => "Game Library Detection",
             Self::SimplifiedChinese => "游戏识别",
         }
     }
@@ -305,7 +305,7 @@ impl AppLanguage {
 
     pub fn hold_close_game_text(self) -> &'static str {
         match self {
-            Self::English => "Force Exit",
+            Self::English => "Force Quit",
             Self::SimplifiedChinese => "强制退出",
         }
     }
@@ -326,21 +326,21 @@ impl AppLanguage {
 
     pub fn steam_start_action_text(self) -> &'static str {
         match self {
-            Self::English => "Start Steam",
+            Self::English => "Launch Steam",
             Self::SimplifiedChinese => "启动 Steam",
         }
     }
 
     pub fn steam_starting_text(self) -> &'static str {
         match self {
-            Self::English => "Steam starting",
+            Self::English => "Launching Steam",
             Self::SimplifiedChinese => "Steam 启动中",
         }
     }
 
     pub fn steam_started_text(self) -> &'static str {
         match self {
-            Self::English => "Steam started",
+            Self::English => "Steam is ready",
             Self::SimplifiedChinese => "Steam 启动完成",
         }
     }
