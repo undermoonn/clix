@@ -4,9 +4,7 @@ use std::path::PathBuf;
 const LAST_PLAYED_FILE_NAME: &str = "game_last_played.json";
 
 fn storage_dir() -> PathBuf {
-    let dir = crate::assets::cache::app_root_dir().join("config");
-    let _ = std::fs::create_dir_all(&dir);
-    dir
+    crate::assets::cache::config_dir()
 }
 
 fn storage_path() -> PathBuf {

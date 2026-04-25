@@ -26,13 +26,13 @@ This access is used to detect installed games, display achievement information, 
 
 ## 3. Data Stored Locally by Big Screen Launcher
 
-Big Screen Launcher stores its own local data next to the application executable. Depending on the features you use, this may include:
+Big Screen Launcher stores its own local data in the current user's local application data folder, typically under LocalAppData/Big Screen Launcher/. Depending on the features you use, this may include:
 
-- App settings in config/settings.ini.
-- Last played timestamps recorded by the launcher in config/game_last_played.json.
-- Cached achievement summaries and cached global achievement percentages in caches/achievement_cache/.
-- Cached cover art, logos, game icons, achievement icons, and DLSS lookup results in caches/.
-- Local log files such as logs/scan_timings.log and achievement diagnostics logs when those features are triggered.
+- App settings in LocalAppData/Big Screen Launcher/config/settings.ini.
+- Last played timestamps recorded by the launcher in LocalAppData/Big Screen Launcher/config/game_last_played.json.
+- Cached achievement summaries and cached global achievement percentages in LocalAppData/Big Screen Launcher/caches/achievement_cache/.
+- Cached cover art, logos, game icons, achievement icons, and DLSS lookup results in LocalAppData/Big Screen Launcher/caches/.
+- Local log files such as LocalAppData/Big Screen Launcher/logs/scan_timings.log and achievement diagnostics logs when those features are triggered.
 
 This data remains on your device unless you remove it yourself.
 
@@ -59,7 +59,7 @@ Based on the current application behavior, Big Screen Launcher does not intentio
 
 ## 6. Startup Integration
 
-If you enable launch on startup, Big Screen Launcher writes a Windows startup entry under the current user profile so Windows can launch the app automatically after sign-in. If you disable that setting, the app removes that startup entry.
+If you enable launch on startup, Big Screen Launcher registers itself to start after sign-in using the mechanism supported by the current installation type. Traditional desktop installs use a Windows startup entry under the current user profile, while packaged Microsoft Store / MSIX installs use the package startup task mechanism. If you disable that setting, the app removes or disables the corresponding startup registration.
 
 ## 7. Your Choices
 
@@ -67,7 +67,7 @@ You can limit or remove data use by:
 
 - Disabling game source detection options in the app settings.
 - Disabling launch on startup in the app settings.
-- Deleting the app's local config, caches, and logs folders.
+- Deleting the app's local config, caches, and logs folders under LocalAppData/Big Screen Launcher/.
 - Blocking the app's network access with system or firewall controls if you do not want artwork or global Steam achievement percentages to be fetched.
 
 Please note that removing cached data may cause the app to rebuild its library or re-download artwork the next time those features are used.

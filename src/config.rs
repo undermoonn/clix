@@ -87,9 +87,7 @@ fn parse_bool_config_value(value: &str) -> Option<bool> {
 }
 
 fn config_dir() -> PathBuf {
-    let dir = crate::assets::cache::app_root_dir().join("config");
-    let _ = std::fs::create_dir_all(&dir);
-    dir
+    crate::assets::cache::config_dir()
 }
 
 fn config_path() -> PathBuf {

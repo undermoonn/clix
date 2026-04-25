@@ -35,6 +35,11 @@
 
 ![alt text](screenshots/zh-cn/big-screen-launcher_2026_04_24_18_47_10_348.png)
 
+## Microsoft Store / MSIX
+
+- 打包安装版本使用 Windows 的 startup task 机制，而不是 HKCU Run 注册表项。
+- 如果要让 Store 或 MSIX 包支持开机启动，需要在应用清单中声明 desktop:StartupTask，并将 TaskId 设为 "BigScreenLauncherStartup"。
+
 ## 许可证
 
 本项目采用 GNU General Public License v3.0（GPLv3）许可证。正式许可证文本请参见 [LICENSE](./LICENSE)，中文说明请参见 [LICENSE.zh-cn.md](./LICENSE.zh-cn.md)。

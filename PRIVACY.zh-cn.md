@@ -26,13 +26,13 @@ Big Screen Launcher 是一款以本地使用为主的 Windows 游戏启动器。
 
 ## 3. Big Screen Launcher 在本地存储的数据
 
-Big Screen Launcher 会在应用可执行文件所在目录旁写入自身的本地数据。根据您使用的功能，可能包括：
+Big Screen Launcher 会将自身的本地数据写入当前用户的本地应用数据目录，通常位于 LocalAppData/Big Screen Launcher/。根据您使用的功能，可能包括：
 
-- 保存在 config/settings.ini 中的应用设置。
-- 保存在 config/game_last_played.json 中、由启动器记录的最近游玩时间。
-- 保存在 caches/achievement_cache/ 中的成就摘要缓存和全局成就完成率缓存。
-- 保存在 caches/ 中的封面图、Logo、游戏图标、成就图标和 DLSS 检测结果缓存。
-- 在触发相关功能后生成的本地日志，例如 logs/scan_timings.log 和成就诊断日志。
+- 保存在 LocalAppData/Big Screen Launcher/config/settings.ini 中的应用设置。
+- 保存在 LocalAppData/Big Screen Launcher/config/game_last_played.json 中、由启动器记录的最近游玩时间。
+- 保存在 LocalAppData/Big Screen Launcher/caches/achievement_cache/ 中的成就摘要缓存和全局成就完成率缓存。
+- 保存在 LocalAppData/Big Screen Launcher/caches/ 中的封面图、Logo、游戏图标、成就图标和 DLSS 检测结果缓存。
+- 在触发相关功能后生成的本地日志，例如 LocalAppData/Big Screen Launcher/logs/scan_timings.log 和成就诊断日志。
 
 除非您自行删除，这些数据会保留在您的设备上。
 
@@ -59,7 +59,7 @@ Big Screen Launcher 主要依赖本地数据运行，但部分功能会发起出
 
 ## 6. 开机启动功能
 
-如果您启用开机启动，Big Screen Launcher 会在当前 Windows 用户配置下写入启动项，以便系统在登录后自动运行该应用；如果您关闭该设置，应用会移除对应启动项。
+如果您启用开机启动，Big Screen Launcher 会根据当前安装类型使用对应的登录后自启动机制。传统桌面安装会在当前 Windows 用户配置下写入启动项，而 Microsoft Store / MSIX 打包安装会使用包的 startup task 机制；如果您关闭该设置，应用会移除或禁用对应的启动注册。
 
 ## 7. 您的选择
 
@@ -67,7 +67,7 @@ Big Screen Launcher 主要依赖本地数据运行，但部分功能会发起出
 
 - 在应用设置中关闭游戏平台检测选项。
 - 在应用设置中关闭开机启动。
-- 删除应用的 config、caches 和 logs 目录。
+- 删除 LocalAppData/Big Screen Launcher/ 下的 config、caches 和 logs 目录。
 - 如果您不希望应用下载封面资源或获取 Steam 全局成就完成率，可以通过系统或防火墙阻止应用联网。
 
 请注意，删除缓存后，应用下次使用相关功能时可能会重新扫描游戏库或重新下载资源。

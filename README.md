@@ -35,6 +35,11 @@ A controller-first game launcher for Windows, built with Rust and eframe (egui),
 
 ![Screenshot 5](./screenshots/en/big-screen-launcher_2026_04_24_18_45_01_029.png)
 
+## Microsoft Store / MSIX
+
+- Packaged installs use the Windows startup task mechanism instead of the HKCU Run registry key.
+- To enable startup in a Store or MSIX package, declare a desktop:StartupTask entry in the app manifest with TaskId="BigScreenLauncherStartup".
+
 ## License
 
 This project is licensed under the GNU General Public License v3.0 (GPLv3). See [LICENSE](./LICENSE) for the authoritative license text and [LICENSE.zh-cn.md](./LICENSE.zh-cn.md) for a Chinese explainer.

@@ -1,6 +1,6 @@
 [package]
 name = "big-screen-launcher"
-version = "0.2.4"
+version = "1.0.0"
 edition = "2021"
 license = "GPL-3.0-only"
 autobins = false
@@ -25,6 +25,8 @@ libloading = "0.7"
 crc32fast = "1"
 raw-window-handle = "0.6"
 hidapi = "2"
+pollster = "0.4"
+windows = { version = "0.61", features = ["ApplicationModel", "Foundation"] }
 
 [build-dependencies]
 chrono = { version = "0.4", default-features = true, features = ["clock"] }
