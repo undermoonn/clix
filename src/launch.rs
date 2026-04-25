@@ -383,7 +383,10 @@ pub fn start_steam_client(steam_paths: &[PathBuf]) -> bool {
     #[cfg(target_os = "windows")]
     {
         if let Some(steam_exe) = resolve_steam_exe_path(steam_paths) {
-            return Command::new(steam_exe).spawn().is_ok();
+            return Command::new(steam_exe)
+                .arg("-silent")
+                .spawn()
+                .is_ok();
         }
     }
 
