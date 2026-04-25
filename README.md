@@ -1,6 +1,8 @@
 # Big Screen Launcher
 
 [简体中文](./README.zh-cn.md)
+[License](./LICENSE)
+[许可说明（简体中文）](./LICENSE.zh-cn.md)
 [Privacy Policy](./PRIVACY.md)
 [隐私政策](./PRIVACY.zh-cn.md)
 
@@ -35,4 +37,4 @@ A controller-first game launcher for Windows, built with Rust and eframe (egui),
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 (GPLv3). See LICENSE for details.
+This project is licensed under the GNU General Public License v3.0 (GPLv3). See [LICENSE](./LICENSE) for the authoritative license text and [LICENSE.zh-cn.md](./LICENSE.zh-cn.md) for a Chinese explainer.

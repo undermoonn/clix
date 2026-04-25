@@ -1,6 +1,8 @@
 # Big Screen Launcher
 
 [English](./README.md)
+[License](./LICENSE)
+[许可说明（简体中文）](./LICENSE.zh-cn.md)
 [Privacy Policy](./PRIVACY.md)
 [隐私政策](./PRIVACY.zh-cn.md)
 
@@ -35,4 +37,4 @@
 
 ## 许可证
 
-本项目采用 GNU General Public License v3.0（GPLv3）许可证，详情请参见 LICENSE。
+本项目采用 GNU General Public License v3.0（GPLv3）许可证。正式许可证文本请参见 [LICENSE](./LICENSE)，中文说明请参见 [LICENSE.zh-cn.md](./LICENSE.zh-cn.md)。
