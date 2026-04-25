@@ -28,6 +28,13 @@ const UI_ICON_MAX_RENDERED_SIZE: u32 =
 const UI_ICON_RENDER_SIZE: u32 = UI_ICON_MAX_RENDERED_SIZE * 4;
 const PNG_FILE_NAME: &str = "app-icon-256.png";
 const ICO_FILE_NAME: &str = "app-icon.ico";
+const STORE_LOGO_1080_FILE_NAME: &str = "app-store-logo-1080.png";
+const STORE_LOGO_2160_FILE_NAME: &str = "app-store-logo-2160.png";
+const STORE_POSTER_720_FILE_NAME: &str = "app-store-poster-720x1080.png";
+const STORE_POSTER_1440_FILE_NAME: &str = "app-store-poster-1440x2160.png";
+const STORE_BACKGROUND_RGBA: [u8; 4] = [0x12, 0x12, 0x12, 0xff];
+const STORE_LOGO_INSET_SCALE: f32 = 0.82;
+const STORE_POSTER_INSET_SCALE: f32 = 0.84;
 const SETTINGS_PNG_FILE_NAME: &str = "settings-icon-ui.png";
 const SYSTEM_PNG_FILE_NAME: &str = "system-icon-ui.png";
 const SCREEN_PNG_FILE_NAME: &str = "screen-icon-ui.png";
@@ -130,6 +137,7 @@ fn run_git_command<const N: usize>(args: [&str; N]) -> Option<String> {
 
 fn build_icon_assets() -> Result<(), Box<dyn Error>> {
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
+    let assets_dir = PathBuf::from("assets");
     let svg = fs::read_to_string(SVG_PATH)?;
     let settings_svg = fs::read_to_string(SETTINGS_SVG_PATH)?;
     let system_svg = fs::read_to_string(SYSTEM_SVG_PATH)?;
@@ -141,6 +149,10 @@ fn build_icon_assets() -> Result<(), Box<dyn Error>> {
     let power_off_svg = fs::read_to_string(POWER_OFF_SVG_PATH)?;
     let png_path = out_dir.join(PNG_FILE_NAME);
     let ico_path = out_dir.join(ICO_FILE_NAME);
+    let store_logo_1080_path = assets_dir.join(STORE_LOGO_1080_FILE_NAME);
+    let store_logo_2160_path = assets_dir.join(STORE_LOGO_2160_FILE_NAME);
+    let store_poster_720_path = assets_dir.join(STORE_POSTER_720_FILE_NAME);
+    let store_poster_1440_path = assets_dir.join(STORE_POSTER_1440_FILE_NAME);
     let settings_png_path = out_dir.join(SETTINGS_PNG_FILE_NAME);
     let system_png_path = out_dir.join(SYSTEM_PNG_FILE_NAME);
     let screen_png_path = out_dir.join(SCREEN_PNG_FILE_NAME);
@@ -153,6 +165,22 @@ fn build_icon_assets() -> Result<(), Box<dyn Error>> {
 
     write_png(&png_path, &svg, 256)?;
     write_ico(&ico_path, &svg)?;
+    write_store_png(&store_logo_1080_path, &svg, 1080, 1080, STORE_LOGO_INSET_SCALE)?;
+    write_store_png(&store_logo_2160_path, &svg, 2160, 2160, STORE_LOGO_INSET_SCALE)?;
+    write_store_png(
+        &store_poster_720_path,
+        &svg,
+        720,
+        1080,
+        STORE_POSTER_INSET_SCALE,
+    )?;
+    write_store_png(
+        &store_poster_1440_path,
+        &svg,
+        1440,
+        2160,
+        STORE_POSTER_INSET_SCALE,
+    )?;
     write_png(
         &settings_png_path,
         &settings_svg.replace("currentColor", "#ffffff"),
@@ -200,9 +228,28 @@ fn build_icon_assets() -> Result<(), Box<dyn Error>> {
 }
 
 fn write_png(path: &Path, svg: &str, size: u32) -> Result<(), Box<dyn Error>> {
-    let rgba = render_svg(svg, size)?;
-    let file = fs::File::create(path)?;
-    PngEncoder::new(file).write_image(&rgba, size, size, image::ColorType::Rgba8)?;
+    let rgba = render_svg(svg, size, size, 1.0, None)?;
+    let png = encode_png(&rgba, size, size)?;
+    write_if_changed(path, &png)?;
+    Ok(())
+}
+
+fn write_store_png(
+    path: &Path,
+    svg: &str,
+    width: u32,
+    height: u32,
+    inset_scale: f32,
+) -> Result<(), Box<dyn Error>> {
+    let rgba = render_svg(
+        svg,
+        width,
+        height,
+        inset_scale,
+        Some(STORE_BACKGROUND_RGBA),
+    )?;
+    let png = encode_png(&rgba, width, height)?;
+    write_if_changed(path, &png)?;
     Ok(())
 }
 
@@ -210,7 +257,7 @@ fn write_ico(path: &Path, svg: &str) -> Result<(), Box<dyn Error>> {
     let mut icon_dir = IconDir::new(ResourceType::Icon);
 
     for size in ICON_SIZES {
-        let rgba = render_svg(svg, size)?;
+        let rgba = render_svg(svg, size, size, 1.0, None)?;
         let image = IconImage::from_rgba_data(size, size, rgba);
         icon_dir.add_entry(IconDirEntry::encode(&image)?);
     }
@@ -222,28 +269,56 @@ fn write_ico(path: &Path, svg: &str) -> Result<(), Box<dyn Error>> {
 
 fn write_top_right_vignette(path: &Path) -> Result<(), Box<dyn Error>> {
     let rgba = render_top_right_vignette(VIGNETTE_WIDTH, VIGNETTE_HEIGHT);
-    let file = fs::File::create(path)?;
-    PngEncoder::new(file).write_image(
-        &rgba,
-        VIGNETTE_WIDTH,
-        VIGNETTE_HEIGHT,
-        image::ColorType::Rgba8,
-    )?;
+    let png = encode_png(&rgba, VIGNETTE_WIDTH, VIGNETTE_HEIGHT)?;
+    write_if_changed(path, &png)?;
     Ok(())
 }
 
-fn render_svg(svg: &str, size: u32) -> Result<Vec<u8>, Box<dyn Error>> {
+fn encode_png(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, Box<dyn Error>> {
+    let mut png = Vec::new();
+    PngEncoder::new(&mut png).write_image(rgba, width, height, image::ColorType::Rgba8)?;
+    Ok(png)
+}
+
+fn write_if_changed(path: &Path, contents: &[u8]) -> Result<(), Box<dyn Error>> {
+    if fs::read(path).ok().as_deref() == Some(contents) {
+        return Ok(());
+    }
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    fs::write(path, contents)?;
+    Ok(())
+}
+
+fn render_svg(
+    svg: &str,
+    width: u32,
+    height: u32,
+    inset_scale: f32,
+    background: Option<[u8; 4]>,
+) -> Result<Vec<u8>, Box<dyn Error>> {
     let options = usvg::Options::default();
     let tree = usvg::Tree::from_str(svg, &options)?;
     let svg_size = tree.size();
-    let scale_x = size as f32 / svg_size.width();
-    let scale_y = size as f32 / svg_size.height();
-    let mut pixmap = tiny_skia::Pixmap::new(size, size)
-        .ok_or_else(|| format!("failed to allocate {size}x{size} icon pixmap"))?;
+    let scale = f32::min(width as f32 / svg_size.width(), height as f32 / svg_size.height())
+        * inset_scale;
+    let render_width = svg_size.width() * scale;
+    let render_height = svg_size.height() * scale;
+    let translate_x = (width as f32 - render_width) * 0.5;
+    let translate_y = (height as f32 - render_height) * 0.5;
+    let mut pixmap = tiny_skia::Pixmap::new(width, height)
+        .ok_or_else(|| format!("failed to allocate {width}x{height} icon pixmap"))?;
+
+    if let Some([red, green, blue, alpha]) = background {
+        pixmap.fill(tiny_skia::Color::from_rgba8(red, green, blue, alpha));
+    }
 
     resvg::render(
         &tree,
-        tiny_skia::Transform::from_scale(scale_x, scale_y),
+        tiny_skia::Transform::from_row(scale, 0.0, 0.0, scale, translate_x, translate_y),
         &mut pixmap.as_mut(),
     );
 
