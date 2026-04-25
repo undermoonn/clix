@@ -35,6 +35,24 @@ fn launch_icon_offset_y(elapsed_seconds: f32) -> f32 {
     lerp_f32(0.0, 4.0, press_t)
 }
 
+fn scroll_compensation_for_offset(offset_f: f32, selected_icon_extra: f32) -> f32 {
+    if offset_f <= 0.0 {
+        0.0
+    } else {
+        selected_icon_extra * offset_f.clamp(0.0, 1.0)
+    }
+}
+
+fn item_left_for_offset(
+    anchor_x: f32,
+    column_spacing: f32,
+    selected_icon_extra: f32,
+    offset_f: f32,
+) -> f32 {
+    anchor_x + offset_f * column_spacing
+        + scroll_compensation_for_offset(offset_f, selected_icon_extra)
+}
+
 fn draw_game_icon(
     painter: &egui::Painter,
     texture: &egui::TextureHandle,
@@ -199,7 +217,6 @@ pub fn draw_game_list(
     launch_notice: Option<(usize, String, f32, egui::Color32, bool)>,
     launching_index: Option<usize>,
     running_indices: &[usize],
-    _achievement_panel_active: bool,
     summary_cards_visibility: f32,
     achievement_summary_for_selected: Option<&AchievementSummary>,
     achievement_summary_reveal_for_selected: f32,
@@ -229,17 +246,16 @@ pub fn draw_game_list(
     let content_top = img_bottom + 32.0 + page_offset_y + wake_offset_y;
     let anchor_x = padded_rect.min.x + 24.0;
     let painter = ui.painter().with_clip_rect(panel_rect);
-    let item_left_for_offset = |offset_f: f32| {
-        let dist = offset_f.abs();
-        let sign = if offset_f >= 0.0 { 1.0 } else { -1.0 };
-        let right_side_compensation = if offset_f > 0.0 {
-            selected_icon_extra * smoothstep01(offset_f.clamp(0.0, 1.0))
-        } else {
-            0.0
-        };
-
-        anchor_x + sign * dist * column_spacing + right_side_compensation
-    };
+    let selected_focus_t = smoothstep01(select_anim);
+    let selected_meta_t = smoothstep01((select_anim - 0.18) / 0.82);
+    let selected_text_color = color_with_scaled_alpha(
+        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 255),
+        wake_t,
+    );
+    let unselected_text_color = color_with_scaled_alpha(
+        egui::Color32::from_rgba_unmultiplied(200, 200, 210, 220),
+        wake_t,
+    );
 
     if launch_feedback.is_some() {
         ui.ctx().request_repaint();
@@ -248,32 +264,20 @@ pub fn draw_game_list(
     for (i, g) in games.iter().enumerate() {
         let offset_f = i as f32 - scroll_offset;
         let is_selected = i == selected;
+        let x_pos = item_left_for_offset(anchor_x, column_spacing, selected_icon_extra, offset_f);
 
         // Cheap horizontal culling: skip items whose icon slot lies entirely
         // outside the panel. Selected always renders (header/title extend
         // beyond the icon and must be present for the meta animation).
-        if !is_selected {
-            let cull_x = item_left_for_offset(offset_f);
-            if cull_x + selected_icon_size < panel_rect.min.x
-                || cull_x > panel_rect.max.x
-            {
-                continue;
-            }
+        if !is_selected && (x_pos + selected_icon_size < panel_rect.min.x || x_pos > panel_rect.max.x)
+        {
+            continue;
         }
 
         let dist = offset_f.abs();
-        let icon_focus_t = smoothstep01((1.0 - dist).clamp(0.0, 1.0));
-        let selection_t = if is_selected {
-            smoothstep01(select_anim)
-        } else {
-            0.0
-        };
-        let x_pos = item_left_for_offset(offset_f);
-        let meta_t = if is_selected {
-            smoothstep01((select_anim - 0.18) / 0.82)
-        } else {
-            0.0
-        };
+        let icon_focus_t = (1.0 - dist).clamp(0.0, 1.0);
+        let selection_t = if is_selected { selected_focus_t } else { 0.0 };
+        let meta_t = if is_selected { selected_meta_t } else { 0.0 };
         let launch_elapsed_seconds = launch_feedback
             .filter(|(launch_index, _)| *launch_index == i)
             .map(|(_, elapsed_seconds)| elapsed_seconds);
@@ -296,29 +300,20 @@ pub fn draw_game_list(
         } else {
             base_size
         };
-
-        let text_alpha = if is_selected { 255 } else { 220 };
         let text_color = if is_selected {
-            color_with_scaled_alpha(
-                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 255),
-                wake_t,
-            )
+            selected_text_color
         } else {
-            color_with_scaled_alpha(
-                egui::Color32::from_rgba_unmultiplied(200, 200, 210, text_alpha),
-                wake_t,
-            )
+            unselected_text_color
         };
 
         let icon_slot_size = base_icon_size + selected_icon_extra * icon_focus_t;
         let icon_scale = launch_elapsed_seconds.map(launch_icon_scale).unwrap_or(1.0);
         let icon_size = icon_slot_size * icon_scale;
         let icon_offset_y = launch_elapsed_seconds.map(launch_icon_offset_y).unwrap_or(0.0);
-        let item_left = x_pos;
 
         let font_id = egui::FontId::proportional(font_size);
         let icon_slot_rect = egui::Rect::from_min_size(
-            egui::pos2(item_left, content_top),
+            egui::pos2(x_pos, content_top),
             egui::vec2(icon_slot_size, icon_slot_size),
         );
         let icon_rect = egui::Rect::from_min_size(
@@ -364,7 +359,12 @@ pub fn draw_game_list(
 
         if is_selected {
             let title_x = if i + 1 < games.len() {
-                item_left_for_offset((i + 1) as f32 - scroll_offset)
+                item_left_for_offset(
+                    anchor_x,
+                    column_spacing,
+                    selected_icon_extra,
+                    (i + 1) as f32 - scroll_offset,
+                )
             } else {
                 icon_slot_rect.max.x + 18.0
             };

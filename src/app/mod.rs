@@ -1340,7 +1340,6 @@ impl eframe::App for LauncherApp {
                     launch_notice,
                     launching_index,
                     &running_indices,
-                    self.page.show_achievement_panel(),
                     summary_cards_visibility,
                     selected_achievement_summary,
                     selected_achievement_reveal,
