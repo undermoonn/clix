@@ -1,6 +1,8 @@
 # Big Screen Launcher
 
 [简体中文](./README.zh-cn.md)
+[Privacy Policy](./PRIVACY.md)
+[隐私政策](./PRIVACY.zh-cn.md)
 
 A controller-first game launcher for Windows, built with Rust and eframe (egui), designed to deliver a console-like experience on PC.
 

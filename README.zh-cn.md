@@ -1,5 +1,9 @@
 # Big Screen Launcher
 
+[English](./README.md)
+[Privacy Policy](./PRIVACY.md)
+[隐私政策](./PRIVACY.zh-cn.md)
+
 一个面向手柄交互优先设计的 Windows 游戏启动器，使用 Rust 与 eframe（egui）构建，旨在为 Windows玩家提供接近家用游戏主机风格的使用体验。
 
 ## 功能特性
