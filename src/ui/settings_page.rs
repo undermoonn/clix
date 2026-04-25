@@ -82,6 +82,327 @@ fn draw_settings_page_body_container(
     );
 }
 
+fn draw_settings_focus_frame(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    focus_t: f32,
+    layer_t: f32,
+) {
+    if focus_t <= 0.001 {
+        return;
+    }
+
+    let focus_rect = rect.expand(5.0);
+    painter.rect_filled(
+        focus_rect,
+        corner_radius(12.0),
+        color_with_scaled_alpha(
+            egui::Color32::from_rgba_unmultiplied(248, 250, 255, 54),
+            layer_t * focus_t,
+        ),
+    );
+    painter.rect_stroke(
+        focus_rect,
+        corner_radius(12.0),
+        egui::Stroke::new(
+            lerp_f32(1.2, 3.0, focus_t),
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 168),
+                layer_t * focus_t,
+            ),
+        ),
+        egui::StrokeKind::Outside,
+    );
+}
+
+fn draw_settings_dropdown_button(
+    painter: &egui::Painter,
+    label_rect: egui::Rect,
+    button_rect: egui::Rect,
+    label: &str,
+    value: &str,
+    open: bool,
+    settings_t: f32,
+) {
+    let label_color = if open {
+        egui::Color32::from_rgba_unmultiplied(244, 247, 252, 255)
+    } else {
+        egui::Color32::from_rgba_unmultiplied(212, 219, 228, 240)
+    };
+    let label_galley = painter.layout_no_wrap(
+        label.to_string(),
+        egui::FontId::proportional(24.0),
+        color_with_scaled_alpha(label_color, settings_t),
+    );
+    painter.galley(
+        egui::pos2(label_rect.min.x, label_rect.center().y - label_galley.size().y * 0.5),
+        label_galley,
+        egui::Color32::WHITE,
+    );
+
+    let value_galley = painter.layout_no_wrap(
+        value.to_string(),
+        egui::FontId::proportional(22.0),
+        color_with_scaled_alpha(
+            egui::Color32::from_rgba_unmultiplied(236, 240, 246, 255),
+            settings_t,
+        ),
+    );
+    painter.galley(
+        egui::pos2(
+            button_rect.min.x + 22.0,
+            button_rect.center().y - value_galley.size().y * 0.5,
+        ),
+        value_galley,
+        egui::Color32::WHITE,
+    );
+}
+
+fn draw_settings_dropdown_row(
+    painter: &egui::Painter,
+    row_rect: egui::Rect,
+    label: &str,
+    value: &str,
+    selected: bool,
+    open: bool,
+    settings_t: f32,
+    focus_t: f32,
+) -> egui::Rect {
+    painter.rect_filled(
+        row_rect,
+        corner_radius(9.0),
+        color_with_scaled_alpha(
+            egui::Color32::from_rgba_unmultiplied(206, 214, 224, 88),
+            settings_t,
+        ),
+    );
+    painter.rect_stroke(
+        row_rect,
+        corner_radius(9.0),
+        egui::Stroke::new(
+            1.0,
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 34),
+                settings_t,
+            ),
+        ),
+        egui::StrokeKind::Middle,
+    );
+
+    if selected && !open {
+        draw_settings_focus_frame(painter, row_rect, focus_t, settings_t);
+    }
+
+    let inner_rect = row_rect.shrink2(egui::vec2(26.0, 16.0));
+    let button_width = (inner_rect.width() * 0.46).clamp(320.0, 460.0);
+    let button_rect = egui::Rect::from_min_size(
+        egui::pos2(inner_rect.max.x - button_width, inner_rect.center().y - 29.0),
+        egui::vec2(button_width, 58.0),
+    );
+    let label_rect = egui::Rect::from_min_max(
+        egui::pos2(inner_rect.min.x, inner_rect.min.y),
+        egui::pos2(button_rect.min.x - 24.0, inner_rect.max.y),
+    );
+
+    draw_settings_dropdown_button(
+        painter,
+        label_rect,
+        button_rect,
+        label,
+        value,
+        open,
+        settings_t,
+    );
+
+    button_rect
+}
+
+fn draw_settings_dropdown_menu(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    options: &[String],
+    selected_index: usize,
+    settings_t: f32,
+    focus_t: f32,
+) -> usize {
+    let max_visible_items = 4;
+    let visible_count = options.len().min(max_visible_items);
+    if visible_count == 0 {
+        return 0;
+    }
+
+    let selected_index = selected_index.min(options.len().saturating_sub(1));
+    let max_start = options.len().saturating_sub(visible_count);
+    let start_index = selected_index
+        .saturating_sub(visible_count.saturating_sub(1))
+        .min(max_start)
+        .min(selected_index.saturating_sub(visible_count / 2));
+    let end_index = start_index + visible_count;
+
+    painter.rect_filled(
+        rect,
+        corner_radius(PANEL_CORNER_RADIUS),
+        color_with_scaled_alpha(
+            egui::Color32::from_rgba_unmultiplied(18, 19, 22, 255),
+            settings_t,
+        ),
+    );
+    painter.rect_stroke(
+        rect,
+        corner_radius(PANEL_CORNER_RADIUS),
+        egui::Stroke::new(
+            1.0,
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 36),
+                settings_t,
+            ),
+        ),
+        egui::StrokeKind::Middle,
+    );
+
+    let padding = egui::vec2(14.0, 14.0);
+    let option_height = 64.0;
+    let option_gap = 8.0;
+    let option_font = egui::FontId::proportional(22.0);
+
+    for (visible_index, option_index) in (start_index..end_index).enumerate() {
+        let option = &options[option_index];
+        let option_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                rect.min.x + padding.x,
+                rect.min.y + padding.y + visible_index as f32 * (option_height + option_gap),
+            ),
+            egui::vec2(rect.width() - padding.x * 2.0, option_height),
+        );
+        let selected = option_index == selected_index;
+        draw_settings_focus_frame(
+            painter,
+            option_rect,
+            if selected { focus_t } else { 0.0 },
+            settings_t,
+        );
+
+        let option_galley = painter.layout_no_wrap(
+            option.clone(),
+            option_font.clone(),
+            color_with_scaled_alpha(
+                if selected {
+                    egui::Color32::from_rgba_unmultiplied(248, 250, 255, 255)
+                } else {
+                    egui::Color32::from_rgba_unmultiplied(214, 218, 226, 255)
+                },
+                settings_t,
+            ),
+        );
+        painter.galley(
+            egui::pos2(
+                option_rect.min.x + 22.0,
+                option_rect.center().y - option_galley.size().y * 0.5,
+            ),
+            option_galley,
+            egui::Color32::WHITE,
+        );
+    }
+
+    if start_index > 0 {
+        let mask_height = 42.0;
+        let mut mesh = egui::epaint::Mesh::default();
+        let base = egui::Color32::from_rgba_unmultiplied(14, 15, 18, 252);
+        let transparent = egui::Color32::from_rgba_unmultiplied(18, 19, 22, 0);
+        let top_rect = egui::Rect::from_min_max(
+            egui::pos2(rect.min.x + 1.0, rect.min.y + 1.0),
+            egui::pos2(rect.max.x - 1.0, rect.min.y + 1.0 + mask_height),
+        );
+        let index = mesh.vertices.len() as u32;
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos: top_rect.left_top(),
+            uv: egui::epaint::WHITE_UV,
+            color: base,
+        });
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos: top_rect.right_top(),
+            uv: egui::epaint::WHITE_UV,
+            color: base,
+        });
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos: top_rect.right_bottom(),
+            uv: egui::epaint::WHITE_UV,
+            color: transparent,
+        });
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos: top_rect.left_bottom(),
+            uv: egui::epaint::WHITE_UV,
+            color: transparent,
+        });
+        mesh.indices
+            .extend_from_slice(&[index, index + 1, index + 2, index, index + 2, index + 3]);
+        painter.add(egui::Shape::mesh(mesh));
+        painter.line_segment(
+            [
+                egui::pos2(rect.min.x + 12.0, top_rect.max.y - 2.0),
+                egui::pos2(rect.max.x - 12.0, top_rect.max.y - 2.0),
+            ],
+            egui::Stroke::new(
+                1.0,
+                color_with_scaled_alpha(
+                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 42),
+                    settings_t,
+                ),
+            ),
+        );
+    }
+
+    if end_index < options.len() {
+        let mask_height = 42.0;
+        let mut mesh = egui::epaint::Mesh::default();
+        let base = egui::Color32::from_rgba_unmultiplied(14, 15, 18, 252);
+        let transparent = egui::Color32::from_rgba_unmultiplied(18, 19, 22, 0);
+        let bottom_rect = egui::Rect::from_min_max(
+            egui::pos2(rect.min.x + 1.0, rect.max.y - 1.0 - mask_height),
+            egui::pos2(rect.max.x - 1.0, rect.max.y - 1.0),
+        );
+        let index = mesh.vertices.len() as u32;
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos: bottom_rect.left_top(),
+            uv: egui::epaint::WHITE_UV,
+            color: transparent,
+        });
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos: bottom_rect.right_top(),
+            uv: egui::epaint::WHITE_UV,
+            color: transparent,
+        });
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos: bottom_rect.right_bottom(),
+            uv: egui::epaint::WHITE_UV,
+            color: base,
+        });
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos: bottom_rect.left_bottom(),
+            uv: egui::epaint::WHITE_UV,
+            color: base,
+        });
+        mesh.indices
+            .extend_from_slice(&[index, index + 1, index + 2, index, index + 2, index + 3]);
+        painter.add(egui::Shape::mesh(mesh));
+        painter.line_segment(
+            [
+                egui::pos2(rect.min.x + 12.0, bottom_rect.min.y + 2.0),
+                egui::pos2(rect.max.x - 12.0, bottom_rect.min.y + 2.0),
+            ],
+            egui::Stroke::new(
+                1.0,
+                color_with_scaled_alpha(
+                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 42),
+                    settings_t,
+                ),
+            ),
+        );
+    }
+
+    start_index
+}
+
 fn settings_layer_state(
     settings_t: f32,
     submenu_t: f32,
@@ -149,30 +470,8 @@ fn draw_settings_list_row(
         egui::StrokeKind::Middle,
     );
 
-    if focus_t > 0.001 {
-        let focus_rect = rect.expand(5.0);
-        painter.rect_filled(
-            focus_rect,
-            corner_radius(12.0),
-            color_with_scaled_alpha(
-                egui::Color32::from_rgba_unmultiplied(248, 250, 255, 54),
-                settings_t * focus_t,
-            ),
-        );
-        if show_focus_outline {
-            painter.rect_stroke(
-                focus_rect,
-                corner_radius(12.0),
-                egui::Stroke::new(
-                    lerp_f32(1.2, 3.0, focus_t),
-                    color_with_scaled_alpha(
-                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 168),
-                        settings_t * focus_t,
-                    ),
-                ),
-                egui::StrokeKind::Outside,
-            );
-        }
+    if show_focus_outline {
+        draw_settings_focus_frame(painter, rect, focus_t, settings_t);
     }
 
     let content_padding_x = 34.0;
@@ -504,12 +803,18 @@ pub fn draw_settings_page(
     detect_epic_games_enabled: bool,
     detect_xbox_games_enabled: bool,
     resolution_options: &ResolutionOptions,
+    current_resolution_index: usize,
+    current_refresh_index: usize,
+    screen_resolution_dropdown_open: bool,
+    screen_refresh_dropdown_open: bool,
+    screen_dropdown_selected_index: usize,
     selected_section_index: usize,
     selected_item_index: usize,
     show_settings_page: bool,
     settings_in_submenu: bool,
     settings_anim: f32,
     submenu_anim: f32,
+    screen_dropdown_overlay_anim: f32,
     settings_select_anim: f32,
 ) {
     let (backdrop_t, content_anim_t) = staged_settings_entry_progress(settings_anim);
@@ -1003,11 +1308,18 @@ pub fn draw_settings_page(
                 );
             }
             1 => {
-                let submenu_list_inner_rect = draw_page_shell(submenu_content_rect, submenu_layer_t, &page_title);
+                let submenu_list_inner_rect =
+                    draw_page_shell(submenu_content_rect, submenu_layer_t, &page_title);
                 let submenu_list_painter = painter.with_clip_rect(submenu_list_inner_rect);
                 let header_rect = egui::Rect::from_min_max(
-                    egui::pos2(submenu_list_inner_rect.min.x + 18.0, submenu_list_inner_rect.min.y + 8.0),
-                    egui::pos2(submenu_list_inner_rect.max.x - 18.0, submenu_list_inner_rect.min.y + 96.0),
+                    egui::pos2(
+                        submenu_list_inner_rect.min.x + 18.0,
+                        submenu_list_inner_rect.min.y + 8.0,
+                    ),
+                    egui::pos2(
+                        submenu_list_inner_rect.max.x - 18.0,
+                        submenu_list_inner_rect.min.y + 96.0,
+                    ),
                 );
                 let rows_origin_y = submenu_list_inner_rect.min.y
                     + draw_settings_section_header(
@@ -1018,42 +1330,145 @@ pub fn draw_settings_page(
                         submenu_layer_t,
                     )
                     + 16.0;
-                draw_row(
-                    submenu_list_inner_rect,
-                    rows_origin_y,
-                    submenu_row_spacing,
-                    submenu_row_height,
-                    0,
-                    None,
-                    None,
-                    None,
-                    &resolution_options.half_refresh.label,
-                    false,
-                    None,
-                    None,
-                    None,
+                let resolution_values: Vec<String> = resolution_options
+                    .resolutions
+                    .iter()
+                    .map(|entry| entry.label.clone())
+                    .collect();
+                let refresh_values: Vec<String> = resolution_options
+                    .resolutions
+                    .get(current_resolution_index)
+                    .map(|entry| {
+                        entry
+                            .refresh_rates
+                            .iter()
+                            .map(|refresh_hz| format!("{}Hz", refresh_hz))
+                            .collect()
+                    })
+                    .unwrap_or_else(|| vec![format!("{}Hz", resolution_options.current.refresh_hz)]);
+                let resolution_value = resolution_values
+                    .get(current_resolution_index)
+                    .map(String::as_str)
+                    .unwrap_or(resolution_options.current.label.as_str());
+                let current_refresh_value = format!("{}Hz", resolution_options.current.refresh_hz);
+                let refresh_value = refresh_values
+                    .get(current_refresh_index)
+                    .map(String::as_str)
+                    .unwrap_or(current_refresh_value.as_str());
+                let focus_t = smoothstep01(settings_select_anim);
+                let content_left = submenu_list_inner_rect.min.x + 18.0;
+                let content_right = submenu_list_inner_rect.max.x - 18.0;
+                let row_width = content_right - content_left;
+                let row_height = 88.0;
+                let row_gap = 18.0;
+                let menu_gap = 14.0;
+                let option_height = 64.0;
+                let option_gap = 8.0;
+                let menu_padding_y = 14.0;
+                let max_visible_items = 4;
+                let resolution_row_rect = egui::Rect::from_min_size(
+                    egui::pos2(content_left, rows_origin_y),
+                    egui::vec2(row_width, row_height),
+                );
+                let _ = draw_settings_dropdown_row(
+                    &submenu_list_painter,
+                    resolution_row_rect,
+                    language.resolution_text(),
+                    resolution_value,
                     selected_item_index == 0,
-                    true,
+                    screen_resolution_dropdown_open,
                     submenu_layer_t,
+                    focus_t,
                 );
-                draw_row(
-                    submenu_list_inner_rect,
-                    rows_origin_y,
-                    submenu_row_spacing,
-                    submenu_row_height,
-                    1,
-                    None,
-                    None,
-                    None,
-                    &resolution_options.max_refresh.label,
-                    false,
-                    None,
-                    None,
-                    None,
+                let refresh_row_top = rows_origin_y + row_height + row_gap;
+                let refresh_row_rect = egui::Rect::from_min_size(
+                    egui::pos2(content_left, refresh_row_top),
+                    egui::vec2(row_width, row_height),
+                );
+                let _ = draw_settings_dropdown_row(
+                    &submenu_list_painter,
+                    refresh_row_rect,
+                    language.refresh_rate_text(),
+                    refresh_value,
                     selected_item_index == 1,
-                    true,
+                    screen_refresh_dropdown_open,
                     submenu_layer_t,
+                    focus_t,
                 );
+
+                let dropdown_overlay_t = smoothstep01(screen_dropdown_overlay_anim);
+                let dropdown_overlay_open = dropdown_overlay_t > 0.001;
+                if dropdown_overlay_open {
+                    painter.rect_filled(
+                        panel_rect,
+                        egui::CornerRadius::ZERO,
+                        color_with_scaled_alpha(
+                            egui::Color32::from_rgba_unmultiplied(6, 8, 12, 178),
+                            submenu_layer_t * dropdown_overlay_t,
+                        ),
+                    );
+                }
+
+                if screen_resolution_dropdown_open {
+                    let resolution_button_rect = draw_settings_dropdown_row(
+                        &submenu_list_painter,
+                        resolution_row_rect,
+                        language.resolution_text(),
+                        resolution_value,
+                        selected_item_index == 0,
+                        screen_resolution_dropdown_open,
+                        submenu_layer_t,
+                        focus_t,
+                    );
+                    let visible_count = resolution_values.len().min(max_visible_items);
+                    let height = menu_padding_y * 2.0
+                        + visible_count as f32 * option_height
+                        + visible_count.saturating_sub(1) as f32 * option_gap;
+                    let menu_rect = egui::Rect::from_min_size(
+                        egui::pos2(
+                            resolution_button_rect.min.x,
+                            resolution_button_rect.max.y + menu_gap,
+                        ),
+                        egui::vec2(resolution_button_rect.width(), height),
+                    );
+                    let _ = draw_settings_dropdown_menu(
+                        &submenu_list_painter,
+                        menu_rect,
+                        &resolution_values,
+                        screen_dropdown_selected_index.min(resolution_values.len().saturating_sub(1)),
+                        submenu_layer_t,
+                        focus_t,
+                    );
+                }
+
+                if screen_refresh_dropdown_open {
+                    let refresh_button_rect = draw_settings_dropdown_row(
+                        &submenu_list_painter,
+                        refresh_row_rect,
+                        language.refresh_rate_text(),
+                        refresh_value,
+                        selected_item_index == 1,
+                        screen_refresh_dropdown_open,
+                        submenu_layer_t,
+                        focus_t,
+                    );
+                    let visible_count = refresh_values.len().min(max_visible_items);
+                    let height = menu_padding_y * 2.0
+                        + visible_count as f32 * option_height
+                        + visible_count.saturating_sub(1) as f32 * option_gap;
+                    let menu_rect = egui::Rect::from_min_size(
+                        egui::pos2(refresh_button_rect.min.x, refresh_button_rect.max.y + menu_gap),
+                        egui::vec2(refresh_button_rect.width(), height),
+                    );
+                    let _ = draw_settings_dropdown_menu(
+                        &submenu_list_painter,
+                        menu_rect,
+                        &refresh_values,
+                        screen_dropdown_selected_index.min(refresh_values.len().saturating_sub(1)),
+                        submenu_layer_t,
+                        focus_t,
+                    );
+                }
             }
             _ => {
                 let submenu_list_inner_rect = draw_page_shell(submenu_content_rect, submenu_layer_t, &page_title);

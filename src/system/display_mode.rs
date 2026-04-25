@@ -1,4 +1,6 @@
-#[derive(Clone, Debug)]
+use std::collections::BTreeMap;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResolutionChoice {
     pub width: u32,
     pub height: u32,
@@ -6,46 +8,168 @@ pub struct ResolutionChoice {
     pub label: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResolutionEntry {
+    pub width: u32,
+    pub height: u32,
+    pub label: String,
+    pub refresh_rates: Vec<u32>,
+}
+
 #[derive(Clone, Debug)]
 pub struct ResolutionOptions {
     pub current: ResolutionChoice,
-    pub half_refresh: ResolutionChoice,
-    pub max_refresh: ResolutionChoice,
+    pub resolutions: Vec<ResolutionEntry>,
 }
 
-impl ResolutionOptions {
-    fn choice(width: u32, height: u32, refresh_hz: u32) -> ResolutionChoice {
-        ResolutionChoice {
+impl ResolutionChoice {
+    fn new(width: u32, height: u32, refresh_hz: u32) -> Self {
+        Self {
             width,
             height,
             refresh_hz,
             label: format!("{}×{} {}Hz", width, height, refresh_hz),
         }
     }
+}
 
-    fn new(
+impl ResolutionEntry {
+    fn new(width: u32, height: u32, mut refresh_rates: Vec<u32>) -> Self {
+        refresh_rates.retain(|refresh_hz| *refresh_hz > 0);
+        refresh_rates.sort_unstable_by(|left, right| right.cmp(left));
+        refresh_rates.dedup();
+
+        Self {
+            width,
+            height,
+            label: format!("{}×{}", width, height),
+            refresh_rates,
+        }
+    }
+
+    fn choice(&self, refresh_index: usize) -> Option<ResolutionChoice> {
+        self.refresh_rates
+            .get(refresh_index)
+            .copied()
+            .map(|refresh_hz| ResolutionChoice::new(self.width, self.height, refresh_hz))
+    }
+}
+
+impl ResolutionOptions {
+    fn fallback() -> Self {
+        let current = ResolutionChoice::new(3840, 2160, 60);
+        let resolutions = vec![ResolutionEntry::new(3840, 2160, vec![120, 60])];
+
+        Self {
+            current,
+            resolutions,
+        }
+    }
+
+    fn from_modes(
         current_width: u32,
         current_height: u32,
         current_refresh_hz: u32,
-        max_width: u32,
-        max_height: u32,
-        max_refresh_hz: u32,
+        modes: impl IntoIterator<Item = (u32, u32, u32)>,
     ) -> Self {
-        let max_refresh_hz = max_refresh_hz.max(1);
-        let half_refresh_hz = ((max_refresh_hz as f32) / 2.0).round() as u32;
-        let half_refresh_hz = half_refresh_hz.max(1);
+        let mut grouped_modes: BTreeMap<(u32, u32), Vec<u32>> = BTreeMap::new();
+
+        for (width, height, refresh_hz) in modes {
+            if width == 0 || height == 0 || refresh_hz == 0 {
+                continue;
+            }
+
+            grouped_modes
+                .entry((width, height))
+                .or_default()
+                .push(refresh_hz);
+        }
+
+        if current_width > 0 && current_height > 0 && current_refresh_hz > 0 {
+            grouped_modes
+                .entry((current_width, current_height))
+                .or_default()
+                .push(current_refresh_hz);
+        }
+
+        if grouped_modes.is_empty() {
+            return Self::fallback();
+        }
+
+        let mut resolutions: Vec<_> = grouped_modes
+            .into_iter()
+            .map(|((width, height), refresh_rates)| ResolutionEntry::new(width, height, refresh_rates))
+            .filter(|entry| !entry.refresh_rates.is_empty())
+            .collect();
+
+        resolutions.sort_unstable_by(|left, right| {
+            let left_area = left.width as u64 * left.height as u64;
+            let right_area = right.width as u64 * right.height as u64;
+            right_area
+                .cmp(&left_area)
+                .then_with(|| right.width.cmp(&left.width))
+                .then_with(|| right.height.cmp(&left.height))
+        });
+
+        if resolutions.is_empty() {
+            return Self::fallback();
+        }
+
+        let current = if current_width > 0 && current_height > 0 && current_refresh_hz > 0 {
+            ResolutionChoice::new(current_width, current_height, current_refresh_hz)
+        } else {
+            resolutions
+                .first()
+                .and_then(|entry| entry.choice(0))
+                .unwrap_or_else(|| ResolutionChoice::new(3840, 2160, 60))
+        };
 
         Self {
-            current: Self::choice(current_width, current_height, current_refresh_hz.max(1)),
-            half_refresh: Self::choice(max_width, max_height, half_refresh_hz),
-            max_refresh: Self::choice(max_width, max_height, max_refresh_hz),
+            current,
+            resolutions,
         }
+    }
+
+    pub fn current_resolution_index(&self) -> usize {
+        self.resolutions
+            .iter()
+            .position(|entry| entry.width == self.current.width && entry.height == self.current.height)
+            .unwrap_or(0)
+    }
+
+    pub fn current_refresh_index_for(&self, resolution_index: usize) -> usize {
+        self.resolutions
+            .get(resolution_index)
+            .and_then(|entry| {
+                entry
+                    .refresh_rates
+                    .iter()
+                    .position(|refresh_hz| *refresh_hz == self.current.refresh_hz)
+            })
+            .unwrap_or(0)
+    }
+
+    pub fn refresh_rates_for(&self, resolution_index: usize) -> &[u32] {
+        self.resolutions
+            .get(resolution_index)
+            .map(|entry| entry.refresh_rates.as_slice())
+            .unwrap_or(&[])
+    }
+
+    pub fn choice_for_indices(
+        &self,
+        resolution_index: usize,
+        refresh_index: usize,
+    ) -> Option<ResolutionChoice> {
+        self.resolutions
+            .get(resolution_index)
+            .and_then(|entry| entry.choice(refresh_index))
     }
 }
 
 impl Default for ResolutionOptions {
     fn default() -> Self {
-        Self::new(3840, 2160, 60, 3840, 2160, 120)
+        Self::fallback()
     }
 }
 
@@ -70,10 +194,7 @@ pub fn detect_resolution_options() -> ResolutionOptions {
         current_refresh_hz = current_mode.dmDisplayFrequency;
     }
 
-    let mut best_width = 0;
-    let mut best_height = 0;
-    let mut best_refresh_hz = 0;
-    let mut best_area = 0_u64;
+    let mut modes = Vec::new();
     let mut mode_index = 0;
 
     loop {
@@ -90,48 +211,10 @@ pub fn detect_resolution_options() -> ResolutionOptions {
         let width = dev_mode.dmPelsWidth;
         let height = dev_mode.dmPelsHeight;
         let refresh_hz = dev_mode.dmDisplayFrequency;
-        if width == 0 || height == 0 || refresh_hz == 0 {
-            continue;
-        }
-
-        let area = width as u64 * height as u64;
-        let found_larger_resolution = area > best_area
-            || (area == best_area
-                && (width > best_width || (width == best_width && height > best_height)));
-
-        if found_larger_resolution {
-            best_width = width;
-            best_height = height;
-            best_refresh_hz = refresh_hz;
-            best_area = area;
-            continue;
-        }
-
-        if width == best_width && height == best_height && refresh_hz > best_refresh_hz {
-            best_refresh_hz = refresh_hz;
-        }
+        modes.push((width, height, refresh_hz));
     }
 
-    if best_width > 0 && best_height > 0 && best_refresh_hz > 0 {
-        let current_width = if current_width == 0 { best_width } else { current_width };
-        let current_height = if current_height == 0 { best_height } else { current_height };
-        let current_refresh_hz = if current_refresh_hz == 0 {
-            best_refresh_hz
-        } else {
-            current_refresh_hz
-        };
-
-        ResolutionOptions::new(
-            current_width,
-            current_height,
-            current_refresh_hz,
-            best_width,
-            best_height,
-            best_refresh_hz,
-        )
-    } else {
-        ResolutionOptions::default()
-    }
+    ResolutionOptions::from_modes(current_width, current_height, current_refresh_hz, modes)
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -170,4 +253,38 @@ pub fn apply_resolution_choice(choice: &ResolutionChoice) -> bool {
 #[cfg(not(target_os = "windows"))]
 pub fn apply_resolution_choice(_choice: &ResolutionChoice) -> bool {
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ResolutionOptions;
+
+    #[test]
+    fn groups_refresh_rates_by_resolution() {
+        let options = ResolutionOptions::from_modes(
+            2560,
+            1440,
+            120,
+            [
+                (1920, 1080, 60),
+                (2560, 1440, 60),
+                (2560, 1440, 120),
+                (1920, 1080, 60),
+            ],
+        );
+
+        assert_eq!(options.resolutions.len(), 2);
+        assert_eq!(options.resolutions[0].label, "2560×1440");
+        assert_eq!(options.resolutions[0].refresh_rates, vec![120, 60]);
+        assert_eq!(options.current_resolution_index(), 0);
+        assert_eq!(options.current_refresh_index_for(0), 0);
+    }
+
+    #[test]
+    fn falls_back_when_modes_are_empty() {
+        let options = ResolutionOptions::from_modes(0, 0, 0, []);
+
+        assert_eq!(options.current.label, "3840×2160 60Hz");
+        assert_eq!(options.resolutions[0].refresh_rates, vec![120, 60]);
+    }
 }

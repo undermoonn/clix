@@ -34,7 +34,7 @@ use self::external_app_icons::ExternalAppIconState;
 use self::game_icons::GameIconState;
 use self::install_size::InstallSizeState;
 use self::playtime::PlaytimeState;
-use self::state::{PageState, PowerAction, ResolutionPreset, RuntimeState};
+use self::state::{PageState, PowerAction, RuntimeState, ScreenSettingsAction};
 
 const PASSIVE_REPAINT_INTERVAL: Duration = Duration::from_secs(1);
 const CONTROLLER_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -273,6 +273,7 @@ impl LauncherApp {
             last_pointer_pos: None,
             last_pointer_activity: None,
         };
+        app.sync_screen_settings_state();
         app.refresh_selected_install_size(ctx);
         app
     }
@@ -817,14 +818,64 @@ impl LauncherApp {
         }
     }
 
-    fn apply_resolution_preset(&mut self, preset: ResolutionPreset) {
-        let option = match preset {
-            ResolutionPreset::HalfMaxRefresh => &self.resolution_options.half_refresh,
-            ResolutionPreset::MaxRefresh => &self.resolution_options.max_refresh,
+    fn sync_screen_settings_state(&mut self) {
+        let resolution_index = self.resolution_options.current_resolution_index();
+        let refresh_index = self
+            .resolution_options
+            .current_refresh_index_for(resolution_index);
+        let refresh_count = self
+            .resolution_options
+            .refresh_rates_for(resolution_index)
+            .len();
+
+        self.page.sync_screen_settings(
+            self.resolution_options.resolutions.len(),
+            resolution_index,
+            refresh_count,
+            refresh_index,
+        );
+    }
+
+    fn apply_resolution_indices(&mut self, resolution_index: usize, refresh_index: usize) {
+        let Some(choice) = self
+            .resolution_options
+            .choice_for_indices(resolution_index, refresh_index)
+        else {
+            return;
         };
 
-        let _ = display_mode::apply_resolution_choice(option);
+        let _ = display_mode::apply_resolution_choice(&choice);
         self.resolution_options = display_mode::detect_resolution_options();
+        self.sync_screen_settings_state();
+    }
+
+    fn apply_screen_settings_action(&mut self, action: ScreenSettingsAction) {
+        let current_resolution_index = self.resolution_options.current_resolution_index();
+        let current_refresh_index = self
+            .resolution_options
+            .current_refresh_index_for(current_resolution_index);
+
+        match action {
+            ScreenSettingsAction::SelectResolution(resolution_index) => {
+                let preferred_refresh_hz = self
+                    .resolution_options
+                    .refresh_rates_for(current_resolution_index)
+                    .get(current_refresh_index)
+                    .copied()
+                    .unwrap_or(self.resolution_options.current.refresh_hz);
+                let next_refresh_index = self
+                    .resolution_options
+                    .refresh_rates_for(resolution_index)
+                    .iter()
+                    .position(|refresh_hz| *refresh_hz == preferred_refresh_hz)
+                    .unwrap_or(0);
+
+                self.apply_resolution_indices(resolution_index, next_refresh_index);
+            }
+            ScreenSettingsAction::SelectRefreshRate(refresh_index) => {
+                self.apply_resolution_indices(current_resolution_index, refresh_index);
+            }
+        }
     }
 
     fn close_root_viewport(&self, ctx: &egui::Context) {
@@ -833,6 +884,7 @@ impl LauncherApp {
 
     fn refresh_power_menu_state(&mut self) {
         self.resolution_options = display_mode::detect_resolution_options();
+        self.sync_screen_settings_state();
         self.launch_on_startup_enabled = startup::is_enabled();
         self.power_menu_external_apps = external_apps::detect_installed();
         let layout = crate::power_menu_structure::PowerMenuLayout::new(power::supported());
@@ -1180,8 +1232,8 @@ impl eframe::App for LauncherApp {
                     self.input.clear_held();
                     ctx.request_repaint();
                 }
-                if let Some(preset) = result.set_resolution {
-                    self.apply_resolution_preset(preset);
+                if let Some(screen_settings_action) = result.screen_settings_action {
+                    self.apply_screen_settings_action(screen_settings_action);
                 }
                 if let Some(power_action) = result.power_action {
                     self.apply_power_action(power_action, &ctx, frame);
@@ -1391,12 +1443,20 @@ impl eframe::App for LauncherApp {
                     self.game_scan_options.detect_epic_games,
                     self.game_scan_options.detect_xbox_games,
                     &self.resolution_options,
+                    self.resolution_options.current_resolution_index(),
+                    self.resolution_options.current_refresh_index_for(
+                        self.resolution_options.current_resolution_index(),
+                    ),
+                    self.page.settings_screen_resolution_dropdown_open(),
+                    self.page.settings_screen_refresh_dropdown_open(),
+                    self.page.settings_screen_dropdown_selected_index(),
                     self.page.settings_section_index(),
                     self.page.settings_selected_item_index(),
                     self.page.show_settings_page(),
                     self.page.settings_in_submenu(),
                     self.page.settings_page_anim(),
                     self.page.settings_submenu_anim(),
+                    self.page.settings_screen_dropdown_overlay_anim(),
                     self.page.settings_select_anim(),
                 );
 
@@ -1441,8 +1501,8 @@ impl eframe::App for LauncherApp {
                     self.power_off_icon.as_ref(),
                     self.hint_icons.as_ref(),
                     &self.resolution_options.current.label,
-                    &self.resolution_options.half_refresh.label,
-                    &self.resolution_options.max_refresh.label,
+                    "",
+                    "",
                     power::supported(),
                     self.page.power_menu_anim(),
                     self.page.power_menu_select_anim(),

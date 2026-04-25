@@ -226,6 +226,20 @@ impl AppLanguage {
         }
     }
 
+    pub fn resolution_text(self) -> &'static str {
+        match self {
+            Self::English => "Resolution",
+            Self::SimplifiedChinese => "分辨率",
+        }
+    }
+
+    pub fn refresh_rate_text(self) -> &'static str {
+        match self {
+            Self::English => "Frame Rate",
+            Self::SimplifiedChinese => "帧率",
+        }
+    }
+
     pub fn dlss_swapper_text(self) -> &'static str {
         match self {
             Self::English => "DLSS Swapper",
