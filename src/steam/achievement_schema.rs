@@ -76,116 +76,78 @@ pub(super) fn load_schema_achievement_metadata(
     HashMap::new()
 }
 
-pub(super) fn load_schema_display_names(
+#[derive(Default)]
+pub(super) struct SchemaMetadataMaps {
+    pub(super) display_names: HashMap<String, String>,
+    pub(super) descriptions: HashMap<String, String>,
+    pub(super) hidden_flags: HashMap<String, SchemaAchInfo>,
+    pub(super) icon_urls: HashMap<String, (String, String)>,
+}
+
+pub(super) fn load_schema_metadata_maps(
     app_id: u32,
     steam_paths: &[PathBuf],
     language: AppLanguage,
-) -> HashMap<String, String> {
+) -> SchemaMetadataMaps {
     let bits = load_schema_achievement_bits(app_id, steam_paths, language);
-    let metadata = load_schema_achievement_metadata(app_id, steam_paths, language);
-    let mut map = HashMap::new();
+    let hidden_flags = load_schema_achievement_metadata(app_id, steam_paths, language);
+    let mut display_names = HashMap::new();
+    let mut descriptions = HashMap::new();
+    let mut icon_urls = HashMap::new();
 
     for entries in bits.values() {
         for (_, info) in entries {
             if let Some(display_name) = &info.display_name {
-                map.insert(info.api_name.clone(), display_name.clone());
+                display_names.insert(info.api_name.clone(), display_name.clone());
             }
-        }
-    }
-
-    for (api_name, info) in metadata {
-        if let Some(display_name) = info.display_name {
-            map.entry(api_name).or_insert(display_name);
-        }
-    }
-
-    map
-}
-
-pub(super) fn load_schema_descriptions(
-    app_id: u32,
-    steam_paths: &[PathBuf],
-    language: AppLanguage,
-) -> HashMap<String, String> {
-    let bits = load_schema_achievement_bits(app_id, steam_paths, language);
-    let metadata = load_schema_achievement_metadata(app_id, steam_paths, language);
-    let mut map = HashMap::new();
-
-    for entries in bits.values() {
-        for (_, info) in entries {
             if let Some(description) = &info.description {
-                map.insert(info.api_name.clone(), description.clone());
+                descriptions.insert(info.api_name.clone(), description.clone());
+            }
+            if let Some(icon_pair) = normalized_schema_icon_pair(app_id, info) {
+                icon_urls.insert(info.api_name.clone(), icon_pair);
             }
         }
     }
 
-    for (api_name, info) in metadata {
-        if let Some(description) = info.description {
-            map.entry(api_name).or_insert(description);
+    for (api_name, info) in &hidden_flags {
+        if let Some(display_name) = &info.display_name {
+            display_names
+                .entry(api_name.clone())
+                .or_insert_with(|| display_name.clone());
+        }
+        if let Some(description) = &info.description {
+            descriptions
+                .entry(api_name.clone())
+                .or_insert_with(|| description.clone());
+        }
+        if let Some(icon_pair) = normalized_schema_icon_pair(app_id, info) {
+            icon_urls.entry(api_name.clone()).or_insert(icon_pair);
         }
     }
 
-    map
+    SchemaMetadataMaps {
+        display_names,
+        descriptions,
+        hidden_flags,
+        icon_urls,
+    }
 }
 
-pub(super) fn load_schema_icon_urls(
-    app_id: u32,
-    steam_paths: &[PathBuf],
-    language: AppLanguage,
-) -> HashMap<String, (String, String)> {
-    let bits = load_schema_achievement_bits(app_id, steam_paths, language);
-    let metadata = load_schema_achievement_metadata(app_id, steam_paths, language);
-    let mut map = HashMap::new();
-
-    for entries in bits.values() {
-        for (_, info) in entries {
-            let icon = info
-                .icon_url
-                .as_deref()
-                .and_then(|value| normalize_schema_icon_value(app_id, value));
-            let icon_gray = info
-                .icon_gray_url
-                .as_deref()
-                .and_then(|value| normalize_schema_icon_value(app_id, value));
-            match (icon, icon_gray) {
-                (Some(icon), Some(icon_gray)) => {
-                    map.insert(info.api_name.clone(), (icon, icon_gray));
-                }
-                (Some(icon), None) => {
-                    map.insert(info.api_name.clone(), (icon.clone(), icon));
-                }
-                (None, Some(icon_gray)) => {
-                    map.insert(info.api_name.clone(), (icon_gray.clone(), icon_gray));
-                }
-                _ => {}
-            }
-        }
+fn normalized_schema_icon_pair(app_id: u32, info: &SchemaAchInfo) -> Option<(String, String)> {
+    let icon = info
+        .icon_url
+        .as_deref()
+        .and_then(|value| normalize_schema_icon_value(app_id, value));
+    let icon_gray = info
+        .icon_gray_url
+        .as_deref()
+        .and_then(|value| normalize_schema_icon_value(app_id, value));
+    match (icon, icon_gray) {
+        (Some(icon), Some(icon_gray)) => Some((icon, icon_gray)),
+        (Some(icon), None) => Some((icon.clone(), icon)),
+        (None, Some(icon_gray)) => Some((icon_gray.clone(), icon_gray)),
+        (None, None) => None,
     }
-
-    for (api_name, info) in metadata {
-        let icon = info
-            .icon_url
-            .as_deref()
-            .and_then(|value| normalize_schema_icon_value(app_id, value));
-        let icon_gray = info
-            .icon_gray_url
-            .as_deref()
-            .and_then(|value| normalize_schema_icon_value(app_id, value));
-        match (icon, icon_gray) {
-            (Some(icon), Some(icon_gray)) => {
-                map.entry(api_name).or_insert((icon, icon_gray));
-            }
-            (Some(icon), None) => {
-                map.entry(api_name).or_insert((icon.clone(), icon));
-            }
-            (None, Some(icon_gray)) => {
-                map.entry(api_name).or_insert((icon_gray.clone(), icon_gray));
-            }
-            _ => {}
-        }
-    }
-
-    map
 }
 
 pub(super) fn load_local_schema_achievement_names(

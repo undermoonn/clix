@@ -6,9 +6,7 @@ use crate::i18n::AppLanguage;
 use super::achievement_bvdf::load_local_unlock_status;
 use super::achievement_cache::load_global_achievement_percentages;
 use super::achievement_schema::{
-    load_local_schema_achievement_names, load_local_schema_items,
-    load_schema_achievement_metadata, load_schema_descriptions, load_schema_display_names,
-    load_schema_icon_urls,
+    load_local_schema_achievement_names, load_local_schema_items, load_schema_metadata_maps,
 };
 use super::types::{AchievementItem, AchievementSummary};
 
@@ -123,31 +121,28 @@ fn merge_schema_metadata(
     items_map: &mut HashMap<String, AchievementItem>,
     allow_global_percentage_refresh: bool,
 ) {
-    let display_names = load_schema_display_names(app_id, steam_paths, language);
-    let descriptions = load_schema_descriptions(app_id, steam_paths, language);
-    let hidden_flags = load_schema_achievement_metadata(app_id, steam_paths, language);
-    let schema_icons = load_schema_icon_urls(app_id, steam_paths, language);
+    let schema_metadata = load_schema_metadata_maps(app_id, steam_paths, language);
     let global_percentages =
         load_global_achievement_percentages(app_id, allow_global_percentage_refresh);
 
     for item in items_map.values_mut() {
         if item.display_name.is_none() {
-            if let Some(display_name) = display_names.get(&item.api_name) {
+            if let Some(display_name) = schema_metadata.display_names.get(&item.api_name) {
                 item.display_name = Some(display_name.clone());
             }
         }
         if item.description.is_none() {
-            if let Some(description) = descriptions.get(&item.api_name) {
+            if let Some(description) = schema_metadata.descriptions.get(&item.api_name) {
                 item.description = Some(description.clone());
             }
         }
         if !item.is_hidden {
-            if let Some(info) = hidden_flags.get(&item.api_name) {
+            if let Some(info) = schema_metadata.hidden_flags.get(&item.api_name) {
                 item.is_hidden = info.is_hidden;
             }
         }
         if item.icon_url.is_none() || item.icon_gray_url.is_none() {
-            if let Some((icon, gray)) = schema_icons.get(&item.api_name) {
+            if let Some((icon, gray)) = schema_metadata.icon_urls.get(&item.api_name) {
                 if item.icon_url.is_none() {
                     item.icon_url = Some(icon.clone());
                 }
