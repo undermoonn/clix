@@ -22,6 +22,19 @@ pub struct ResolutionOptions {
     pub resolutions: Vec<ResolutionEntry>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DisplayScaleChoice {
+    pub scale_percent: u32,
+    pub label: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct DisplayScaleOptions {
+    pub current: DisplayScaleChoice,
+    pub recommended_scale_percent: u32,
+    pub scales: Vec<DisplayScaleChoice>,
+}
+
 impl ResolutionChoice {
     fn new(width: u32, height: u32, refresh_hz: u32) -> Self {
         Self {
@@ -173,6 +186,75 @@ impl Default for ResolutionOptions {
     }
 }
 
+impl DisplayScaleChoice {
+    fn new(scale_percent: u32) -> Self {
+        Self {
+            scale_percent,
+            label: format!("{}%", scale_percent),
+        }
+    }
+}
+
+impl DisplayScaleOptions {
+    fn fallback() -> Self {
+        let scales = [100, 125, 150, 175]
+            .into_iter()
+            .map(DisplayScaleChoice::new)
+            .collect::<Vec<_>>();
+
+        Self {
+            current: DisplayScaleChoice::new(100),
+            recommended_scale_percent: 100,
+            scales,
+        }
+    }
+
+    fn from_relative_values(min_scale_rel: i32, cur_scale_rel: i32, max_scale_rel: i32) -> Self {
+        const DISPLAY_SCALE_PERCENTAGES: [u32; 12] =
+            [100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500];
+
+        let recommended_index = min_scale_rel.unsigned_abs() as usize;
+        if recommended_index >= DISPLAY_SCALE_PERCENTAGES.len() {
+            return Self::fallback();
+        }
+
+        let max_index = (recommended_index as i32 + max_scale_rel)
+            .clamp(0, (DISPLAY_SCALE_PERCENTAGES.len() - 1) as i32)
+            as usize;
+        let current_index = (recommended_index as i32 + cur_scale_rel)
+            .clamp(0, max_index as i32)
+            as usize;
+        let scales = DISPLAY_SCALE_PERCENTAGES[..=max_index]
+            .iter()
+            .copied()
+            .map(DisplayScaleChoice::new)
+            .collect::<Vec<_>>();
+
+        Self {
+            current: DisplayScaleChoice::new(DISPLAY_SCALE_PERCENTAGES[current_index]),
+            recommended_scale_percent: DISPLAY_SCALE_PERCENTAGES[recommended_index],
+            scales,
+        }
+    }
+
+    pub fn current_scale_index(&self) -> usize {
+        self.scales
+            .iter()
+            .position(|choice| choice.scale_percent == self.current.scale_percent)
+            .unwrap_or(0)
+    }
+
+    pub fn choice_at(&self, scale_index: usize) -> Option<&DisplayScaleChoice> {
+        self.scales.get(scale_index)
+    }
+}
+
+impl Default for DisplayScaleOptions {
+    fn default() -> Self {
+        Self::fallback()
+    }
+}
+
 #[cfg(target_os = "windows")]
 pub fn detect_resolution_options() -> ResolutionOptions {
     use std::mem::{size_of, zeroed};
@@ -223,6 +305,236 @@ pub fn detect_resolution_options() -> ResolutionOptions {
 }
 
 #[cfg(target_os = "windows")]
+mod windows_scale {
+    use std::mem::{size_of, zeroed};
+    use std::ptr::null_mut;
+
+    use winapi::shared::basetsd::UINT32;
+    use winapi::shared::minwindef::DWORD;
+    use winapi::shared::ntdef::{LONG, LUID};
+    use winapi::shared::windef::POINT;
+    use winapi::um::wingdi::{
+        DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, DISPLAYCONFIG_DEVICE_INFO_HEADER,
+        DISPLAYCONFIG_MODE_INFO, DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_SOURCE_DEVICE_NAME,
+        QDC_ONLY_ACTIVE_PATHS, QDC_VIRTUAL_MODE_AWARE,
+    };
+    use winapi::um::winuser::{
+        GetMonitorInfoW, MonitorFromPoint, MONITOR_DEFAULTTOPRIMARY, MONITORINFOEXW,
+    };
+
+    use super::DisplayScaleOptions;
+
+    const DISPLAYCONFIG_DEVICE_INFO_GET_DPI_SCALE: i32 = -3;
+    const DISPLAYCONFIG_DEVICE_INFO_SET_DPI_SCALE: i32 = -4;
+
+    #[repr(C)]
+    struct DisplayConfigDeviceInfoHeaderRaw {
+        type_id: i32,
+        size: UINT32,
+        adapter_id: LUID,
+        source_id: UINT32,
+    }
+
+    #[repr(C)]
+    struct DisplayConfigSourceDpiScaleGet {
+        header: DisplayConfigDeviceInfoHeaderRaw,
+        min_scale_rel: i32,
+        cur_scale_rel: i32,
+        max_scale_rel: i32,
+    }
+
+    #[repr(C)]
+    struct DisplayConfigSourceDpiScaleSet {
+        header: DisplayConfigDeviceInfoHeaderRaw,
+        scale_rel: i32,
+    }
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetDisplayConfigBufferSizes(
+            flags: UINT32,
+            num_path_array_elements: *mut UINT32,
+            num_mode_info_array_elements: *mut UINT32,
+        ) -> LONG;
+        fn QueryDisplayConfig(
+            flags: UINT32,
+            num_path_array_elements: *mut UINT32,
+            path_array: *mut DISPLAYCONFIG_PATH_INFO,
+            num_mode_info_array_elements: *mut UINT32,
+            mode_info_array: *mut DISPLAYCONFIG_MODE_INFO,
+            current_topology_id: *mut u32,
+        ) -> LONG;
+        fn DisplayConfigGetDeviceInfo(request_packet: *mut DISPLAYCONFIG_DEVICE_INFO_HEADER) -> LONG;
+        fn DisplayConfigSetDeviceInfo(set_packet: *mut DISPLAYCONFIG_DEVICE_INFO_HEADER) -> LONG;
+    }
+
+    fn wide_slice_len(value: &[u16]) -> usize {
+        value.iter().position(|code| *code == 0).unwrap_or(value.len())
+    }
+
+    fn wide_slices_equal(left: &[u16], right: &[u16]) -> bool {
+        let left_len = wide_slice_len(left);
+        let right_len = wide_slice_len(right);
+        left[..left_len] == right[..right_len]
+    }
+
+    fn primary_source() -> Option<(LUID, u32)> {
+        let primary_monitor = unsafe { MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY) };
+        if primary_monitor.is_null() {
+            return None;
+        }
+
+        let mut primary_monitor_info: MONITORINFOEXW = unsafe { zeroed() };
+        primary_monitor_info.cbSize = size_of::<MONITORINFOEXW>() as DWORD;
+        let monitor_info_ok = unsafe {
+            GetMonitorInfoW(
+                primary_monitor,
+                &mut primary_monitor_info as *mut _ as *mut _,
+            )
+        };
+        if monitor_info_ok == 0 {
+            return None;
+        }
+
+        let flags = QDC_ONLY_ACTIVE_PATHS | QDC_VIRTUAL_MODE_AWARE;
+        let mut path_count = 0_u32;
+        let mut mode_count = 0_u32;
+        if unsafe { GetDisplayConfigBufferSizes(flags, &mut path_count, &mut mode_count) } != 0 {
+            return None;
+        }
+
+        let mut paths = (0..path_count)
+            .map(|_| unsafe { zeroed::<DISPLAYCONFIG_PATH_INFO>() })
+            .collect::<Vec<_>>();
+        let mut modes = (0..mode_count)
+            .map(|_| unsafe { zeroed::<DISPLAYCONFIG_MODE_INFO>() })
+            .collect::<Vec<_>>();
+
+        if unsafe {
+            QueryDisplayConfig(
+                flags,
+                &mut path_count,
+                paths.as_mut_ptr(),
+                &mut mode_count,
+                modes.as_mut_ptr(),
+                null_mut(),
+            )
+        } != 0
+        {
+            return None;
+        }
+
+        for path in paths.into_iter().take(path_count as usize) {
+            let mut source_name: DISPLAYCONFIG_SOURCE_DEVICE_NAME = unsafe { zeroed() };
+            source_name.header.size = size_of::<DISPLAYCONFIG_SOURCE_DEVICE_NAME>() as UINT32;
+            source_name.header.adapterId = path.sourceInfo.adapterId;
+            source_name.header.id = path.sourceInfo.id;
+            source_name.header._type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+
+            let source_name_ok = unsafe { DisplayConfigGetDeviceInfo(&mut source_name.header) };
+            if source_name_ok != 0 {
+                continue;
+            }
+
+            if wide_slices_equal(
+                &source_name.viewGdiDeviceName,
+                &primary_monitor_info.szDevice,
+            ) {
+                return Some((path.sourceInfo.adapterId, path.sourceInfo.id));
+            }
+        }
+
+        None
+    }
+
+    pub fn detect() -> DisplayScaleOptions {
+        let Some((adapter_id, source_id)) = primary_source() else {
+            return DisplayScaleOptions::fallback();
+        };
+
+        let mut request = DisplayConfigSourceDpiScaleGet {
+            header: DisplayConfigDeviceInfoHeaderRaw {
+                type_id: DISPLAYCONFIG_DEVICE_INFO_GET_DPI_SCALE,
+                size: size_of::<DisplayConfigSourceDpiScaleGet>() as UINT32,
+                adapter_id,
+                source_id,
+            },
+            min_scale_rel: 0,
+            cur_scale_rel: 0,
+            max_scale_rel: 0,
+        };
+
+        let status = unsafe {
+            DisplayConfigGetDeviceInfo(
+                &mut request as *mut _ as *mut DISPLAYCONFIG_DEVICE_INFO_HEADER,
+            )
+        };
+        if status != 0 {
+            return DisplayScaleOptions::fallback();
+        }
+
+        DisplayScaleOptions::from_relative_values(
+            request.min_scale_rel,
+            request.cur_scale_rel,
+            request.max_scale_rel,
+        )
+    }
+
+    pub fn apply(scale_percent: u32) -> bool {
+        let current_options = detect();
+        let recommended_index = current_options
+            .scales
+            .iter()
+            .position(|choice| choice.scale_percent == current_options.recommended_scale_percent)
+            .unwrap_or(0);
+        let Some(target_index) = current_options
+            .scales
+            .iter()
+            .position(|choice| choice.scale_percent == scale_percent)
+        else {
+            return false;
+        };
+        let Some((adapter_id, source_id)) = primary_source() else {
+            return false;
+        };
+
+        let mut request = DisplayConfigSourceDpiScaleSet {
+            header: DisplayConfigDeviceInfoHeaderRaw {
+                type_id: DISPLAYCONFIG_DEVICE_INFO_SET_DPI_SCALE,
+                size: size_of::<DisplayConfigSourceDpiScaleSet>() as UINT32,
+                adapter_id,
+                source_id,
+            },
+            scale_rel: target_index as i32 - recommended_index as i32,
+        };
+
+        (unsafe {
+            DisplayConfigSetDeviceInfo(&mut request as *mut _ as *mut DISPLAYCONFIG_DEVICE_INFO_HEADER)
+        }) == 0
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn detect_display_scale_options() -> DisplayScaleOptions {
+    windows_scale::detect()
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn detect_display_scale_options() -> DisplayScaleOptions {
+    DisplayScaleOptions::default()
+}
+
+#[cfg(target_os = "windows")]
+pub fn apply_display_scale_choice(choice: &DisplayScaleChoice) -> bool {
+    windows_scale::apply(choice.scale_percent)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn apply_display_scale_choice(_choice: &DisplayScaleChoice) -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
 pub fn apply_resolution_choice(choice: &ResolutionChoice) -> bool {
     use std::mem::{size_of, zeroed};
     use std::ptr::{null, null_mut};
@@ -257,7 +569,7 @@ pub fn apply_resolution_choice(_choice: &ResolutionChoice) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::ResolutionOptions;
+    use super::{DisplayScaleOptions, ResolutionOptions};
 
     #[test]
     fn groups_refresh_rates_by_resolution() {
@@ -286,5 +598,21 @@ mod tests {
 
         assert_eq!(options.current.label, "3840×2160 60Hz");
         assert_eq!(options.resolutions[0].refresh_rates, vec![120, 60]);
+    }
+
+    #[test]
+    fn scale_options_build_from_relative_values() {
+        let options = DisplayScaleOptions::from_relative_values(-2, 1, 3);
+
+        assert_eq!(options.recommended_scale_percent, 150);
+        assert_eq!(options.current.scale_percent, 175);
+        assert_eq!(
+            options
+                .scales
+                .iter()
+                .map(|choice| choice.scale_percent)
+                .collect::<Vec<_>>(),
+            vec![100, 125, 150, 175, 200, 225]
+        );
     }
 }

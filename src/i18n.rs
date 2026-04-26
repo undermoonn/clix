@@ -240,6 +240,13 @@ impl AppLanguage {
         }
     }
 
+    pub fn scale_text(self) -> &'static str {
+        match self {
+            Self::English => "Scale",
+            Self::SimplifiedChinese => "缩放",
+        }
+    }
+
     pub fn dlss_swapper_text(self) -> &'static str {
         match self {
             Self::English => "DLSS Swapper",

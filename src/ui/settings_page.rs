@@ -2,7 +2,7 @@ use eframe::egui;
 
 use crate::game::GameSource;
 use crate::i18n::{AppLanguage, AppLanguageSetting};
-use crate::system::display_mode::ResolutionOptions;
+use crate::system::display_mode::{DisplayScaleOptions, ResolutionOptions};
 
 use super::anim::{lerp_f32, smoothstep01};
 use super::header::{draw_selected_game_text_badge, measure_selected_game_text_badge};
@@ -23,7 +23,15 @@ struct SettingsLayerState {
 }
 
 const SETTINGS_BACKDROP_PHASE: f32 = 0.18;
+const OPEN_DROPDOWN_PARENT_FOCUS_T: f32 = 0.32;
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+const SETTINGS_SCROLL_ANIM_SPEED: f32 = 14.0;
+const SETTINGS_SCROLL_EPSILON: f32 = 0.5;
+const SETTINGS_PAGE_HEADER_HEIGHT: f32 = 78.0;
+const SETTINGS_PAGE_HEADER_GAP: f32 = 28.0;
+const SETTINGS_DROPDOWN_MASK_ANIM_SPEED: f32 = 18.0;
+const SETTINGS_DROPDOWN_MASK_EPSILON: f32 = 0.01;
+const SETTINGS_DROPDOWN_MASK_MAX_DT: f32 = 1.0 / 60.0;
 
 fn build_time() -> &'static str {
     option_env!("BIG_SCREEN_LAUNCHER_BUILD_TIME").unwrap_or("unknown")
@@ -115,43 +123,29 @@ fn draw_settings_focus_frame(
     );
 }
 
-fn draw_settings_dropdown_button(
+fn draw_settings_dropdown_trigger_pill(
     painter: &egui::Painter,
-    label_rect: egui::Rect,
-    button_rect: egui::Rect,
-    label: &str,
+    rect: egui::Rect,
     value: &str,
     open: bool,
     settings_t: f32,
 ) {
-    let label_color = if open {
-        egui::Color32::from_rgba_unmultiplied(244, 247, 252, 255)
-    } else {
-        egui::Color32::from_rgba_unmultiplied(212, 219, 228, 240)
-    };
-    let label_galley = painter.layout_no_wrap(
-        label.to_string(),
-        egui::FontId::proportional(24.0),
-        color_with_scaled_alpha(label_color, settings_t),
-    );
-    painter.galley(
-        egui::pos2(label_rect.min.x, label_rect.center().y - label_galley.size().y * 0.5),
-        label_galley,
-        egui::Color32::WHITE,
-    );
-
     let value_galley = painter.layout_no_wrap(
         value.to_string(),
-        egui::FontId::proportional(22.0),
+        egui::FontId::proportional(20.0),
         color_with_scaled_alpha(
-            egui::Color32::from_rgba_unmultiplied(236, 240, 246, 255),
+            if open {
+                egui::Color32::from_rgba_unmultiplied(248, 250, 255, 255)
+            } else {
+                egui::Color32::from_rgba_unmultiplied(232, 236, 242, 240)
+            },
             settings_t,
         ),
     );
     painter.galley(
         egui::pos2(
-            button_rect.min.x + 22.0,
-            button_rect.center().y - value_galley.size().y * 0.5,
+            rect.min.x + 24.0,
+            rect.center().y - value_galley.size().y * 0.5,
         ),
         value_galley,
         egui::Color32::WHITE,
@@ -189,43 +183,73 @@ fn draw_settings_dropdown_row(
         egui::StrokeKind::Middle,
     );
 
-    if selected && !open {
-        draw_settings_focus_frame(painter, row_rect, focus_t, settings_t);
+    let effective_focus_t = if open {
+        OPEN_DROPDOWN_PARENT_FOCUS_T
+    } else {
+        focus_t
+    };
+
+    if selected || open || effective_focus_t > 0.001 {
+        if open {
+            draw_settings_focus_frame(
+                painter,
+                row_rect,
+                lerp_f32(0.45, 1.0, effective_focus_t),
+                settings_t * lerp_f32(0.2, 0.35, effective_focus_t),
+            );
+        } else {
+            draw_settings_focus_frame(painter, row_rect, effective_focus_t, settings_t);
+        }
     }
 
-    let inner_rect = row_rect.shrink2(egui::vec2(26.0, 16.0));
-    let button_width = (inner_rect.width() * 0.46).clamp(320.0, 460.0);
-    let button_rect = egui::Rect::from_min_size(
-        egui::pos2(inner_rect.max.x - button_width, inner_rect.center().y - 29.0),
-        egui::vec2(button_width, 58.0),
-    );
-    let label_rect = egui::Rect::from_min_max(
-        egui::pos2(inner_rect.min.x, inner_rect.min.y),
-        egui::pos2(button_rect.min.x - 24.0, inner_rect.max.y),
-    );
-
-    draw_settings_dropdown_button(
-        painter,
-        label_rect,
-        button_rect,
-        label,
-        value,
-        open,
-        settings_t,
+    let content_rect = row_rect.shrink2(egui::vec2(34.0, 18.0));
+    let pill_height = 50.0;
+    let pill_width = (content_rect.width() * 0.36).clamp(220.0, 320.0);
+    let pill_rect = egui::Rect::from_min_size(
+        egui::pos2(
+            content_rect.max.x - pill_width,
+            content_rect.center().y - pill_height * 0.5,
+        ),
+        egui::vec2(pill_width, pill_height),
     );
 
-    button_rect
+    let label_color = if open {
+        egui::Color32::from_rgba_unmultiplied(244, 247, 252, 255)
+    } else {
+        egui::Color32::from_rgba_unmultiplied(242, 245, 248, 255)
+    };
+    let title_galley = painter.layout_no_wrap(
+        label.to_string(),
+        egui::FontId::proportional(26.0),
+        color_with_scaled_alpha(label_color, settings_t),
+    );
+    painter.galley(
+        egui::pos2(
+            content_rect.min.x,
+            content_rect.center().y - title_galley.size().y * 0.5,
+        ),
+        title_galley,
+        egui::Color32::WHITE,
+    );
+
+    draw_settings_dropdown_trigger_pill(painter, pill_rect, value, open, settings_t);
+
+    pill_rect
 }
 
 fn draw_settings_dropdown_menu(
     painter: &egui::Painter,
     rect: egui::Rect,
     options: &[String],
+    base_focus_key: u16,
     selected_index: usize,
+    text_left_padding: f32,
     settings_t: f32,
-    focus_t: f32,
+    current_focus_t: f32,
+    current_focus_key: Option<u16>,
 ) -> usize {
     let max_visible_items = 4;
+    let menu_color = egui::Color32::from_rgba_unmultiplied(18, 19, 22, 255);
     let visible_count = options.len().min(max_visible_items);
     if visible_count == 0 {
         return 0;
@@ -238,14 +262,12 @@ fn draw_settings_dropdown_menu(
         .min(max_start)
         .min(selected_index.saturating_sub(visible_count / 2));
     let end_index = start_index + visible_count;
+    let menu_t = settings_t;
 
     painter.rect_filled(
         rect,
         corner_radius(PANEL_CORNER_RADIUS),
-        color_with_scaled_alpha(
-            egui::Color32::from_rgba_unmultiplied(18, 19, 22, 255),
-            settings_t,
-        ),
+        color_with_scaled_alpha(menu_color, menu_t),
     );
     painter.rect_stroke(
         rect,
@@ -254,7 +276,7 @@ fn draw_settings_dropdown_menu(
             1.0,
             color_with_scaled_alpha(
                 egui::Color32::from_rgba_unmultiplied(255, 255, 255, 36),
-                settings_t,
+                menu_t,
             ),
         ),
         egui::StrokeKind::Middle,
@@ -264,6 +286,7 @@ fn draw_settings_dropdown_menu(
     let option_height = 64.0;
     let option_gap = 8.0;
     let option_font = egui::FontId::proportional(22.0);
+    let option_width = rect.width() - padding.x * 2.0;
 
     for (visible_index, option_index) in (start_index..end_index).enumerate() {
         let option = &options[option_index];
@@ -272,14 +295,15 @@ fn draw_settings_dropdown_menu(
                 rect.min.x + padding.x,
                 rect.min.y + padding.y + visible_index as f32 * (option_height + option_gap),
             ),
-            egui::vec2(rect.width() - padding.x * 2.0, option_height),
+            egui::vec2(option_width, option_height),
         );
+        let option_focus_key = base_focus_key + option_index as u16;
         let selected = option_index == selected_index;
         draw_settings_focus_frame(
             painter,
             option_rect,
-            if selected { focus_t } else { 0.0 },
-            settings_t,
+            settings_focus_t_for_key(option_focus_key, current_focus_key, current_focus_t),
+            menu_t,
         );
 
         let option_galley = painter.layout_no_wrap(
@@ -291,12 +315,12 @@ fn draw_settings_dropdown_menu(
                 } else {
                     egui::Color32::from_rgba_unmultiplied(214, 218, 226, 255)
                 },
-                settings_t,
+                menu_t,
             ),
         );
         painter.galley(
             egui::pos2(
-                option_rect.min.x + 22.0,
+                rect.min.x + text_left_padding,
                 option_rect.center().y - option_galley.size().y * 0.5,
             ),
             option_galley,
@@ -304,103 +328,160 @@ fn draw_settings_dropdown_menu(
         );
     }
 
-    if start_index > 0 {
-        let mask_height = 42.0;
-        let mut mesh = egui::epaint::Mesh::default();
-        let base = egui::Color32::from_rgba_unmultiplied(14, 15, 18, 252);
-        let transparent = egui::Color32::from_rgba_unmultiplied(18, 19, 22, 0);
-        let top_rect = egui::Rect::from_min_max(
-            egui::pos2(rect.min.x + 1.0, rect.min.y + 1.0),
-            egui::pos2(rect.max.x - 1.0, rect.min.y + 1.0 + mask_height),
-        );
-        let index = mesh.vertices.len() as u32;
-        mesh.vertices.push(egui::epaint::Vertex {
-            pos: top_rect.left_top(),
-            uv: egui::epaint::WHITE_UV,
-            color: base,
-        });
-        mesh.vertices.push(egui::epaint::Vertex {
-            pos: top_rect.right_top(),
-            uv: egui::epaint::WHITE_UV,
-            color: base,
-        });
-        mesh.vertices.push(egui::epaint::Vertex {
-            pos: top_rect.right_bottom(),
-            uv: egui::epaint::WHITE_UV,
-            color: transparent,
-        });
-        mesh.vertices.push(egui::epaint::Vertex {
-            pos: top_rect.left_bottom(),
-            uv: egui::epaint::WHITE_UV,
-            color: transparent,
-        });
-        mesh.indices
-            .extend_from_slice(&[index, index + 1, index + 2, index, index + 2, index + 3]);
-        painter.add(egui::Shape::mesh(mesh));
-        painter.line_segment(
-            [
-                egui::pos2(rect.min.x + 12.0, top_rect.max.y - 2.0),
-                egui::pos2(rect.max.x - 12.0, top_rect.max.y - 2.0),
-            ],
-            egui::Stroke::new(
-                1.0,
-                color_with_scaled_alpha(
-                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 42),
-                    settings_t,
-                ),
-            ),
-        );
-    }
-
-    if end_index < options.len() {
-        let mask_height = 42.0;
-        let mut mesh = egui::epaint::Mesh::default();
-        let base = egui::Color32::from_rgba_unmultiplied(14, 15, 18, 252);
-        let transparent = egui::Color32::from_rgba_unmultiplied(18, 19, 22, 0);
-        let bottom_rect = egui::Rect::from_min_max(
-            egui::pos2(rect.min.x + 1.0, rect.max.y - 1.0 - mask_height),
-            egui::pos2(rect.max.x - 1.0, rect.max.y - 1.0),
-        );
-        let index = mesh.vertices.len() as u32;
-        mesh.vertices.push(egui::epaint::Vertex {
-            pos: bottom_rect.left_top(),
-            uv: egui::epaint::WHITE_UV,
-            color: transparent,
-        });
-        mesh.vertices.push(egui::epaint::Vertex {
-            pos: bottom_rect.right_top(),
-            uv: egui::epaint::WHITE_UV,
-            color: transparent,
-        });
-        mesh.vertices.push(egui::epaint::Vertex {
-            pos: bottom_rect.right_bottom(),
-            uv: egui::epaint::WHITE_UV,
-            color: base,
-        });
-        mesh.vertices.push(egui::epaint::Vertex {
-            pos: bottom_rect.left_bottom(),
-            uv: egui::epaint::WHITE_UV,
-            color: base,
-        });
-        mesh.indices
-            .extend_from_slice(&[index, index + 1, index + 2, index, index + 2, index + 3]);
-        painter.add(egui::Shape::mesh(mesh));
-        painter.line_segment(
-            [
-                egui::pos2(rect.min.x + 12.0, bottom_rect.min.y + 2.0),
-                egui::pos2(rect.max.x - 12.0, bottom_rect.min.y + 2.0),
-            ],
-            egui::Stroke::new(
-                1.0,
-                color_with_scaled_alpha(
-                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 42),
-                    settings_t,
-                ),
-            ),
-        );
-    }
-
     start_index
+}
+
+fn settings_dropdown_menu_rect(
+    button_rect: egui::Rect,
+    menu_height: f32,
+    menu_gap: f32,
+    viewport_rect: egui::Rect,
+) -> egui::Rect {
+    let viewport_margin = 8.0;
+    let min_top = viewport_rect.min.y + viewport_margin;
+    let max_top = (viewport_rect.max.y - viewport_margin - menu_height).max(min_top);
+    let open_below_top = button_rect.max.y + menu_gap;
+    let open_above_top = button_rect.min.y - menu_gap - menu_height;
+
+    let top = if open_below_top + menu_height <= viewport_rect.max.y - viewport_margin {
+        open_below_top
+    } else if open_above_top >= min_top {
+        open_above_top
+    } else {
+        open_below_top.clamp(min_top, max_top)
+    };
+
+    egui::Rect::from_min_size(
+        egui::pos2(button_rect.min.x, top),
+        egui::vec2(button_rect.width(), menu_height),
+    )
+}
+
+fn animate_settings_dropdown_mask(
+    ui: &egui::Ui,
+    mask_id: egui::Id,
+    open: bool,
+    active_rect: Option<egui::Rect>,
+    fallback_rect: egui::Rect,
+) -> (f32, egui::Rect) {
+    let stable_dt = ui
+        .ctx()
+        .input(|input| input.stable_dt)
+        .min(SETTINGS_DROPDOWN_MASK_MAX_DT);
+    let alpha_id = mask_id.with("alpha");
+    let rect_id = mask_id.with("rect");
+    let mut should_repaint = false;
+
+    let (alpha, rect) = ui.ctx().data_mut(|data| {
+        let current_alpha = data.get_temp::<f32>(alpha_id).unwrap_or(0.0);
+        let target_alpha = if open { 1.0 } else { 0.0 };
+        let next_alpha = if (current_alpha - target_alpha).abs() <= SETTINGS_DROPDOWN_MASK_EPSILON {
+            target_alpha
+        } else {
+            let next_alpha = eased_scroll_offset(
+                current_alpha,
+                target_alpha,
+                stable_dt,
+                SETTINGS_DROPDOWN_MASK_ANIM_SPEED,
+            );
+            if (next_alpha - target_alpha).abs() > SETTINGS_DROPDOWN_MASK_EPSILON {
+                should_repaint = true;
+                next_alpha
+            } else {
+                target_alpha
+            }
+        };
+
+        let rect = active_rect
+            .or_else(|| data.get_temp::<egui::Rect>(rect_id))
+            .unwrap_or(fallback_rect);
+        data.insert_temp(rect_id, rect);
+        data.insert_temp(alpha_id, next_alpha);
+
+        (next_alpha, rect)
+    });
+
+    if should_repaint {
+        ui.ctx().request_repaint();
+    }
+
+    (alpha, rect)
+}
+
+fn draw_settings_dropdown_mask(
+    painter: &egui::Painter,
+    viewport_rect: egui::Rect,
+    clear_rect: Option<egui::Rect>,
+    mask_t: f32,
+    settings_t: f32,
+) {
+    let mask_t = (mask_t * settings_t).clamp(0.0, 1.0);
+    if mask_t <= 0.001 {
+        return;
+    }
+
+    let mask_color = color_with_scaled_alpha(
+        egui::Color32::from_rgba_unmultiplied(6, 7, 9, 168),
+        mask_t,
+    );
+
+    let Some(clear_rect) = clear_rect.map(|clear_rect| intersect_rects(clear_rect.expand(6.0), viewport_rect)) else {
+        painter.rect_filled(viewport_rect, egui::CornerRadius::ZERO, mask_color);
+        return;
+    };
+
+    if clear_rect.min.y > viewport_rect.min.y {
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                viewport_rect.min,
+                egui::pos2(viewport_rect.max.x, clear_rect.min.y),
+            ),
+            egui::CornerRadius::ZERO,
+            mask_color,
+        );
+    }
+    if clear_rect.max.y < viewport_rect.max.y {
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(viewport_rect.min.x, clear_rect.max.y),
+                viewport_rect.max,
+            ),
+            egui::CornerRadius::ZERO,
+            mask_color,
+        );
+    }
+    if clear_rect.min.x > viewport_rect.min.x {
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(viewport_rect.min.x, clear_rect.min.y),
+                egui::pos2(clear_rect.min.x, clear_rect.max.y),
+            ),
+            egui::CornerRadius::ZERO,
+            mask_color,
+        );
+    }
+    if clear_rect.max.x < viewport_rect.max.x {
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(clear_rect.max.x, clear_rect.min.y),
+                egui::pos2(viewport_rect.max.x, clear_rect.max.y),
+            ),
+            egui::CornerRadius::ZERO,
+            mask_color,
+        );
+    }
+}
+
+fn settings_focus_t_for_key(
+    focus_key: u16,
+    current_focus_key: Option<u16>,
+    current_focus_t: f32,
+) -> f32 {
+    if current_focus_key == Some(focus_key) {
+        current_focus_t
+    } else {
+        0.0
+    }
 }
 
 fn settings_layer_state(
@@ -434,6 +515,140 @@ fn settings_layer_state(
         top_motion_t,
         submenu_motion_t,
     }
+}
+
+fn intersect_rects(a: egui::Rect, b: egui::Rect) -> egui::Rect {
+    let min_x = a.min.x.max(b.min.x);
+    let min_y = a.min.y.max(b.min.y);
+    let max_x = a.max.x.min(b.max.x).max(min_x);
+    let max_y = a.max.y.min(b.max.y).max(min_y);
+
+    egui::Rect::from_min_max(egui::pos2(min_x, min_y), egui::pos2(max_x, max_y))
+}
+
+fn scroll_offset_to_keep_focus_visible(
+    content_height: f32,
+    viewport_height: f32,
+    focus_top: f32,
+    focus_height: f32,
+    top_padding: f32,
+    bottom_padding: f32,
+) -> f32 {
+    let max_scroll = (content_height - viewport_height).max(0.0);
+    if max_scroll <= 0.0 {
+        return 0.0;
+    }
+
+    let visible_top = top_padding.max(0.0);
+    let visible_bottom = (viewport_height - bottom_padding).max(visible_top);
+    let focus_bottom = focus_top + focus_height;
+    let mut scroll_offset = 0.0;
+
+    if focus_bottom > visible_bottom {
+        scroll_offset = focus_bottom - visible_bottom;
+    }
+    if focus_top - scroll_offset < visible_top {
+        scroll_offset = (focus_top - visible_top).max(0.0);
+    }
+
+    scroll_offset.clamp(0.0, max_scroll)
+}
+
+fn system_settings_row_top(
+    selected_item_index: usize,
+    header_height: f32,
+    header_gap: f32,
+    top_body_height: f32,
+    section_gap: f32,
+    body_top_padding: f32,
+    initial_row_offset_y: f32,
+    row_spacing: f32,
+) -> f32 {
+    let body_top = header_height + header_gap;
+    let row_index = selected_item_index.min(6);
+    if row_index <= 2 {
+        body_top + body_top_padding + initial_row_offset_y + row_index as f32 * row_spacing
+    } else {
+        body_top
+            + top_body_height
+            + section_gap
+            + body_top_padding
+            + initial_row_offset_y
+            + (row_index - 3) as f32 * row_spacing
+    }
+}
+
+fn draw_settings_page_header(
+    painter: &egui::Painter,
+    content_rect: egui::Rect,
+    layer_t: f32,
+    title_text: &str,
+) -> egui::Rect {
+    let header_rect = egui::Rect::from_min_max(
+        egui::pos2(content_rect.min.x, content_rect.min.y),
+        egui::pos2(content_rect.max.x, content_rect.min.y + SETTINGS_PAGE_HEADER_HEIGHT),
+    );
+
+    let title = painter.layout_no_wrap(
+        title_text.to_string(),
+        egui::FontId::proportional(34.0),
+        color_with_scaled_alpha(egui::Color32::WHITE, layer_t),
+    );
+    let top_left = header_rect.min + egui::vec2(8.0, 8.0);
+    painter.galley(top_left, title, egui::Color32::WHITE);
+
+    header_rect
+}
+
+fn eased_scroll_offset(current: f32, target: f32, stable_dt: f32, speed: f32) -> f32 {
+    if !current.is_finite() || !target.is_finite() {
+        return target;
+    }
+
+    let stable_dt = stable_dt.max(0.0);
+    if stable_dt <= f32::EPSILON || speed <= 0.0 {
+        return current;
+    }
+
+    let blend = 1.0 - (-speed * stable_dt).exp();
+    lerp_f32(current, target, blend.clamp(0.0, 1.0))
+}
+
+fn animate_settings_scroll_offset(
+    ui: &egui::Ui,
+    scroll_id: egui::Id,
+    target: f32,
+    allow_animation: bool,
+) -> f32 {
+    let stable_dt = if allow_animation {
+        ui.ctx().input(|input| input.stable_dt)
+    } else {
+        0.0
+    };
+    let mut should_repaint = false;
+
+    let next = ui.ctx().data_mut(|data| {
+        let current = data.get_temp::<f32>(scroll_id).unwrap_or(target);
+        let next = if allow_animation {
+            let next = eased_scroll_offset(current, target, stable_dt, SETTINGS_SCROLL_ANIM_SPEED);
+            if (next - target).abs() > SETTINGS_SCROLL_EPSILON {
+                should_repaint = true;
+                next
+            } else {
+                target
+            }
+        } else {
+            target
+        };
+        data.insert_temp(scroll_id, next);
+        next
+    });
+
+    if should_repaint {
+        ui.ctx().request_repaint();
+    }
+
+    next
 }
 
 fn draw_settings_list_row(
@@ -803,10 +1018,13 @@ pub fn draw_settings_page(
     detect_epic_games_enabled: bool,
     detect_xbox_games_enabled: bool,
     resolution_options: &ResolutionOptions,
+    display_scale_options: &DisplayScaleOptions,
     current_resolution_index: usize,
     current_refresh_index: usize,
+    current_scale_index: usize,
     screen_resolution_dropdown_open: bool,
     screen_refresh_dropdown_open: bool,
+    screen_scale_dropdown_open: bool,
     screen_dropdown_selected_index: usize,
     selected_section_index: usize,
     selected_item_index: usize,
@@ -814,8 +1032,8 @@ pub fn draw_settings_page(
     settings_in_submenu: bool,
     settings_anim: f32,
     submenu_anim: f32,
-    screen_dropdown_overlay_anim: f32,
     settings_select_anim: f32,
+    current_settings_focus_key: Option<u16>,
 ) {
     let (backdrop_t, content_anim_t) = staged_settings_entry_progress(settings_anim);
     if backdrop_t <= 0.001 {
@@ -844,28 +1062,19 @@ pub fn draw_settings_page(
     )
     .translate(egui::vec2(0.0, lerp_f32(18.0, 0.0, settings_t)));
     let submenu_t = smoothstep01(submenu_anim);
+    let current_focus_t = smoothstep01(settings_select_anim);
+    let row_focus_t = |row_key: u16| {
+        settings_focus_t_for_key(row_key, current_settings_focus_key, current_focus_t)
+    };
 
     let draw_page_header = |content_rect: egui::Rect, layer_t: f32, title_text: &str| {
-        let header_rect = egui::Rect::from_min_max(
-            egui::pos2(content_rect.min.x, content_rect.min.y),
-            egui::pos2(content_rect.max.x, content_rect.min.y + 78.0),
-        );
-
-        let title = painter.layout_no_wrap(
-            title_text.to_string(),
-            egui::FontId::proportional(34.0),
-            color_with_scaled_alpha(egui::Color32::WHITE, layer_t),
-        );
-        let top_left = header_rect.min + egui::vec2(8.0, 8.0);
-        painter.galley(top_left, title, egui::Color32::WHITE);
-
-        header_rect
+        draw_settings_page_header(painter, content_rect, layer_t, title_text)
     };
 
     let draw_page_shell = |content_rect: egui::Rect, layer_t: f32, title_text: &str| {
         let header_rect = draw_page_header(content_rect, layer_t, title_text);
         let body_rect = egui::Rect::from_min_max(
-            egui::pos2(content_rect.min.x, header_rect.max.y + 28.0),
+            egui::pos2(content_rect.min.x, header_rect.max.y + SETTINGS_PAGE_HEADER_GAP),
             egui::pos2(content_rect.max.x, content_rect.max.y - 56.0),
         );
         draw_settings_page_body_container(painter, body_rect, layer_t);
@@ -877,10 +1086,12 @@ pub fn draw_settings_page(
     };
 
     let draw_row = |list_inner_rect: egui::Rect,
+                    viewport_clip_rect: Option<egui::Rect>,
                     rows_origin_y: f32,
                     row_spacing: f32,
                     row_height: f32,
                     index: usize,
+                    row_key: u16,
                     leading_icon: Option<&egui::TextureHandle>,
                     title_tag: Option<&str>,
                     title_tag_align_width: Option<f32>,
@@ -889,7 +1100,6 @@ pub fn draw_settings_page(
                     subtitle: Option<&str>,
                     subtitle_color: Option<egui::Color32>,
                     trailing: Option<&str>,
-                    selected: bool,
                     show_focus_outline: bool,
                     layer_t: f32| {
         let inline_button_title = if use_inline_button_title {
@@ -905,7 +1115,10 @@ pub fn draw_settings_page(
             None
         };
         let row_top = rows_origin_y + index as f32 * row_spacing;
-        let list_painter = painter.with_clip_rect(list_inner_rect);
+        let clip_rect = viewport_clip_rect
+            .map(|viewport_clip_rect| intersect_rects(list_inner_rect, viewport_clip_rect))
+            .unwrap_or(list_inner_rect);
+        let list_painter = painter.with_clip_rect(clip_rect);
         let row_side_inset = 6.0;
         let unselected_row_shrink_x = 7.0;
         let row_slot_rect = egui::Rect::from_min_max(
@@ -913,6 +1126,7 @@ pub fn draw_settings_page(
             egui::pos2(list_inner_rect.max.x - row_side_inset, row_top + row_height),
         );
         let row_rect = row_slot_rect.shrink2(egui::vec2(unselected_row_shrink_x, 0.0));
+        let focus_t = row_focus_t(row_key);
         draw_settings_list_row(
             &list_painter,
             row_rect,
@@ -924,12 +1138,8 @@ pub fn draw_settings_page(
             subtitle,
             subtitle_color,
             trailing,
-            if selected {
-                smoothstep01(settings_select_anim)
-            } else {
-                0.0
-            },
-            show_focus_outline,
+            focus_t,
+            show_focus_outline && focus_t > 0.001,
             layer_t,
         );
     };
@@ -960,9 +1170,11 @@ pub fn draw_settings_page(
         let top_row_height = 90.0;
         draw_row(
             top_list_inner_rect,
+            None,
             top_rows_origin_y,
             top_row_spacing,
             top_row_height,
+            0,
             0,
             system_icon,
             None,
@@ -972,15 +1184,16 @@ pub fn draw_settings_page(
             None,
             None,
             None,
-            selected_section_index == 0,
             true,
             top_layer_t,
         );
         draw_row(
             top_list_inner_rect,
+            None,
             top_rows_origin_y,
             top_row_spacing,
             top_row_height,
+            1,
             1,
             screen_icon,
             None,
@@ -990,15 +1203,16 @@ pub fn draw_settings_page(
             None,
             None,
             None,
-            selected_section_index == 1,
             true,
             top_layer_t,
         );
         draw_row(
             top_list_inner_rect,
+            None,
             top_rows_origin_y,
             top_row_spacing,
             top_row_height,
+            2,
             2,
             apps_icon,
             None,
@@ -1008,15 +1222,16 @@ pub fn draw_settings_page(
             None,
             None,
             None,
-            selected_section_index == 2,
             true,
             top_layer_t,
         );
         draw_row(
             top_list_inner_rect,
+            None,
             top_rows_origin_y,
             top_row_spacing,
             top_row_height,
+            3,
             3,
             exit_icon,
             None,
@@ -1026,7 +1241,6 @@ pub fn draw_settings_page(
             None,
             None,
             None,
-            selected_section_index == 3,
             true,
             top_layer_t,
         );
@@ -1065,13 +1279,23 @@ pub fn draw_settings_page(
         let enabled_subtitle_color = egui::Color32::from_rgba_unmultiplied(122, 214, 145, 255);
         match selected_section_index {
             0 => {
-                let header_rect = draw_page_header(submenu_content_rect, submenu_layer_t, &page_title);
                 let system_row_spacing = submenu_row_height + 16.0;
                 let section_gap = 28.0;
                 let initial_row_offset_y = 8.0;
                 let final_row_offset_y = 8.0;
                 let body_top_padding = 14.0;
                 let body_bottom_padding = 12.0;
+                let scroll_top_y = lerp_f32(
+                    submenu_content_rect.min.y,
+                    panel_rect.min.y,
+                    layer_state.submenu_motion_t,
+                );
+                let scroll_viewport_rect = egui::Rect::from_min_max(
+                    egui::pos2(submenu_content_rect.min.x, scroll_top_y),
+                    egui::pos2(submenu_content_rect.max.x, submenu_content_rect.max.y),
+                );
+                let scroll_top_inset = (submenu_content_rect.min.y - scroll_viewport_rect.min.y)
+                    .max(0.0);
                 let top_body_height = system_row_spacing * 2.0
                     + submenu_row_height
                     + initial_row_offset_y
@@ -1084,22 +1308,84 @@ pub fn draw_settings_page(
                     + final_row_offset_y
                     + body_top_padding
                     + body_bottom_padding;
+                let content_height = scroll_top_inset
+                    + SETTINGS_PAGE_HEADER_HEIGHT
+                    + SETTINGS_PAGE_HEADER_GAP
+                    + top_body_height
+                    + section_gap
+                    + lower_body_height;
+                let scroll_offset = scroll_offset_to_keep_focus_visible(
+                    content_height,
+                    scroll_viewport_rect.height(),
+                    scroll_top_inset
+                        + system_settings_row_top(
+                            selected_item_index,
+                            SETTINGS_PAGE_HEADER_HEIGHT,
+                            SETTINGS_PAGE_HEADER_GAP,
+                            top_body_height,
+                            section_gap,
+                            body_top_padding,
+                            initial_row_offset_y,
+                            system_row_spacing,
+                        ),
+                    submenu_row_height,
+                    20.0,
+                    24.0,
+                );
+                let scroll_offset = animate_settings_scroll_offset(
+                    ui,
+                    egui::Id::new("settings_system_scroll_offset"),
+                    scroll_offset,
+                    layer_state.submenu_motion_t >= 0.999,
+                );
+                let scroll_painter = painter.with_clip_rect(scroll_viewport_rect);
+                let header_rect = egui::Rect::from_min_max(
+                    egui::pos2(submenu_content_rect.min.x, submenu_content_rect.min.y),
+                    egui::pos2(
+                        submenu_content_rect.max.x,
+                        submenu_content_rect.min.y + SETTINGS_PAGE_HEADER_HEIGHT,
+                    ),
+                )
+                .translate(egui::vec2(0.0, -scroll_offset));
+                draw_settings_page_header(&scroll_painter, header_rect, submenu_layer_t, &page_title);
                 let top_body_rect = egui::Rect::from_min_max(
-                    egui::pos2(submenu_content_rect.min.x, header_rect.max.y + 28.0),
+                    egui::pos2(
+                        submenu_content_rect.min.x,
+                        submenu_content_rect.min.y
+                            + SETTINGS_PAGE_HEADER_HEIGHT
+                            + SETTINGS_PAGE_HEADER_GAP,
+                    ),
                     egui::pos2(
                         submenu_content_rect.max.x,
-                        header_rect.max.y + 28.0 + top_body_height,
+                        submenu_content_rect.min.y
+                            + SETTINGS_PAGE_HEADER_HEIGHT
+                            + SETTINGS_PAGE_HEADER_GAP
+                            + top_body_height,
                     ),
-                );
+                )
+                .translate(egui::vec2(0.0, -scroll_offset));
                 let lower_body_rect = egui::Rect::from_min_max(
-                    egui::pos2(submenu_content_rect.min.x, top_body_rect.max.y + section_gap),
+                    egui::pos2(
+                        submenu_content_rect.min.x,
+                        submenu_content_rect.min.y
+                            + SETTINGS_PAGE_HEADER_HEIGHT
+                            + SETTINGS_PAGE_HEADER_GAP
+                            + top_body_height
+                            + section_gap,
+                    ),
                     egui::pos2(
                         submenu_content_rect.max.x,
-                        top_body_rect.max.y + section_gap + lower_body_height,
+                        submenu_content_rect.min.y
+                            + SETTINGS_PAGE_HEADER_HEIGHT
+                            + SETTINGS_PAGE_HEADER_GAP
+                            + top_body_height
+                            + section_gap
+                            + lower_body_height,
                     ),
-                );
-                draw_settings_page_body_container(painter, top_body_rect, submenu_layer_t);
-                draw_settings_page_body_container(painter, lower_body_rect, submenu_layer_t);
+                )
+                .translate(egui::vec2(0.0, -scroll_offset));
+                draw_settings_page_body_container(&scroll_painter, top_body_rect, submenu_layer_t);
+                draw_settings_page_body_container(&scroll_painter, lower_body_rect, submenu_layer_t);
                 let top_list_inner_rect = egui::Rect::from_min_max(
                     egui::pos2(top_body_rect.min.x + 6.0, top_body_rect.min.y + body_top_padding),
                     egui::pos2(top_body_rect.max.x - 6.0, top_body_rect.max.y - body_bottom_padding),
@@ -1108,7 +1394,10 @@ pub fn draw_settings_page(
                     egui::pos2(lower_body_rect.min.x + 6.0, lower_body_rect.min.y + body_top_padding),
                     egui::pos2(lower_body_rect.max.x - 6.0, lower_body_rect.max.y - body_bottom_padding),
                 );
-                let submenu_list_painter = painter.with_clip_rect(top_list_inner_rect.union(lower_list_inner_rect));
+                let submenu_list_painter = painter.with_clip_rect(intersect_rects(
+                    top_list_inner_rect.union(lower_list_inner_rect),
+                    scroll_viewport_rect,
+                ));
                 let system_rows_origin_y = top_list_inner_rect.min.y + initial_row_offset_y;
                 let lower_rows_origin_y = lower_list_inner_rect.min.y + initial_row_offset_y;
                 let detection_title_align_width = [GameSource::Steam, GameSource::Epic, GameSource::Xbox]
@@ -1124,10 +1413,12 @@ pub fn draw_settings_page(
                     .fold(0.0, f32::max);
                 draw_row(
                     top_list_inner_rect,
+                    Some(scroll_viewport_rect),
                     system_rows_origin_y,
                     system_row_spacing,
                     submenu_row_height,
                     0,
+                    10,
                     None,
                     Some(GameSource::Steam.badge_label()),
                     Some(detection_title_align_width),
@@ -1144,17 +1435,18 @@ pub fn draw_settings_page(
                         None
                     },
                     None,
-                    selected_item_index == 0,
                     true,
                     submenu_layer_t,
                 );
 
                 draw_row(
                     top_list_inner_rect,
+                    Some(scroll_viewport_rect),
                     system_rows_origin_y,
                     system_row_spacing,
                     submenu_row_height,
                     1,
+                    11,
                     None,
                     Some(GameSource::Epic.badge_label()),
                     Some(detection_title_align_width),
@@ -1171,17 +1463,18 @@ pub fn draw_settings_page(
                         None
                     },
                     None,
-                    selected_item_index == 1,
                     true,
                     submenu_layer_t,
                 );
 
                 draw_row(
                     top_list_inner_rect,
+                    Some(scroll_viewport_rect),
                     system_rows_origin_y,
                     system_row_spacing,
                     submenu_row_height,
                     2,
+                    12,
                     None,
                     Some(GameSource::Xbox.badge_label()),
                     Some(detection_title_align_width),
@@ -1198,17 +1491,18 @@ pub fn draw_settings_page(
                         None
                     },
                     None,
-                    selected_item_index == 2,
                     true,
                     submenu_layer_t,
                 );
 
                 draw_row(
                     lower_list_inner_rect,
+                    Some(scroll_viewport_rect),
                     lower_rows_origin_y,
                     system_row_spacing,
                     submenu_row_height,
                     0,
+                    13,
                     None,
                     None,
                     None,
@@ -1225,17 +1519,18 @@ pub fn draw_settings_page(
                         None
                     },
                     None,
-                    selected_item_index == 3,
                     true,
                     submenu_layer_t,
                 );
 
                 draw_row(
                     lower_list_inner_rect,
+                    Some(scroll_viewport_rect),
                     lower_rows_origin_y,
                     system_row_spacing,
                     submenu_row_height,
                     1,
+                    14,
                     None,
                     None,
                     None,
@@ -1252,17 +1547,18 @@ pub fn draw_settings_page(
                         None
                     },
                     None,
-                    selected_item_index == 4,
                     true,
                     submenu_layer_t,
                 );
 
                 draw_row(
                     lower_list_inner_rect,
+                    Some(scroll_viewport_rect),
                     lower_rows_origin_y,
                     system_row_spacing,
                     submenu_row_height,
                     2,
+                    15,
                     None,
                     None,
                     None,
@@ -1275,17 +1571,18 @@ pub fn draw_settings_page(
                         None
                     },
                     None,
-                    selected_item_index == 5,
                     true,
                     submenu_layer_t,
                 );
 
                 draw_row(
                     lower_list_inner_rect,
+                    Some(scroll_viewport_rect),
                     lower_rows_origin_y,
                     system_row_spacing,
                     submenu_row_height,
                     3,
+                    16,
                     None,
                     None,
                     None,
@@ -1302,7 +1599,6 @@ pub fn draw_settings_page(
                         None
                     },
                     None,
-                    selected_item_index == 6,
                     true,
                     submenu_layer_t,
                 );
@@ -1355,118 +1651,237 @@ pub fn draw_settings_page(
                     .get(current_refresh_index)
                     .map(String::as_str)
                     .unwrap_or(current_refresh_value.as_str());
-                let focus_t = smoothstep01(settings_select_anim);
+                let scale_values: Vec<String> = display_scale_options
+                    .scales
+                    .iter()
+                    .map(|choice| choice.label.clone())
+                    .collect();
+                let scale_value = scale_values
+                    .get(current_scale_index)
+                    .map(String::as_str)
+                    .unwrap_or(display_scale_options.current.label.as_str());
                 let content_left = submenu_list_inner_rect.min.x + 18.0;
                 let content_right = submenu_list_inner_rect.max.x - 18.0;
                 let row_width = content_right - content_left;
-                let row_height = 88.0;
+                let row_height = 98.0;
                 let row_gap = 18.0;
                 let menu_gap = 14.0;
                 let option_height = 64.0;
                 let option_gap = 8.0;
                 let menu_padding_y = 14.0;
                 let max_visible_items = 4;
+                let screen_dropdown_open = screen_resolution_dropdown_open
+                    || screen_refresh_dropdown_open
+                    || screen_scale_dropdown_open;
+                let mut active_dropdown_mask_rect = None;
+                let mut active_dropdown_menu: Option<(egui::Rect, &[String], u16, usize)> = None;
+                let mut active_dropdown_trigger: Option<(egui::Rect, &str, &str, u16)> = None;
                 let resolution_row_rect = egui::Rect::from_min_size(
                     egui::pos2(content_left, rows_origin_y),
                     egui::vec2(row_width, row_height),
                 );
-                let _ = draw_settings_dropdown_row(
-                    &submenu_list_painter,
-                    resolution_row_rect,
-                    language.resolution_text(),
-                    resolution_value,
-                    selected_item_index == 0,
-                    screen_resolution_dropdown_open,
-                    submenu_layer_t,
-                    focus_t,
-                );
+                let resolution_focus_t = row_focus_t(20);
+                if !screen_resolution_dropdown_open {
+                    let _ = draw_settings_dropdown_row(
+                        &submenu_list_painter,
+                        resolution_row_rect,
+                        language.resolution_text(),
+                        resolution_value,
+                        current_settings_focus_key == Some(20),
+                        screen_resolution_dropdown_open,
+                        submenu_layer_t,
+                        resolution_focus_t,
+                    );
+                }
                 let refresh_row_top = rows_origin_y + row_height + row_gap;
                 let refresh_row_rect = egui::Rect::from_min_size(
                     egui::pos2(content_left, refresh_row_top),
                     egui::vec2(row_width, row_height),
                 );
-                let _ = draw_settings_dropdown_row(
-                    &submenu_list_painter,
-                    refresh_row_rect,
-                    language.refresh_rate_text(),
-                    refresh_value,
-                    selected_item_index == 1,
-                    screen_refresh_dropdown_open,
-                    submenu_layer_t,
-                    focus_t,
+                let refresh_focus_t = row_focus_t(21);
+                if !screen_refresh_dropdown_open {
+                    let _ = draw_settings_dropdown_row(
+                        &submenu_list_painter,
+                        refresh_row_rect,
+                        language.refresh_rate_text(),
+                        refresh_value,
+                        current_settings_focus_key == Some(21),
+                        screen_refresh_dropdown_open,
+                        submenu_layer_t,
+                        refresh_focus_t,
+                    );
+                }
+                let scale_row_top = refresh_row_top + row_height + row_gap;
+                let scale_row_rect = egui::Rect::from_min_size(
+                    egui::pos2(content_left, scale_row_top),
+                    egui::vec2(row_width, row_height),
                 );
-
-                let dropdown_overlay_t = smoothstep01(screen_dropdown_overlay_anim);
-                let dropdown_overlay_open = dropdown_overlay_t > 0.001;
-                if dropdown_overlay_open {
-                    painter.rect_filled(
-                        panel_rect,
-                        egui::CornerRadius::ZERO,
-                        color_with_scaled_alpha(
-                            egui::Color32::from_rgba_unmultiplied(6, 8, 12, 178),
-                            submenu_layer_t * dropdown_overlay_t,
-                        ),
+                let scale_focus_t = row_focus_t(22);
+                if !screen_scale_dropdown_open {
+                    let _ = draw_settings_dropdown_row(
+                        &submenu_list_painter,
+                        scale_row_rect,
+                        language.scale_text(),
+                        scale_value,
+                        current_settings_focus_key == Some(22),
+                        screen_scale_dropdown_open,
+                        submenu_layer_t,
+                        scale_focus_t,
                     );
                 }
 
+                let dropdown_painter = painter.with_clip_rect(submenu_content_rect);
+
                 if screen_resolution_dropdown_open {
                     let resolution_button_rect = draw_settings_dropdown_row(
-                        &submenu_list_painter,
+                        &dropdown_painter,
                         resolution_row_rect,
                         language.resolution_text(),
                         resolution_value,
-                        selected_item_index == 0,
+                        current_settings_focus_key == Some(20),
                         screen_resolution_dropdown_open,
                         submenu_layer_t,
-                        focus_t,
+                        current_focus_t,
                     );
                     let visible_count = resolution_values.len().min(max_visible_items);
                     let height = menu_padding_y * 2.0
                         + visible_count as f32 * option_height
                         + visible_count.saturating_sub(1) as f32 * option_gap;
-                    let menu_rect = egui::Rect::from_min_size(
-                        egui::pos2(
-                            resolution_button_rect.min.x,
-                            resolution_button_rect.max.y + menu_gap,
-                        ),
-                        egui::vec2(resolution_button_rect.width(), height),
+                    let menu_rect = settings_dropdown_menu_rect(
+                        resolution_button_rect,
+                        height,
+                        menu_gap,
+                        submenu_content_rect,
                     );
-                    let _ = draw_settings_dropdown_menu(
-                        &submenu_list_painter,
+                    active_dropdown_mask_rect = Some(resolution_row_rect);
+                    active_dropdown_trigger = Some((
+                        resolution_row_rect,
+                        language.resolution_text(),
+                        resolution_value,
+                        20,
+                    ));
+                    active_dropdown_menu = Some((
                         menu_rect,
-                        &resolution_values,
-                        screen_dropdown_selected_index.min(resolution_values.len().saturating_sub(1)),
-                        submenu_layer_t,
-                        focus_t,
-                    );
+                        resolution_values.as_slice(),
+                        100,
+                        screen_dropdown_selected_index
+                            .min(resolution_values.len().saturating_sub(1)),
+                    ));
                 }
 
                 if screen_refresh_dropdown_open {
                     let refresh_button_rect = draw_settings_dropdown_row(
-                        &submenu_list_painter,
+                        &dropdown_painter,
                         refresh_row_rect,
                         language.refresh_rate_text(),
                         refresh_value,
-                        selected_item_index == 1,
+                        current_settings_focus_key == Some(21),
                         screen_refresh_dropdown_open,
                         submenu_layer_t,
-                        focus_t,
+                        current_focus_t,
                     );
                     let visible_count = refresh_values.len().min(max_visible_items);
                     let height = menu_padding_y * 2.0
                         + visible_count as f32 * option_height
                         + visible_count.saturating_sub(1) as f32 * option_gap;
-                    let menu_rect = egui::Rect::from_min_size(
-                        egui::pos2(refresh_button_rect.min.x, refresh_button_rect.max.y + menu_gap),
-                        egui::vec2(refresh_button_rect.width(), height),
+                    let menu_rect = settings_dropdown_menu_rect(
+                        refresh_button_rect,
+                        height,
+                        menu_gap,
+                        submenu_content_rect,
                     );
-                    let _ = draw_settings_dropdown_menu(
-                        &submenu_list_painter,
+                    active_dropdown_mask_rect = Some(refresh_row_rect);
+                    active_dropdown_trigger = Some((
+                        refresh_row_rect,
+                        language.refresh_rate_text(),
+                        refresh_value,
+                        21,
+                    ));
+                    active_dropdown_menu = Some((
                         menu_rect,
-                        &refresh_values,
-                        screen_dropdown_selected_index.min(refresh_values.len().saturating_sub(1)),
+                        refresh_values.as_slice(),
+                        300,
+                        screen_dropdown_selected_index
+                            .min(refresh_values.len().saturating_sub(1)),
+                    ));
+                }
+
+                if screen_scale_dropdown_open {
+                    let scale_button_rect = draw_settings_dropdown_row(
+                        &dropdown_painter,
+                        scale_row_rect,
+                        language.scale_text(),
+                        scale_value,
+                        current_settings_focus_key == Some(22),
+                        screen_scale_dropdown_open,
                         submenu_layer_t,
-                        focus_t,
+                        current_focus_t,
+                    );
+                    let visible_count = scale_values.len().min(max_visible_items);
+                    let height = menu_padding_y * 2.0
+                        + visible_count as f32 * option_height
+                        + visible_count.saturating_sub(1) as f32 * option_gap;
+                    let menu_rect = settings_dropdown_menu_rect(
+                        scale_button_rect,
+                        height,
+                        menu_gap,
+                        submenu_content_rect,
+                    );
+                    active_dropdown_mask_rect = Some(scale_row_rect);
+                    active_dropdown_trigger = Some((
+                        scale_row_rect,
+                        language.scale_text(),
+                        scale_value,
+                        22,
+                    ));
+                    active_dropdown_menu = Some((
+                        menu_rect,
+                        scale_values.as_slice(),
+                        500,
+                        screen_dropdown_selected_index
+                            .min(scale_values.len().saturating_sub(1)),
+                    ));
+                }
+
+                let (dropdown_mask_alpha, _dropdown_mask_rect) = animate_settings_dropdown_mask(
+                    ui,
+                    egui::Id::new("settings_screen_dropdown_mask"),
+                    screen_dropdown_open,
+                    active_dropdown_mask_rect,
+                    panel_rect,
+                );
+                if dropdown_mask_alpha > SETTINGS_DROPDOWN_MASK_EPSILON {
+                    draw_settings_dropdown_mask(
+                        painter,
+                        panel_rect,
+                        None,
+                        dropdown_mask_alpha,
+                        submenu_layer_t,
+                    );
+                }
+                if let Some((row_rect, label, value, focus_key)) = active_dropdown_trigger {
+                    let _ = draw_settings_dropdown_row(
+                        &dropdown_painter,
+                        row_rect,
+                        label,
+                        value,
+                        current_settings_focus_key == Some(focus_key),
+                        true,
+                        submenu_layer_t,
+                        current_focus_t,
+                    );
+                }
+                if let Some((menu_rect, menu_options, base_focus_key, selected_index)) = active_dropdown_menu {
+                    let _ = draw_settings_dropdown_menu(
+                        &dropdown_painter,
+                        menu_rect,
+                        menu_options,
+                        base_focus_key,
+                        selected_index,
+                        24.0,
+                        submenu_layer_t,
+                        current_focus_t,
+                        current_settings_focus_key,
                     );
                 }
             }
@@ -1488,10 +1903,12 @@ pub fn draw_settings_page(
                     + 16.0;
                 draw_row(
                     submenu_list_inner_rect,
+                    None,
                     rows_origin_y,
                     submenu_row_spacing,
                     submenu_row_height,
                     0,
+                    700,
                     None,
                     None,
                     None,
@@ -1500,16 +1917,17 @@ pub fn draw_settings_page(
                     None,
                     None,
                     None,
-                    selected_item_index == 0,
                     true,
                     submenu_layer_t,
                 );
                 draw_row(
                     submenu_list_inner_rect,
+                    None,
                     rows_origin_y,
                     submenu_row_spacing,
                     submenu_row_height,
                     1,
+                    701,
                     None,
                     None,
                     None,
@@ -1518,7 +1936,6 @@ pub fn draw_settings_page(
                     None,
                     None,
                     None,
-                    selected_item_index == 1,
                     true,
                     submenu_layer_t,
                 );
@@ -1529,8 +1946,12 @@ pub fn draw_settings_page(
 
 #[cfg(test)]
 mod tests {
+    use eframe::egui;
+
     use super::{
-        settings_layer_state, should_force_top_level_entry_layer, staged_settings_entry_progress,
+        eased_scroll_offset, scroll_offset_to_keep_focus_visible, settings_dropdown_menu_rect,
+        settings_layer_state,
+        should_force_top_level_entry_layer, staged_settings_entry_progress,
         SETTINGS_BACKDROP_PHASE,
     };
 
@@ -1611,5 +2032,61 @@ mod tests {
 
         assert!(layer_state.top_layer_t.abs() < f32::EPSILON);
         assert!((layer_state.submenu_layer_t - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn focus_scroll_stays_zero_when_content_fits() {
+        let scroll_offset =
+            scroll_offset_to_keep_focus_visible(320.0, 420.0, 180.0, 98.0, 20.0, 24.0);
+
+        assert!(scroll_offset.abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn focus_scroll_moves_row_back_inside_viewport() {
+        let scroll_offset =
+            scroll_offset_to_keep_focus_visible(900.0, 500.0, 460.0, 98.0, 20.0, 24.0);
+
+        assert!((scroll_offset - 82.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn focus_scroll_clamps_to_available_content_range() {
+        let scroll_offset =
+            scroll_offset_to_keep_focus_visible(540.0, 500.0, 520.0, 98.0, 20.0, 24.0);
+
+        assert!((scroll_offset - 40.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn eased_scroll_offset_uses_stable_dt_progress() {
+        let next = eased_scroll_offset(0.0, 100.0, 1.0 / 60.0, 14.0);
+        let expected = 100.0 * (1.0 - (-(14.0_f32 / 60.0)).exp());
+
+        assert!((next - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn eased_scroll_offset_handles_non_positive_dt_without_jumping() {
+        assert!((eased_scroll_offset(12.0, 80.0, 0.0, 14.0) - 12.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn dropdown_menu_opens_below_when_space_allows() {
+        let button_rect = egui::Rect::from_min_size(egui::pos2(40.0, 120.0), egui::vec2(200.0, 98.0));
+        let viewport_rect = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(400.0, 600.0));
+        let menu_rect = settings_dropdown_menu_rect(button_rect, 220.0, 14.0, viewport_rect);
+
+        assert!((menu_rect.min.y - 232.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn dropdown_menu_flips_up_when_bottom_would_clip() {
+        let button_rect = egui::Rect::from_min_size(egui::pos2(40.0, 420.0), egui::vec2(200.0, 98.0));
+        let viewport_rect = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(400.0, 600.0));
+        let menu_rect = settings_dropdown_menu_rect(button_rect, 220.0, 14.0, viewport_rect);
+
+        assert!((menu_rect.min.y - 186.0).abs() < 1e-6);
+        assert!(menu_rect.max.y <= 592.0);
     }
 }

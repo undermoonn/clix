@@ -20,7 +20,7 @@ use crate::i18n::{AppLanguage, AppLanguageSetting};
 use crate::input::{self, InputController};
 use crate::launch::{self, LaunchState};
 use crate::system::{
-    display_mode::{self, ResolutionOptions},
+    display_mode::{self, DisplayScaleOptions, ResolutionOptions},
     external_apps::{self, ExternalApp},
     power, startup,
 };
@@ -188,6 +188,7 @@ pub struct LauncherApp {
     dlss: DlssState,
     runtime: RuntimeState,
     resolution_options: ResolutionOptions,
+    display_scale_options: DisplayScaleOptions,
     game_scan_options: game::GameScanOptions,
     launch_on_startup_enabled: bool,
     background_home_wake_enabled: bool,
@@ -259,6 +260,7 @@ impl LauncherApp {
             dlss: DlssState::new(),
             runtime: RuntimeState::new(),
             resolution_options: display_mode::detect_resolution_options(),
+            display_scale_options: display_mode::detect_display_scale_options(),
             game_scan_options,
             launch_on_startup_enabled,
             background_home_wake_enabled,
@@ -827,13 +829,22 @@ impl LauncherApp {
             .resolution_options
             .refresh_rates_for(resolution_index)
             .len();
+        let scale_index = self.display_scale_options.current_scale_index();
 
         self.page.sync_screen_settings(
             self.resolution_options.resolutions.len(),
             resolution_index,
             refresh_count,
             refresh_index,
+            self.display_scale_options.scales.len(),
+            scale_index,
         );
+    }
+
+    fn refresh_screen_settings_options(&mut self) {
+        self.resolution_options = display_mode::detect_resolution_options();
+        self.display_scale_options = display_mode::detect_display_scale_options();
+        self.sync_screen_settings_state();
     }
 
     fn apply_resolution_indices(&mut self, resolution_index: usize, refresh_index: usize) {
@@ -845,8 +856,7 @@ impl LauncherApp {
         };
 
         let _ = display_mode::apply_resolution_choice(&choice);
-        self.resolution_options = display_mode::detect_resolution_options();
-        self.sync_screen_settings_state();
+        self.refresh_screen_settings_options();
     }
 
     fn apply_screen_settings_action(&mut self, action: ScreenSettingsAction) {
@@ -875,6 +885,14 @@ impl LauncherApp {
             ScreenSettingsAction::SelectRefreshRate(refresh_index) => {
                 self.apply_resolution_indices(current_resolution_index, refresh_index);
             }
+            ScreenSettingsAction::SelectScale(scale_index) => {
+                let Some(choice) = self.display_scale_options.choice_at(scale_index).cloned() else {
+                    return;
+                };
+
+                let _ = display_mode::apply_display_scale_choice(&choice);
+                self.refresh_screen_settings_options();
+            }
         }
     }
 
@@ -883,8 +901,7 @@ impl LauncherApp {
     }
 
     fn refresh_power_menu_state(&mut self) {
-        self.resolution_options = display_mode::detect_resolution_options();
-        self.sync_screen_settings_state();
+        self.refresh_screen_settings_options();
         self.launch_on_startup_enabled = startup::is_enabled();
         self.power_menu_external_apps = external_apps::detect_installed();
         let layout = crate::power_menu_structure::PowerMenuLayout::new(power::supported());
@@ -1443,12 +1460,15 @@ impl eframe::App for LauncherApp {
                     self.game_scan_options.detect_epic_games,
                     self.game_scan_options.detect_xbox_games,
                     &self.resolution_options,
+                    &self.display_scale_options,
                     self.resolution_options.current_resolution_index(),
                     self.resolution_options.current_refresh_index_for(
                         self.resolution_options.current_resolution_index(),
                     ),
+                    self.display_scale_options.current_scale_index(),
                     self.page.settings_screen_resolution_dropdown_open(),
                     self.page.settings_screen_refresh_dropdown_open(),
+                    self.page.settings_screen_scale_dropdown_open(),
                     self.page.settings_screen_dropdown_selected_index(),
                     self.page.settings_section_index(),
                     self.page.settings_selected_item_index(),
@@ -1456,8 +1476,8 @@ impl eframe::App for LauncherApp {
                     self.page.settings_in_submenu(),
                     self.page.settings_page_anim(),
                     self.page.settings_submenu_anim(),
-                    self.page.settings_screen_dropdown_overlay_anim(),
                     self.page.settings_select_anim(),
+                    self.page.settings_focus_key(),
                 );
 
                 if let Some(icons) = &self.hint_icons {

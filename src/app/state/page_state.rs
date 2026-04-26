@@ -18,6 +18,7 @@ const SETTINGS_PAGE_ENTER_INITIAL_PROGRESS: f32 = 0.18;
 pub enum ScreenSettingsAction {
     SelectResolution(usize),
     SelectRefreshRate(usize),
+    SelectScale(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,6 +40,7 @@ enum SettingsSection {
 enum ScreenDropdown {
     Resolution,
     RefreshRate,
+    Scale,
 }
 
 impl SettingsSection {
@@ -114,7 +116,6 @@ pub struct PageState {
     settings_page_anim: ExponentialAnimation,
     settings_submenu_anim: ExponentialAnimation,
     settings_select_anim: ExponentialAnimation,
-    settings_screen_dropdown_overlay_anim: ExponentialAnimation,
     settings_select_anim_target: Option<u16>,
     settings_section: SettingsSection,
     settings_in_submenu: bool,
@@ -124,8 +125,10 @@ pub struct PageState {
     settings_screen_dropdown_selected: usize,
     settings_screen_resolution_count: usize,
     settings_screen_refresh_count: usize,
+    settings_screen_scale_count: usize,
     settings_screen_current_resolution: usize,
     settings_screen_current_refresh: usize,
+    settings_screen_current_scale: usize,
     settings_apps_selected: usize,
     show_achievement_panel: bool,
     achievement_panel_anim: ExponentialAnimation,
@@ -160,7 +163,6 @@ impl PageState {
             settings_page_anim: ExponentialAnimation::new(0.0),
             settings_submenu_anim: ExponentialAnimation::new(0.0),
             settings_select_anim: ExponentialAnimation::new(0.0),
-            settings_screen_dropdown_overlay_anim: ExponentialAnimation::new(0.0),
             settings_select_anim_target: None,
             settings_section: SettingsSection::System,
             settings_in_submenu: false,
@@ -170,8 +172,10 @@ impl PageState {
             settings_screen_dropdown_selected: 0,
             settings_screen_resolution_count: 1,
             settings_screen_refresh_count: 1,
+            settings_screen_scale_count: 1,
             settings_screen_current_resolution: 0,
             settings_screen_current_refresh: 0,
+            settings_screen_current_scale: 0,
             settings_apps_selected: 0,
             show_achievement_panel: false,
             achievement_panel_anim: ExponentialAnimation::new(0.0),
@@ -272,8 +276,12 @@ impl PageState {
         self.settings_select_anim.value()
     }
 
-    pub fn settings_screen_dropdown_overlay_anim(&self) -> f32 {
-        self.settings_screen_dropdown_overlay_anim.value()
+    pub fn settings_focus_key(&self) -> Option<u16> {
+        if self.show_settings_page {
+            Some(self.settings_selection_key())
+        } else {
+            None
+        }
     }
 
     pub fn settings_section_index(&self) -> usize {
@@ -301,6 +309,10 @@ impl PageState {
         self.settings_screen_dropdown == Some(ScreenDropdown::RefreshRate)
     }
 
+    pub fn settings_screen_scale_dropdown_open(&self) -> bool {
+        self.settings_screen_dropdown == Some(ScreenDropdown::Scale)
+    }
+
     pub fn settings_screen_dropdown_selected_index(&self) -> usize {
         self.settings_screen_dropdown_selected
     }
@@ -311,13 +323,18 @@ impl PageState {
         selected_resolution_index: usize,
         refresh_count: usize,
         selected_refresh_index: usize,
+        scale_count: usize,
+        selected_scale_index: usize,
     ) {
         self.settings_screen_resolution_count = resolution_count.max(1);
         self.settings_screen_refresh_count = refresh_count.max(1);
+        self.settings_screen_scale_count = scale_count.max(1);
         self.settings_screen_current_resolution = selected_resolution_index
             .min(self.settings_screen_resolution_count.saturating_sub(1));
         self.settings_screen_current_refresh = selected_refresh_index
             .min(self.settings_screen_refresh_count.saturating_sub(1));
+        self.settings_screen_current_scale = selected_scale_index
+            .min(self.settings_screen_scale_count.saturating_sub(1));
 
         match self.settings_screen_dropdown {
             Some(ScreenDropdown::Resolution) => {
@@ -329,6 +346,11 @@ impl PageState {
                 self.settings_screen_dropdown_selected = self
                     .settings_screen_dropdown_selected
                     .min(self.settings_screen_refresh_count.saturating_sub(1));
+            }
+            Some(ScreenDropdown::Scale) => {
+                self.settings_screen_dropdown_selected = self
+                    .settings_screen_dropdown_selected
+                    .min(self.settings_screen_scale_count.saturating_sub(1));
             }
             None => {}
         }
@@ -538,16 +560,28 @@ impl PageState {
                                         );
                                         self.settings_screen_dropdown = None;
                                     }
+                                    Some(ScreenDropdown::Scale) => {
+                                        result.screen_settings_action = Some(
+                                            ScreenSettingsAction::SelectScale(
+                                                self.settings_screen_dropdown_selected,
+                                            ),
+                                        );
+                                        self.settings_screen_dropdown = None;
+                                    }
                                     None => {
                                         self.settings_screen_dropdown = Some(
                                             if self.settings_screen_selected == 0 {
                                                 self.settings_screen_dropdown_selected = self
                                                     .settings_screen_current_resolution;
                                                 ScreenDropdown::Resolution
-                                            } else {
+                                            } else if self.settings_screen_selected == 1 {
                                                 self.settings_screen_dropdown_selected = self
                                                     .settings_screen_current_refresh;
                                                 ScreenDropdown::RefreshRate
+                                            } else {
+                                                self.settings_screen_dropdown_selected = self
+                                                    .settings_screen_current_scale;
+                                                ScreenDropdown::Scale
                                             },
                                         );
                                     }
@@ -806,44 +840,17 @@ impl PageState {
             None
         };
         if self.settings_select_anim_target != settings_select_target {
+            let current_settings_select_anim = self.settings_select_anim.value_at(now);
             self.settings_select_anim_target = settings_select_target;
             if settings_select_target.is_some() {
-                self.settings_select_anim.restart(0.0, 1.0, 11.0, now);
+                self.settings_select_anim
+                    .restart(current_settings_select_anim, 1.0, 11.0, now);
             } else {
                 self.settings_select_anim.set_immediate(0.0);
             }
         }
         if settings_select_target.is_some()
             && self.settings_select_anim.update(now, ANIMATION_EPSILON)
-        {
-            ctx.request_repaint();
-        }
-
-        let screen_dropdown_overlay_target = if self.show_settings_page
-            && self.settings_in_submenu
-            && self.settings_section == SettingsSection::Screen
-            && self.settings_screen_dropdown.is_some()
-        {
-            1.0
-        } else {
-            0.0
-        };
-        let screen_dropdown_overlay_speed = if screen_dropdown_overlay_target
-            < self.settings_screen_dropdown_overlay_anim.value_at(now)
-        {
-            8.5
-        } else {
-            6.5
-        };
-        self.settings_screen_dropdown_overlay_anim.animate_to(
-            screen_dropdown_overlay_target,
-            screen_dropdown_overlay_speed,
-            now,
-            ANIMATION_EPSILON,
-        );
-        if self
-            .settings_screen_dropdown_overlay_anim
-            .update(now, ANIMATION_EPSILON)
         {
             ctx.request_repaint();
         }
@@ -949,10 +956,11 @@ impl PageState {
                     Some(ScreenDropdown::RefreshRate) => {
                         300 + self.settings_screen_dropdown_selected as u16
                     }
+                    Some(ScreenDropdown::Scale) => 500 + self.settings_screen_dropdown_selected as u16,
                     None => 20 + self.settings_screen_selected as u16,
                 },
-                SettingsSection::Apps => 500 + self.settings_apps_selected as u16,
-                SettingsSection::CloseApp => 600,
+                SettingsSection::Apps => 700 + self.settings_apps_selected as u16,
+                SettingsSection::CloseApp => 800,
             }
         } else {
             self.settings_section.index() as u16
@@ -975,7 +983,7 @@ impl PageState {
         };
         let max_index = match self.settings_section {
             SettingsSection::System => 6,
-            SettingsSection::Screen => 1,
+            SettingsSection::Screen => 2,
             SettingsSection::Apps => 1,
             SettingsSection::CloseApp => 0,
         };
@@ -993,6 +1001,7 @@ impl PageState {
                 self.settings_screen_resolution_count.saturating_sub(1)
             }
             Some(ScreenDropdown::RefreshRate) => self.settings_screen_refresh_count.saturating_sub(1),
+            Some(ScreenDropdown::Scale) => self.settings_screen_scale_count.saturating_sub(1),
             None => return,
         };
 
@@ -1012,8 +1021,7 @@ mod tests {
 
     use super::{
         PageState, PowerAction, ScreenSettingsAction, SETTINGS_PAGE_ENTER_ANIM_SPEED,
-        SETTINGS_PAGE_ENTER_INITIAL_PROGRESS,
-        SETTINGS_SUBMENU_ENTER_ANIM_SPEED,
+        SETTINGS_PAGE_ENTER_INITIAL_PROGRESS, SETTINGS_SUBMENU_ENTER_ANIM_SPEED,
     };
     use crate::animation::scale_seconds;
     use crate::input::ControllerAction;
@@ -1023,7 +1031,7 @@ mod tests {
     fn open_settings_page(page: &mut PageState) {
         let _ = page.handle_action(&ControllerAction::Settings, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
-        page.sync_screen_settings(2, 0, 3, 1);
+        page.sync_screen_settings(2, 0, 3, 1, 4, 1);
     }
 
     fn tick_animation_frame(page: &mut PageState, ctx: &eframe::egui::Context, now: &mut Instant) {
@@ -1580,7 +1588,7 @@ mod tests {
     }
 
     #[test]
-    fn settings_selection_animation_resets_when_selection_changes() {
+    fn settings_selection_animation_keeps_progress_when_selection_changes() {
         let mut page = PageState::new();
         let ctx = eframe::egui::Context::default();
         let mut now = Instant::now();
@@ -1595,8 +1603,7 @@ mod tests {
         tick_animation_frame(&mut page, &ctx, &mut now);
         tick_animation_frame(&mut page, &ctx, &mut now);
 
-        assert!(page.settings_select_anim() > 0.0);
-        assert!(page.settings_select_anim() <= first_anim + 0.001);
+        assert!(page.settings_select_anim() >= first_anim - 0.001);
     }
 
     #[test]
@@ -1757,6 +1764,26 @@ mod tests {
             result.screen_settings_action,
             Some(ScreenSettingsAction::SelectRefreshRate(2))
         );
+    }
+
+    #[test]
+    fn launch_in_scale_dropdown_selects_next_scale() {
+        let mut page = PageState::new();
+
+        open_settings_page(&mut page);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let open_result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert_eq!(open_result.screen_settings_action, None);
+        assert!(page.settings_screen_scale_dropdown_open());
+
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert_eq!(result.screen_settings_action, Some(ScreenSettingsAction::SelectScale(2)));
     }
 
     #[test]
