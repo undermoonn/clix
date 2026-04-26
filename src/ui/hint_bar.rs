@@ -5,7 +5,7 @@ use eframe::egui;
 use crate::i18n::AppLanguage;
 
 use super::hint_icons::HintIcons;
-use super::anim::{lerp_f32, smoothstep01};
+use super::{lerp_f32, smoothstep01};
 use super::text::{color_with_scaled_alpha, main_clock_right_edge};
 
 pub fn draw_hint_bar(

@@ -6,7 +6,7 @@ use crate::game::{Game, GameIconKey, GameSource};
 use crate::i18n::AppLanguage;
 use crate::steam::AchievementSummary;
 
-use super::anim::{lerp_f32, smoothstep01};
+use super::{lerp_f32, smoothstep01};
 use super::header::{
     build_selected_game_header, draw_selected_game_badge, draw_selected_game_summary,
     draw_selected_game_title, SelectedGameSummaryStyle,

@@ -6,7 +6,7 @@ use crate::game::{Game, GameSource};
 use crate::i18n::AppLanguage;
 use crate::steam::AchievementSummary;
 
-use super::anim::lerp_f32;
+use super::lerp_f32;
 use super::text::{build_wrapped_galley, color_with_scaled_alpha, corner_radius, scale_alpha};
 
 pub(crate) fn dlss_tag_text(game: &Game) -> Option<String> {

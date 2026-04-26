@@ -1,6 +1,6 @@
 use eframe::egui;
 
-use super::anim::{lerp_f32, smoothstep01};
+use super::{lerp_f32, smoothstep01};
 use super::text::{
     color_with_scaled_alpha, corner_radius, draw_main_clock, layout_main_clock, main_clock_color,
     main_clock_right_edge, scale_alpha,

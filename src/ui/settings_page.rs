@@ -6,7 +6,7 @@ use crate::system::display_mode::{
     DisplayModeSetting, DisplayScaleOptions, ResolutionOptions,
 };
 
-use super::anim::{lerp_f32, smoothstep01};
+use super::{lerp_f32, smoothstep01};
 use super::header::{draw_selected_game_text_badge, measure_selected_game_text_badge};
 use super::text::{color_with_scaled_alpha, corner_radius, PANEL_CORNER_RADIUS};
 

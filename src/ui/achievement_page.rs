@@ -7,7 +7,7 @@ use crate::i18n::AppLanguage;
 use crate::steam::AchievementSummary;
 
 use super::hint_icons::HintIcons;
-use super::anim::{lerp_f32, smoothstep01};
+use super::{lerp_f32, smoothstep01};
 use super::header::{
     build_selected_game_header, dlss_tag_text, draw_selected_game_summary,
     draw_selected_game_text_badge, draw_selected_game_text_badge_with_style,
