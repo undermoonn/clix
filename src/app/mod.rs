@@ -20,10 +20,11 @@ use crate::game_last_played;
 use crate::i18n::{AppLanguage, AppLanguageSetting};
 use crate::input::{self, InputController};
 use crate::launch::{self, LaunchState};
+use crate::power_menu;
 use crate::system::{
     display_mode::{self, DisplayModeSetting, DisplayScaleOptions, ResolutionOptions},
     external_apps::{self, ExternalApp},
-    power, startup,
+    startup,
 };
 use crate::steam;
 use crate::ui;
@@ -1048,7 +1049,7 @@ impl LauncherApp {
         self.refresh_screen_settings_options();
         self.launch_on_startup_enabled = startup::is_enabled();
         self.power_menu_external_apps = external_apps::detect_installed();
-        let layout = crate::power_menu_structure::PowerMenuLayout::new(power::supported());
+        let layout = crate::power_menu::PowerMenuLayout::new(power_menu::supported());
         if layout.is_empty() {
             return;
         }
@@ -1134,15 +1135,15 @@ impl LauncherApp {
 
         match action {
             PowerAction::Sleep => {
-                let _ = power::sleep_system();
+                let _ = power_menu::sleep_system();
             }
             PowerAction::Reboot => {
-                if power::reboot_system() {
+                if power_menu::reboot_system() {
                     self.close_root_viewport(ctx);
                 }
             }
             PowerAction::Shutdown => {
-                if power::shutdown_system() {
+                if power_menu::shutdown_system() {
                     self.close_root_viewport(ctx);
                 }
             }
@@ -1701,7 +1702,7 @@ impl eframe::App for LauncherApp {
                     &self.resolution_options.current.label,
                     "",
                     "",
-                    power::supported(),
+                    power_menu::supported(),
                     self.page.power_menu_anim(),
                     self.page.power_menu_select_anim(),
                     self.page.power_menu_scroll_offset(),

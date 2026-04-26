@@ -1,15 +1,14 @@
 use std::borrow::Cow;
 
 use eframe::egui;
-use crate::power_menu_structure::{PowerMenuLayout, PowerMenuOption};
-use crate::i18n::AppLanguage;
 
-use super::anim::{lerp_f32, smoothstep01};
-use super::hint_icons::HintIcons;
-use super::text::{
+use crate::i18n::AppLanguage;
+use crate::ui::{
     color_with_scaled_alpha, corner_radius, layout_main_clock, main_clock_right_edge,
-    PANEL_CORNER_RADIUS,
+    lerp_f32, smoothstep01, HintIcons, PANEL_CORNER_RADIUS,
 };
+
+use super::{PowerMenuLayout, PowerMenuOption};
 
 const POWER_MENU_SELECTION_CORNER_RADIUS: f32 = 12.0;
 
@@ -250,5 +249,4 @@ pub fn draw_power_menu(
             egui::Color32::WHITE,
         );
     }
-
 }

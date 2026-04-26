@@ -4,7 +4,7 @@ use eframe::egui;
 
 use crate::animation::ExponentialAnimation;
 use crate::input::ControllerAction;
-use crate::power_menu_structure::{PowerMenuLayout, PowerMenuOption};
+use crate::power_menu::{PowerMenuLayout, PowerMenuOption};
 use crate::system::external_apps::ExternalAppKind;
 
 const ANIMATION_EPSILON: f32 = 0.001;
@@ -1028,7 +1028,7 @@ mod tests {
     };
     use crate::animation::scale_seconds;
     use crate::input::ControllerAction;
-    use crate::power_menu_structure::PowerMenuLayout;
+    use crate::power_menu::PowerMenuLayout;
     use crate::system::external_apps::ExternalAppKind;
 
     fn open_settings_page(page: &mut PageState) {
