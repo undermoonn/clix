@@ -211,6 +211,10 @@ pub fn begin_focus_transition(game_index: usize, state: &RunningGameState) -> Op
     }
 }
 
+pub fn restart_launch_timeout(state: &mut LaunchState) {
+    state.started_at = Instant::now();
+}
+
 pub fn tick_launch_progress(state: &mut LaunchState, launch_held: bool) -> LaunchTickResult {
     #[cfg(target_os = "windows")]
     {

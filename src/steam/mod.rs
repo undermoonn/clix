@@ -13,6 +13,6 @@ pub use achievement_cache::{
 pub use achievements::{load_achievement_summary, sort_achievement_items};
 pub use library::{
     find_steam_paths, load_game_installed_size, load_game_playtime_minutes,
-    scan_games_with_paths,
+    load_game_update_progress, scan_games_with_paths, SteamUpdateProgress,
 };
 pub use types::AchievementSummary;

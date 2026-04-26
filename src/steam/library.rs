@@ -5,6 +5,52 @@ use regex::Regex;
 
 use crate::game::{sort_games_by_last_played, Game, GameSource};
 
+const STEAM_STATE_FLAG_FULLY_INSTALLED: u32 = 0x4;
+const STEAM_STATE_FLAG_UPDATE_REQUIRED: u32 = 0x2;
+const STEAM_STATE_FLAG_UPDATING: u32 = 0x400;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SteamUpdateProgress {
+    pub state_flags: u32,
+    pub bytes_downloaded: u64,
+    pub bytes_to_download: u64,
+    pub bytes_staged: u64,
+    pub bytes_to_stage: u64,
+}
+
+impl SteamUpdateProgress {
+    fn has_pending_download(&self) -> bool {
+        self.bytes_to_download > 0 && self.bytes_downloaded < self.bytes_to_download
+    }
+
+    fn has_pending_stage(&self) -> bool {
+        self.bytes_to_stage > 0 && self.bytes_staged < self.bytes_to_stage
+    }
+
+    fn has_completed_work(&self) -> bool {
+        (self.bytes_to_download > 0 && self.bytes_downloaded >= self.bytes_to_download)
+            || (self.bytes_to_stage > 0 && self.bytes_staged >= self.bytes_to_stage)
+    }
+
+    pub fn is_complete(&self) -> bool {
+        !self.has_pending_download()
+            && !self.has_pending_stage()
+            && self.has_completed_work()
+            && (self.state_flags & STEAM_STATE_FLAG_UPDATING) == 0
+    }
+
+    pub fn needs_update(&self) -> bool {
+        if self.is_complete() {
+            return false;
+        }
+
+        (self.state_flags & STEAM_STATE_FLAG_UPDATE_REQUIRED) != 0
+            || self.has_pending_download()
+            || self.has_pending_stage()
+    }
+
+}
+
 pub fn find_steam_paths() -> Vec<PathBuf> {
     let mut steam_paths: Vec<PathBuf> = Vec::new();
 
@@ -159,30 +205,7 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
     let mut games: Vec<Game> = Vec::new();
     let mut seen_app_ids: HashSet<u32> = HashSet::new();
     let appinfo_bytes = load_appinfo_bytes(steam_paths);
-
-    let vdf_re = Regex::new(r#"[\"]([A-Za-z]:\\[^\"]+)[\"]"#).unwrap();
-    let mut library_folders: Vec<PathBuf> = Vec::new();
-
-    for steam_root in steam_paths {
-        let libfile = steam_root.join("steamapps").join("libraryfolders.vdf");
-        if libfile.exists() {
-            if let Ok(s) = std::fs::read_to_string(&libfile) {
-                for cap in vdf_re.captures_iter(&s) {
-                    if let Some(m) = cap.get(1) {
-                        let p = PathBuf::from(m.as_str());
-                        if p.exists() {
-                            library_folders.push(p.join("steamapps"));
-                        }
-                    }
-                }
-            }
-        }
-        library_folders.push(steam_root.join("steamapps"));
-    }
-
-    library_folders.retain(|p| p.exists());
-    library_folders.sort();
-    library_folders.dedup();
+    let library_folders = collect_library_folders(steam_paths);
 
     let (last_played_map, playtime_map) = parse_userdata(steam_paths);
 
@@ -204,7 +227,7 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                         .and_then(|v| v.parse::<u32>().ok())
                         .unwrap_or(0);
 
-                    if (state_flags & 4) == 0 || name.is_empty() {
+                    if (state_flags & STEAM_STATE_FLAG_FULLY_INSTALLED) == 0 || name.is_empty() {
                         continue;
                     }
                     if let Some(id) = app_id {
@@ -294,6 +317,61 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
     games
 }
 
+pub fn load_game_update_progress(app_id: u32, steam_paths: &[PathBuf]) -> Option<SteamUpdateProgress> {
+    let manifest_path = find_appmanifest_path(app_id, steam_paths)?;
+    let content = std::fs::read_to_string(manifest_path).ok()?;
+    let values = parse_acf_values(&content);
+
+    let progress = SteamUpdateProgress {
+        state_flags: values
+            .get("stateflags")
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(0),
+        bytes_downloaded: parse_acf_u64(&values, "bytesdownloaded"),
+        bytes_to_download: parse_acf_u64(&values, "bytestodownload"),
+        bytes_staged: parse_acf_u64(&values, "bytesstaged"),
+        bytes_to_stage: parse_acf_u64(&values, "bytestostage"),
+    };
+
+    progress.needs_update().then_some(progress)
+}
+
+fn collect_library_folders(steam_paths: &[PathBuf]) -> Vec<PathBuf> {
+    let vdf_re = Regex::new(r#"[\"]([A-Za-z]:\\[^\"]+)[\"]"#).unwrap();
+    let mut library_folders: Vec<PathBuf> = Vec::new();
+
+    for steam_root in steam_paths {
+        let libfile = steam_root.join("steamapps").join("libraryfolders.vdf");
+        if libfile.exists() {
+            if let Ok(s) = std::fs::read_to_string(&libfile) {
+                for cap in vdf_re.captures_iter(&s) {
+                    if let Some(m) = cap.get(1) {
+                        let p = PathBuf::from(m.as_str());
+                        if p.exists() {
+                            library_folders.push(p.join("steamapps"));
+                        }
+                    }
+                }
+            }
+        }
+        library_folders.push(steam_root.join("steamapps"));
+    }
+
+    library_folders.retain(|path| path.exists());
+    library_folders.sort();
+    library_folders.dedup();
+    library_folders
+}
+
+fn find_appmanifest_path(app_id: u32, steam_paths: &[PathBuf]) -> Option<PathBuf> {
+    let manifest_name = format!("appmanifest_{}.acf", app_id);
+
+    collect_library_folders(steam_paths)
+        .into_iter()
+        .map(|library| library.join(&manifest_name))
+        .find(|path| path.is_file())
+}
+
 fn parse_acf_values(content: &str) -> HashMap<String, String> {
     let re = Regex::new(r#"\"([^\"]+)\"\s+\"([^\"]*)\""#).unwrap();
     let mut map = HashMap::new();
@@ -303,6 +381,13 @@ fn parse_acf_values(content: &str) -> HashMap<String, String> {
         }
     }
     map
+}
+
+fn parse_acf_u64(values: &HashMap<String, String>, key: &str) -> u64 {
+    values
+        .get(key)
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0)
 }
 
 fn parse_userdata(steam_paths: &[PathBuf]) -> (HashMap<u32, u64>, HashMap<u32, u32>) {

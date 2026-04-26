@@ -107,6 +107,20 @@ impl AppLanguage {
         }
     }
 
+    pub fn steam_updating_text(self) -> &'static str {
+        match self {
+            Self::English => "Updating",
+            Self::SimplifiedChinese => "更新中",
+        }
+    }
+
+    pub fn steam_launch_after_update_text(self) -> &'static str {
+        match self {
+            Self::English => "Launch After Update",
+            Self::SimplifiedChinese => "更新后启动",
+        }
+    }
+
     pub fn back_text(self) -> &'static str {
         match self {
             Self::English => "Back",

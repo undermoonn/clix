@@ -130,7 +130,7 @@ fn draw_status_dot(painter: &egui::Painter, icon_rect: egui::Rect, status: GameS
     painter.circle_filled(center, radius, dot_color);
 }
 
-fn draw_launch_notice_overlay(
+fn draw_game_icon_overlay(
     ui: &egui::Ui,
     painter: &egui::Painter,
     icon_rect: egui::Rect,
@@ -169,8 +169,16 @@ fn draw_launch_notice_overlay(
         egui::Color32::from_rgba_unmultiplied(252, 253, 255, 248),
         alpha_scale,
     );
-    let text_galley = build_wrapped_galley(ui, notice_text.to_string(), text_font, text_color, max_text_width);
-    let target_height = icon_rect.height() * 0.25;
+    let text_galley =
+        build_wrapped_galley(ui, notice_text.to_string(), text_font, text_color, max_text_width);
+    let content_height = if use_action_icon && action_icon.is_some() {
+        text_galley.size().y.max(icon_size)
+    } else {
+        text_galley.size().y
+    };
+    let target_height = (content_height + design_units(18.0, pixels_per_point))
+        .max(icon_rect.height() * 0.25)
+        .min(icon_rect.height() * 0.52);
     let overlay_height = lerp_f32(0.0, target_height, overlay_t);
     let overlay_rect = egui::Rect::from_min_max(
         egui::pos2(icon_rect.min.x, icon_rect.max.y - overlay_height),
@@ -227,6 +235,7 @@ pub fn draw_game_list(
     action_icon_a: Option<&egui::TextureHandle>,
     launch_feedback: Option<(usize, f32)>,
     launch_notice: Option<(usize, String, f32, egui::Color32, bool)>,
+    steam_update_notice: Option<(usize, String, egui::Color32)>,
     launching_index: Option<usize>,
     running_indices: &[usize],
     summary_cards_visibility: f32,
@@ -355,9 +364,10 @@ pub fn draw_game_list(
                 draw_status_dot(&painter, icon_rect, status_dot);
             }
 
+            let mut overlay_drawn = false;
             if let Some((notice_index, notice_text, notice_overlay_t, notice_color, use_action_icon)) = &launch_notice {
                 if *notice_index == i {
-                    draw_launch_notice_overlay(
+                    draw_game_icon_overlay(
                         ui,
                         &painter,
                         icon_rect,
@@ -368,6 +378,25 @@ pub fn draw_game_list(
                         *notice_color,
                         wake_t,
                     );
+                    overlay_drawn = true;
+                }
+            }
+
+            if !overlay_drawn {
+                if let Some((notice_index, notice_text, notice_color)) = &steam_update_notice {
+                    if *notice_index == i {
+                        draw_game_icon_overlay(
+                            ui,
+                            &painter,
+                            icon_rect,
+                            notice_text,
+                            None,
+                            false,
+                            1.0,
+                            *notice_color,
+                            wake_t,
+                        );
+                    }
                 }
             }
         }
