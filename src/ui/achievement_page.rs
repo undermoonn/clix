@@ -291,6 +291,7 @@ pub fn draw_achievement_page(
         show_achievement_title: false,
         hide_empty_achievement_card: false,
         card_height: 82.0,
+        layout_scale: 1.0,
     };
     let playtime_width = 0.0;
     let achievement_width = 292.0;

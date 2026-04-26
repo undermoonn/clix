@@ -13,6 +13,12 @@ use super::header::{
 };
 use super::text::{build_wrapped_galley, color_with_scaled_alpha, corner_radius};
 
+const HOME_LAYOUT_BASELINE_PIXELS_PER_POINT: f32 = 2.0;
+
+fn design_units(value: f32, pixels_per_point: f32) -> f32 {
+    value * (HOME_LAYOUT_BASELINE_PIXELS_PER_POINT / pixels_per_point.max(0.01))
+}
+
 fn launch_press_t(elapsed_seconds: f32) -> f32 {
     let press_in_duration = 0.06;
     let release_duration = 0.1;
@@ -139,20 +145,26 @@ fn draw_launch_notice_overlay(
         return;
     }
 
+    let pixels_per_point = ui.ctx().pixels_per_point().max(0.01);
     let alpha_scale = wake_t.clamp(0.0, 1.0);
     if alpha_scale <= 0.001 {
         return;
     }
 
-    let icon_size = 24.0;
-    let text_gap = 8.0;
+    let icon_size = design_units(24.0, pixels_per_point);
+    let text_gap = design_units(8.0, pixels_per_point);
     let icon_and_text_padding = if use_action_icon && action_icon.is_some() {
         icon_size + text_gap
     } else {
         0.0
     };
-    let max_text_width = (icon_rect.width() - 18.0 - icon_and_text_padding).max(48.0);
-    let text_font = egui::FontId::new(17.0, egui::FontFamily::Name("Bold".into()));
+    let max_text_width =
+        (icon_rect.width() - design_units(18.0, pixels_per_point) - icon_and_text_padding)
+            .max(design_units(48.0, pixels_per_point));
+    let text_font = egui::FontId::new(
+        design_units(17.0, pixels_per_point),
+        egui::FontFamily::Name("Bold".into()),
+    );
     let text_color = color_with_scaled_alpha(
         egui::Color32::from_rgba_unmultiplied(252, 253, 255, 248),
         alpha_scale,
@@ -177,7 +189,7 @@ fn draw_launch_notice_overlay(
         color_with_scaled_alpha(overlay_color, alpha_scale),
     );
 
-    let text_offset_y = lerp_f32(16.0, 0.0, overlay_t);
+    let text_offset_y = lerp_f32(design_units(16.0, pixels_per_point), 0.0, overlay_t);
     let content_width = text_galley.size().x + icon_and_text_padding;
     let content_left = icon_rect.center().x - content_width * 0.5;
     if use_action_icon {
@@ -224,27 +236,30 @@ pub fn draw_game_list(
     previous_achievement_summary_reveal: f32,
     wake_anim: f32,
 ) {
-    let base_icon_size: f32 = 152.0;
-    let selected_icon_size: f32 = 224.0;
+    let pixels_per_point = ui.ctx().pixels_per_point().max(0.01);
+    let home_layout_scale = HOME_LAYOUT_BASELINE_PIXELS_PER_POINT / pixels_per_point;
+    let base_icon_size = design_units(152.0, pixels_per_point);
+    let selected_icon_size = design_units(224.0, pixels_per_point);
     let selected_icon_extra = selected_icon_size - base_icon_size;
 
     let panel_rect = ui.available_rect_before_wrap();
-    let padding = 50.0;
+    let padding = design_units(50.0, pixels_per_point);
     let padded_rect = panel_rect.shrink(padding);
     let page_scroll_t = smoothstep01(achievement_panel_anim);
     let page_offset_y = -panel_rect.height() * page_scroll_t;
     let wake_t = smoothstep01(wake_anim);
     let game_focus_visibility = 1.0 - smoothstep01(home_settings_focus_anim);
-    let wake_offset_y = lerp_f32(42.0, 0.0, wake_t);
+    let wake_offset_y = lerp_f32(design_units(42.0, pixels_per_point), 0.0, wake_t);
 
-    let selected_size = 34.0;
-    let base_size = 20.0;
-    let column_spacing = 180.0;
+    let selected_size = design_units(34.0, pixels_per_point);
+    let base_size = design_units(20.0, pixels_per_point);
+    let column_spacing = design_units(180.0, pixels_per_point);
 
     let hero_ratio = 1240.0 / 3840.0;
     let img_bottom = panel_rect.min.y + panel_rect.width() * hero_ratio;
-    let content_top = img_bottom + 32.0 + page_offset_y + wake_offset_y;
-    let anchor_x = padded_rect.min.x + 24.0;
+    let content_top =
+        img_bottom + design_units(32.0, pixels_per_point) + page_offset_y + wake_offset_y;
+    let anchor_x = padded_rect.min.x + design_units(24.0, pixels_per_point);
     let painter = ui.painter().with_clip_rect(panel_rect);
     let selected_focus_t = smoothstep01(select_anim);
     let selected_meta_t = smoothstep01((select_anim - 0.18) / 0.82);
@@ -366,9 +381,11 @@ pub fn draw_game_list(
                     (i + 1) as f32 - scroll_offset,
                 )
             } else {
-                icon_slot_rect.max.x + 18.0
+                icon_slot_rect.max.x + design_units(18.0, pixels_per_point)
             };
-            let header_width = (icon_slot_size * 2.0 + 28.0).max(320.0);
+            let header_width =
+                (icon_slot_size * 2.0 + design_units(28.0, pixels_per_point))
+                    .max(design_units(320.0, pixels_per_point));
             let header = build_selected_game_header(
                 ui,
                 &painter,
@@ -380,16 +397,28 @@ pub fn draw_game_list(
                 previous_achievement_summary_reveal,
                 font_id,
                 text_color,
-                17.0,
+                design_units(17.0, pixels_per_point),
                 140.0 * meta_t,
                 header_width,
             );
             let title_y = icon_slot_rect.max.y - header.title_galley.size().y;
             let badge_pos = egui::pos2(title_x, title_y);
-            let summary_pos = egui::pos2(icon_slot_rect.min.x, icon_slot_rect.max.y + 36.0);
+            let summary_pos = egui::pos2(
+                icon_slot_rect.min.x,
+                icon_slot_rect.max.y + design_units(36.0, pixels_per_point),
+            );
             let playtime_width = icon_slot_rect.width();
             let achievement_x = badge_pos.x;
-            let achievement_width = ((padded_rect.max.x - achievement_x - 24.0).min(292.0)).max(220.0);
+            let achievement_width = ((padded_rect.max.x
+                - achievement_x
+                - design_units(24.0, pixels_per_point))
+                .min(design_units(292.0, pixels_per_point)))
+                .max(design_units(220.0, pixels_per_point));
+            let summary_style = SelectedGameSummaryStyle {
+                card_height: design_units(106.0, pixels_per_point),
+                layout_scale: home_layout_scale,
+                ..SelectedGameSummaryStyle::default()
+            };
             let badge_offset = draw_selected_game_badge(
                 &painter,
                 g,
@@ -411,7 +440,7 @@ pub fn draw_game_list(
                     playtime_width,
                     achievement_x,
                     achievement_width,
-                    &SelectedGameSummaryStyle::default(),
+                    &summary_style,
                     summary_cards_visibility,
                     wake_t,
                 );
