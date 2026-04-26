@@ -128,13 +128,13 @@ pub fn begin_launch(
                 launch_target
                     .as_ref()
                     .or(Some(&game.path))
-                    .and_then(|path| Command::new(path).spawn().ok())
+                    .and_then(|path| spawn_direct_game(path, &game.path).ok())
                     .is_some()
             }
         }
         GameSource::Epic => launch_target
             .as_ref()
-            .and_then(|path| Command::new(path).spawn().ok())
+            .and_then(|path| spawn_direct_game(path, &game.path).ok())
             .is_some(),
         GameSource::Xbox => persistent_id
             .as_deref()
@@ -169,6 +169,18 @@ pub fn begin_launch(
         #[cfg(target_os = "windows")]
         transition: None,
     })
+}
+
+fn spawn_direct_game(path: &Path, install_dir: &Path) -> std::io::Result<std::process::Child> {
+    let mut command = Command::new(path);
+
+    if install_dir.is_dir() {
+        command.current_dir(install_dir);
+    } else if let Some(parent) = path.parent().filter(|parent| parent.is_dir()) {
+        command.current_dir(parent);
+    }
+
+    command.spawn()
 }
 
 #[cfg(target_os = "windows")]
