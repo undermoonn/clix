@@ -339,15 +339,19 @@ use winapi::shared::windef::HWND;
 #[cfg(target_os = "windows")]
 use winapi::um::handleapi::CloseHandle;
 #[cfg(target_os = "windows")]
-use winapi::um::processthreadsapi::{GetCurrentProcessId, OpenProcess, TerminateProcess};
+use winapi::um::processthreadsapi::{
+    GetCurrentProcessId, GetCurrentThreadId, OpenProcess, TerminateProcess,
+};
 #[cfg(target_os = "windows")]
 use winapi::um::psapi::{EnumProcesses, GetModuleFileNameExW};
 #[cfg(target_os = "windows")]
 use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE, PROCESS_VM_READ};
 #[cfg(target_os = "windows")]
 use winapi::um::winuser::{
+    AttachThreadInput, BringWindowToTop,
     EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
-    GetForegroundWindow, GetWindowLongW, PostMessageW, SetForegroundWindow,
+    GetForegroundWindow, GetWindowLongW, PostMessageW, SetActiveWindow, SetFocus,
+    SetForegroundWindow,
     SetLayeredWindowAttributes,
     SetWindowLongW, SetWindowPos, ShowWindow, GWL_EXSTYLE, LWA_ALPHA, SWP_NOSIZE,
     SWP_NOZORDER, SW_MINIMIZE, SW_RESTORE, WM_CLOSE, WS_EX_LAYERED,
@@ -620,8 +624,35 @@ fn window_title(hwnd: HWND) -> String {
 #[cfg(target_os = "windows")]
 fn bring_window_to_foreground(hwnd: HWND) {
     unsafe {
-        SetForegroundWindow(hwnd);
         ShowWindow(hwnd, SW_RESTORE);
+
+        let current_thread_id = GetCurrentThreadId();
+        let foreground_hwnd = GetForegroundWindow();
+        let foreground_thread_id = if foreground_hwnd.is_null() {
+            0
+        } else {
+            GetWindowThreadProcessId(foreground_hwnd, std::ptr::null_mut())
+        };
+        let target_thread_id = GetWindowThreadProcessId(hwnd, std::ptr::null_mut());
+
+        let attach_foreground = foreground_thread_id != 0
+            && foreground_thread_id != current_thread_id
+            && AttachThreadInput(current_thread_id, foreground_thread_id, TRUE) != 0;
+        let attach_target = target_thread_id != 0
+            && target_thread_id != current_thread_id
+            && AttachThreadInput(current_thread_id, target_thread_id, TRUE) != 0;
+
+        BringWindowToTop(hwnd);
+        SetForegroundWindow(hwnd);
+        SetActiveWindow(hwnd);
+        SetFocus(hwnd);
+
+        if attach_target {
+            AttachThreadInput(current_thread_id, target_thread_id, 0);
+        }
+        if attach_foreground {
+            AttachThreadInput(current_thread_id, foreground_thread_id, 0);
+        }
     }
 }
 
