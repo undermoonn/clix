@@ -2,7 +2,9 @@ use eframe::egui;
 
 use crate::game::GameSource;
 use crate::i18n::{AppLanguage, AppLanguageSetting};
-use crate::system::display_mode::{DisplayScaleOptions, ResolutionOptions};
+use crate::system::display_mode::{
+    DisplayModeSetting, DisplayScaleOptions, ResolutionOptions,
+};
 
 use super::anim::{lerp_f32, smoothstep01};
 use super::header::{draw_selected_game_text_badge, measure_selected_game_text_badge};
@@ -565,7 +567,7 @@ fn system_settings_row_top(
     row_spacing: f32,
 ) -> f32 {
     let body_top = header_height + header_gap;
-    let row_index = selected_item_index.min(6);
+    let row_index = selected_item_index.min(7);
     if row_index <= 2 {
         body_top + body_top_padding + initial_row_offset_y + row_index as f32 * row_spacing
     } else {
@@ -1005,6 +1007,7 @@ pub fn draw_settings_page(
     ui: &mut egui::Ui,
     language: AppLanguage,
     selected_language_setting: AppLanguageSetting,
+    selected_display_mode_setting: DisplayModeSetting,
     system_icon: Option<&egui::TextureHandle>,
     screen_icon: Option<&egui::TextureHandle>,
     apps_icon: Option<&egui::TextureHandle>,
@@ -1302,7 +1305,7 @@ pub fn draw_settings_page(
                     + final_row_offset_y
                     + body_top_padding
                     + body_bottom_padding;
-                let lower_body_height = system_row_spacing * 3.0
+                let lower_body_height = system_row_spacing * 4.0
                     + submenu_row_height
                     + initial_row_offset_y
                     + final_row_offset_y
@@ -1562,6 +1565,26 @@ pub fn draw_settings_page(
                     None,
                     None,
                     None,
+                    language.display_mode_setting_text(),
+                    false,
+                    Some(selected_display_mode_setting.display_text(language)),
+                    None,
+                    None,
+                    true,
+                    submenu_layer_t,
+                );
+
+                draw_row(
+                    lower_list_inner_rect,
+                    Some(scroll_viewport_rect),
+                    lower_rows_origin_y,
+                    system_row_spacing,
+                    submenu_row_height,
+                    3,
+                    16,
+                    None,
+                    None,
+                    None,
                     language.language_setting_text(),
                     false,
                     Some(selected_language_setting.display_text(language)),
@@ -1581,8 +1604,8 @@ pub fn draw_settings_page(
                     lower_rows_origin_y,
                     system_row_spacing,
                     submenu_row_height,
-                    3,
-                    16,
+                    4,
+                    17,
                     None,
                     None,
                     None,

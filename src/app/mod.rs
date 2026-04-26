@@ -21,7 +21,7 @@ use crate::i18n::{AppLanguage, AppLanguageSetting};
 use crate::input::{self, InputController};
 use crate::launch::{self, LaunchState};
 use crate::system::{
-    display_mode::{self, DisplayScaleOptions, ResolutionOptions},
+    display_mode::{self, DisplayModeSetting, DisplayScaleOptions, ResolutionOptions},
     external_apps::{self, ExternalApp},
     power, startup,
 };
@@ -160,6 +160,7 @@ pub struct LauncherApp {
     page: PageState,
     hint_icon_theme: PromptIconTheme,
     language_setting: AppLanguageSetting,
+    display_mode_setting: DisplayModeSetting,
     hint_icons: Option<ui::HintIcons>,
     settings_icon: Option<egui::TextureHandle>,
     settings_system_icon: Option<egui::TextureHandle>,
@@ -226,6 +227,7 @@ impl LauncherApp {
         let power_menu_external_apps = external_apps::detect_installed();
         let hint_icon_theme = crate::config::load_hint_icon_theme();
         let language_setting = crate::config::load_app_language_setting();
+        let display_mode_setting = crate::config::load_display_mode_setting();
         let controller_vibration_enabled = crate::config::load_controller_vibration_enabled();
         let mut input = InputController::new();
         input.set_selection_vibration_enabled(controller_vibration_enabled);
@@ -238,6 +240,7 @@ impl LauncherApp {
             page: PageState::new(),
             hint_icon_theme,
             language_setting,
+            display_mode_setting,
             hint_icons: ui::load_hint_icons(ctx, hint_icon_theme),
             settings_icon: load_settings_icon(ctx),
             settings_system_icon: load_settings_system_icon(ctx),
@@ -304,6 +307,31 @@ impl LauncherApp {
         crate::config::store_app_language_setting(next_setting);
         crate::configure_fonts(ctx, self.language);
         ctx.request_repaint();
+    }
+
+    fn set_display_mode_setting(&mut self, setting: DisplayModeSetting, ctx: &egui::Context) {
+        if self.display_mode_setting == setting {
+            return;
+        }
+
+        self.display_mode_setting = setting;
+        crate::config::store_display_mode_setting(setting);
+
+        if setting.is_fullscreen() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+        } else {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+                display_mode::DEFAULT_WINDOWED_INNER_WIDTH,
+                display_mode::DEFAULT_WINDOWED_INNER_HEIGHT,
+            )));
+        }
+
+        ctx.request_repaint();
+    }
+
+    fn cycle_display_mode_setting(&mut self, ctx: &egui::Context) {
+        self.set_display_mode_setting(self.display_mode_setting.next(), ctx);
     }
 
     fn set_controller_vibration_enabled(&mut self, enabled: bool, ctx: &egui::Context) {
@@ -1320,6 +1348,9 @@ impl eframe::App for LauncherApp {
                 if result.toggle_controller_vibration_feedback {
                     self.set_controller_vibration_enabled(!self.controller_vibration_enabled, &ctx);
                 }
+                if result.cycle_display_mode_setting {
+                    self.cycle_display_mode_setting(&ctx);
+                }
                 if result.cycle_language_setting {
                     self.cycle_language_setting(&ctx);
                 }
@@ -1593,6 +1624,7 @@ impl eframe::App for LauncherApp {
                     ui,
                     self.language,
                     self.language_setting,
+                    self.display_mode_setting,
                     self.settings_system_icon.as_ref(),
                     self.settings_screen_icon.as_ref(),
                     self.settings_apps_icon.as_ref(),

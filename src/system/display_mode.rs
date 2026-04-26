@@ -1,5 +1,59 @@
 use std::collections::BTreeMap;
 
+use crate::i18n::AppLanguage;
+
+pub const DEFAULT_WINDOWED_INNER_WIDTH: f32 = 1600.0;
+pub const DEFAULT_WINDOWED_INNER_HEIGHT: f32 = 900.0;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DisplayModeSetting {
+    #[default]
+    Fullscreen,
+    Windowed,
+}
+
+impl DisplayModeSetting {
+    pub fn next(self) -> Self {
+        match self {
+            Self::Fullscreen => Self::Windowed,
+            Self::Windowed => Self::Fullscreen,
+        }
+    }
+
+    pub fn as_config_value(self) -> &'static str {
+        match self {
+            Self::Fullscreen => "fullscreen",
+            Self::Windowed => "windowed",
+        }
+    }
+
+    pub fn from_config_value(value: &str) -> Option<Self> {
+        if value.eq_ignore_ascii_case("fullscreen")
+            || value.eq_ignore_ascii_case("full_screen")
+            || value.eq_ignore_ascii_case("full-screen")
+        {
+            Some(Self::Fullscreen)
+        } else if value.eq_ignore_ascii_case("windowed")
+            || value.eq_ignore_ascii_case("window")
+        {
+            Some(Self::Windowed)
+        } else {
+            None
+        }
+    }
+
+    pub fn is_fullscreen(self) -> bool {
+        matches!(self, Self::Fullscreen)
+    }
+
+    pub fn display_text(self, language: AppLanguage) -> &'static str {
+        match self {
+            Self::Fullscreen => language.fullscreen_text(),
+            Self::Windowed => language.windowed_text(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResolutionChoice {
     pub width: u32,
@@ -569,7 +623,19 @@ pub fn apply_resolution_choice(_choice: &ResolutionChoice) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{DisplayScaleOptions, ResolutionOptions};
+    use super::{DisplayModeSetting, DisplayScaleOptions, ResolutionOptions};
+
+    #[test]
+    fn display_mode_setting_parses_aliases() {
+        assert_eq!(
+            DisplayModeSetting::from_config_value("fullscreen"),
+            Some(DisplayModeSetting::Fullscreen)
+        );
+        assert_eq!(
+            DisplayModeSetting::from_config_value("window"),
+            Some(DisplayModeSetting::Windowed)
+        );
+    }
 
     #[test]
     fn groups_refresh_rates_by_resolution() {

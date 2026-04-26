@@ -219,6 +219,13 @@ impl AppLanguage {
         }
     }
 
+    pub fn display_mode_setting_text(self) -> &'static str {
+        match self {
+            Self::English => "Display Mode",
+            Self::SimplifiedChinese => "显示模式",
+        }
+    }
+
     pub fn client_games_detection_text(self) -> &'static str {
         match self {
             Self::English => "Game Library Detection",
@@ -286,6 +293,20 @@ impl AppLanguage {
         match self {
             Self::English => "Off",
             Self::SimplifiedChinese => "关闭",
+        }
+    }
+
+    pub fn fullscreen_text(self) -> &'static str {
+        match self {
+            Self::English => "Fullscreen",
+            Self::SimplifiedChinese => "全屏",
+        }
+    }
+
+    pub fn windowed_text(self) -> &'static str {
+        match self {
+            Self::English => "Windowed",
+            Self::SimplifiedChinese => "窗口化",
         }
     }
 

@@ -3,6 +3,7 @@ use std::sync::{Mutex, OnceLock};
 
 use crate::game::GameScanOptions;
 use crate::i18n::AppLanguageSetting;
+use crate::system::display_mode::DisplayModeSetting;
 
 const CONFIG_FILE_NAME: &str = "settings.ini";
 const UI_SECTION: &str = "ui";
@@ -10,6 +11,7 @@ const GAMES_SECTION: &str = "games";
 const DEBUG_SECTION: &str = "debug";
 const HINT_ICON_THEME_KEY: &str = "hint_icon_theme";
 const LANGUAGE_KEY: &str = "language";
+const DISPLAY_MODE_KEY: &str = "display_mode";
 const BACKGROUND_HOME_WAKE_ENABLED_KEY: &str = "background_home_wake_enabled";
 const CONTROLLER_VIBRATION_ENABLED_KEY: &str = "controller_vibration_enabled";
 const DETECT_STEAM_GAMES_KEY: &str = "detect_steam_games";
@@ -47,6 +49,7 @@ impl PromptIconTheme {
 struct AppConfig {
     hint_icon_theme: PromptIconTheme,
     language: AppLanguageSetting,
+    display_mode_setting: DisplayModeSetting,
     background_home_wake_enabled: bool,
     controller_vibration_enabled: bool,
     game_scan_options: GameScanOptions,
@@ -60,6 +63,7 @@ impl Default for AppConfig {
         Self {
             hint_icon_theme: PromptIconTheme::Xbox,
             language: AppLanguageSetting::Auto,
+            display_mode_setting: DisplayModeSetting::Fullscreen,
             background_home_wake_enabled: true,
             controller_vibration_enabled: false,
             game_scan_options: GameScanOptions::default(),
@@ -133,6 +137,9 @@ fn parse_config(contents: &str) -> AppConfig {
             } else if key.eq_ignore_ascii_case(LANGUAGE_KEY) {
                 config.language =
                     AppLanguageSetting::from_config_value(value).unwrap_or(AppLanguageSetting::Auto);
+            } else if key.eq_ignore_ascii_case(DISPLAY_MODE_KEY) {
+                config.display_mode_setting = DisplayModeSetting::from_config_value(value)
+                    .unwrap_or(DisplayModeSetting::Fullscreen);
             } else if key.eq_ignore_ascii_case(BACKGROUND_HOME_WAKE_ENABLED_KEY) {
                 config.background_home_wake_enabled =
                     parse_bool_config_value(value).unwrap_or(true);
@@ -164,12 +171,14 @@ fn parse_config(contents: &str) -> AppConfig {
 
 fn serialize_config(config: AppConfig) -> String {
     format!(
-        "[{}]\n{}={}\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n",
+        "[{}]\n{}={}\n{}={}\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n",
         UI_SECTION,
         HINT_ICON_THEME_KEY,
         config.hint_icon_theme.as_config_value(),
         LANGUAGE_KEY,
         config.language.as_config_value(),
+        DISPLAY_MODE_KEY,
+        config.display_mode_setting.as_config_value(),
         BACKGROUND_HOME_WAKE_ENABLED_KEY,
         config.background_home_wake_enabled,
         CONTROLLER_VIBRATION_ENABLED_KEY,
@@ -216,6 +225,10 @@ pub fn load_app_language_setting() -> AppLanguageSetting {
     load_config().language
 }
 
+pub fn load_display_mode_setting() -> DisplayModeSetting {
+    load_config().display_mode_setting
+}
+
 pub fn store_hint_icon_theme(theme: PromptIconTheme) {
     let mut config = load_config();
     config.hint_icon_theme = theme;
@@ -225,6 +238,12 @@ pub fn store_hint_icon_theme(theme: PromptIconTheme) {
 pub fn store_app_language_setting(language: AppLanguageSetting) {
     let mut config = load_config();
     config.language = language;
+    store_config(config);
+}
+
+pub fn store_display_mode_setting(display_mode_setting: DisplayModeSetting) {
+    let mut config = load_config();
+    config.display_mode_setting = display_mode_setting;
     store_config(config);
 }
 
@@ -256,6 +275,29 @@ pub fn store_game_scan_options(options: GameScanOptions) {
     let mut config = load_config();
     config.game_scan_options = options;
     store_config(config);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_config, serialize_config, AppConfig};
+    use crate::system::display_mode::DisplayModeSetting;
+
+    #[test]
+    fn parse_config_reads_display_mode_setting() {
+        let config = parse_config("[ui]\ndisplay_mode=windowed\n");
+
+        assert_eq!(config.display_mode_setting, DisplayModeSetting::Windowed);
+    }
+
+    #[test]
+    fn serialize_config_writes_display_mode_setting() {
+        let mut config = AppConfig::default();
+        config.display_mode_setting = DisplayModeSetting::Windowed;
+
+        let contents = serialize_config(config);
+
+        assert!(contents.contains("display_mode=windowed"));
+    }
 }
 
 pub fn load_steam_client_state_logging_enabled() -> bool {

@@ -123,12 +123,19 @@ fn main() {
     config::initialize();
     let language_setting = config::load_app_language_setting();
     let language = language_setting.resolve();
-    let viewport = if let Some(icon) = load_app_icon() {
-        egui::ViewportBuilder::default()
-            .with_fullscreen(true)
-            .with_icon(icon)
-    } else {
+    let display_mode_setting = config::load_display_mode_setting();
+    let viewport = if display_mode_setting.is_fullscreen() {
         egui::ViewportBuilder::default().with_fullscreen(true)
+    } else {
+        egui::ViewportBuilder::default().with_inner_size(egui::vec2(
+            system::display_mode::DEFAULT_WINDOWED_INNER_WIDTH,
+            system::display_mode::DEFAULT_WINDOWED_INNER_HEIGHT,
+        ))
+    };
+    let viewport = if let Some(icon) = load_app_icon() {
+        viewport.with_icon(icon)
+    } else {
+        viewport
     };
     let options = eframe::NativeOptions {
         viewport,
