@@ -542,12 +542,12 @@ impl LauncherApp {
         }
     }
 
-    fn launch_state_app_id(&self) -> Option<u32> {
+    fn launch_state_steam_app_id(&self) -> Option<u32> {
         self.launch_state
             .as_ref()
             .and_then(|state| self.games.get(state.game_index))
             .filter(|game| matches!(game.source, GameSource::Steam))
-            .and_then(|game| game.app_id)
+            .and_then(|game| game.steam_app_id)
     }
 
     fn sync_steam_update_state(
@@ -558,43 +558,44 @@ impl LauncherApp {
     ) {
         self.steam_update.drain_results();
 
-        let launch_state_app_id = self.launch_state_app_id();
-        let requested_update_app_id = self.steam_update_launch_requested_app_id;
+        let launch_state_steam_app_id = self.launch_state_steam_app_id();
+        let requested_update_steam_app_id = self.steam_update_launch_requested_app_id;
 
         self.steam_update
-            .refresh_for_app_id(selected_steam_app_id, &self.steam_paths, now, ctx);
-        if launch_state_app_id != selected_steam_app_id {
+            .refresh_for_steam_app_id(selected_steam_app_id, &self.steam_paths, now, ctx);
+        if launch_state_steam_app_id != selected_steam_app_id {
             self.steam_update
-                .refresh_for_app_id(launch_state_app_id, &self.steam_paths, now, ctx);
+                .refresh_for_steam_app_id(launch_state_steam_app_id, &self.steam_paths, now, ctx);
         }
-        if requested_update_app_id != selected_steam_app_id
-            && requested_update_app_id != launch_state_app_id
+        if requested_update_steam_app_id != selected_steam_app_id
+            && requested_update_steam_app_id != launch_state_steam_app_id
         {
-            self.steam_update.refresh_for_app_id(
-                requested_update_app_id,
+            self.steam_update.refresh_for_steam_app_id(
+                requested_update_steam_app_id,
                 &self.steam_paths,
                 now,
                 ctx,
             );
         }
 
-        if requested_update_app_id.is_none()
+        if requested_update_steam_app_id.is_none()
             && self
                 .steam_update
-                .status_for_app_id(launch_state_app_id)
+                .status_for_steam_app_id(launch_state_steam_app_id)
                 .is_some_and(|progress| progress.needs_update())
         {
-            self.steam_update_launch_requested_app_id = launch_state_app_id;
+            self.steam_update_launch_requested_app_id = launch_state_steam_app_id;
         }
 
-        if let Some(app_id) = self.steam_update_launch_requested_app_id {
+        if let Some(steam_app_id) = self.steam_update_launch_requested_app_id {
             let update_still_pending = self
                 .steam_update
-                .status_for_app_id(Some(app_id))
+                .status_for_steam_app_id(Some(steam_app_id))
                 .is_some_and(|progress| progress.needs_update());
 
             if !update_still_pending {
-                let should_restart_launch_timeout = launch_state_app_id == Some(app_id);
+                let should_restart_launch_timeout =
+                    launch_state_steam_app_id == Some(steam_app_id);
                 self.steam_update_launch_requested_app_id = None;
                 if should_restart_launch_timeout {
                     if let Some(state) = self.launch_state.as_mut() {
@@ -605,12 +606,12 @@ impl LauncherApp {
         }
     }
 
-    fn should_show_steam_updating(&self, app_id: Option<u32>) -> bool {
-        app_id.is_some() && self.steam_update_launch_requested_app_id == app_id
+    fn should_show_steam_updating(&self, steam_app_id: Option<u32>) -> bool {
+        steam_app_id.is_some() && self.steam_update_launch_requested_app_id == steam_app_id
     }
 
-    fn steam_update_overlay_text(&self, app_id: Option<u32>) -> String {
-        if self.should_show_steam_updating(app_id) {
+    fn steam_update_overlay_text(&self, steam_app_id: Option<u32>) -> String {
+        if self.should_show_steam_updating(steam_app_id) {
             self.language.steam_updating_text().to_owned()
         } else {
             self.language.steam_launch_after_update_text().to_owned()
@@ -622,22 +623,24 @@ impl LauncherApp {
     }
 
     fn mark_steam_update_launch_requested(&mut self, game_index: usize) {
-        let Some(app_id) = self.games.get(game_index).and_then(|game| game.app_id) else {
+        let Some(steam_app_id) = self.games.get(game_index).and_then(|game| game.steam_app_id) else {
             return;
         };
 
         if self
             .steam_update
-            .status_for_app_id(Some(app_id))
+            .status_for_steam_app_id(Some(steam_app_id))
             .is_some_and(|progress| progress.needs_update())
         {
-            self.steam_update_launch_requested_app_id = Some(app_id);
+            self.steam_update_launch_requested_app_id = Some(steam_app_id);
         }
     }
 
     fn launch_state_is_steam_update_pending(&self) -> bool {
-        self.launch_state_app_id()
-            .is_some_and(|app_id| Some(app_id) == self.steam_update_launch_requested_app_id)
+        self.launch_state_steam_app_id()
+            .is_some_and(|steam_app_id| {
+                Some(steam_app_id) == self.steam_update_launch_requested_app_id
+            })
     }
 
     fn start_selected_game_launch(&mut self, selected: usize, ctx: &egui::Context) {
@@ -663,7 +666,7 @@ impl LauncherApp {
                 }
                 launch::LaunchAttemptResult::Failed => {
                     self.launch_state = None;
-                    if self.steam_update_launch_requested_app_id == game.app_id {
+                    if self.steam_update_launch_requested_app_id == game.steam_app_id {
                         self.steam_update_launch_requested_app_id = None;
                     }
                 }
@@ -1417,7 +1420,7 @@ impl eframe::App for LauncherApp {
             .games
             .get(self.page.selected())
             .filter(|game| matches!(game.source, GameSource::Steam))
-            .and_then(|game| game.app_id);
+            .and_then(|game| game.steam_app_id);
         self.sync_steam_update_state(selected_steam_app_id, now, &ctx);
         self.tick_launch_progress(&ctx, input_frame.launch_held);
         self.tick_running_game_state();
@@ -1428,18 +1431,18 @@ impl eframe::App for LauncherApp {
         self.dlss.drain_results(&mut self.games);
 
         let selected_game = self.games.get(self.page.selected());
-        let selected_app_id = selected_game.and_then(|game| game.app_id);
+        let selected_steam_app_id = selected_game.and_then(|game| game.steam_app_id);
         let selected_steam_update = self
             .steam_update
-            .status_for_app_id(selected_steam_app_id)
+            .status_for_steam_app_id(selected_steam_app_id)
             .cloned();
         let updated_global_percentages = steam::take_updated_global_achievement_percentages();
-        let achievement_icon_scope = achievement_panel_scope_app_id(
-            selected_app_id,
+        let achievement_icon_scope = achievement_panel_scope_steam_app_id(
+            selected_steam_app_id,
             self.page.show_achievement_panel(),
             self.page.achievement_panel_anim(),
         );
-        self.achievements.sync_summary_scope(selected_app_id);
+        self.achievements.sync_summary_scope(selected_steam_app_id);
         self.achievements.sync_detail_scope(achievement_icon_scope);
         self.achievements.sync_icon_scope(achievement_icon_scope);
         self.achievements.refresh_after_global_percentage_update(
@@ -1452,12 +1455,17 @@ impl eframe::App for LauncherApp {
         );
         if self
             .artwork
-            .tick_selection(self.page.selected(), selected_app_id, &self.steam_paths, &ctx)
+            .tick_selection(
+                self.page.selected(),
+                selected_steam_app_id,
+                &self.steam_paths,
+                &ctx,
+            )
         {
             self.achievements
                 .refresh_summary_for_selected(selected_game, &self.steam_paths, self.language, &ctx);
         }
-        self.artwork.drain_pending(selected_app_id, &ctx);
+        self.artwork.drain_pending(selected_steam_app_id, &ctx);
 
         // Refresh `now` here: the value captured at the top of `update()` may
         // be tens of milliseconds stale after the input/IO work above. Feeding
@@ -1849,13 +1857,13 @@ fn load_embedded_png_texture(
     ))
 }
 
-fn achievement_panel_scope_app_id(
-    selected_app_id: Option<u32>,
+fn achievement_panel_scope_steam_app_id(
+    selected_steam_app_id: Option<u32>,
     achievement_panel_open: bool,
     achievement_panel_anim: f32,
 ) -> Option<u32> {
     if achievement_panel_open || achievement_panel_anim > 0.001 {
-        selected_app_id
+        selected_steam_app_id
     } else {
         None
     }
@@ -1863,24 +1871,24 @@ fn achievement_panel_scope_app_id(
 
 #[cfg(test)]
 mod tests {
-    use super::achievement_panel_scope_app_id;
+    use super::achievement_panel_scope_steam_app_id;
 
     #[test]
     fn keeps_achievement_scope_while_close_animation_is_still_visible() {
         assert_eq!(
-            achievement_panel_scope_app_id(Some(42), false, 0.25),
+            achievement_panel_scope_steam_app_id(Some(42), false, 0.25),
             Some(42)
         );
     }
 
     #[test]
     fn clears_achievement_scope_after_close_animation_finishes() {
-        assert_eq!(achievement_panel_scope_app_id(Some(42), false, 0.001), None);
-        assert_eq!(achievement_panel_scope_app_id(Some(42), false, 0.0), None);
+        assert_eq!(achievement_panel_scope_steam_app_id(Some(42), false, 0.001), None);
+        assert_eq!(achievement_panel_scope_steam_app_id(Some(42), false, 0.0), None);
     }
 
     #[test]
     fn keeps_achievement_scope_while_panel_is_open() {
-        assert_eq!(achievement_panel_scope_app_id(Some(42), true, 0.0), Some(42));
+        assert_eq!(achievement_panel_scope_steam_app_id(Some(42), true, 0.0), Some(42));
     }
 }

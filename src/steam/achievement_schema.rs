@@ -17,7 +17,7 @@ pub(super) struct SchemaAchInfo {
 }
 
 pub(super) fn load_schema_achievement_bits(
-    app_id: u32,
+    steam_app_id: u32,
     steam_paths: &[PathBuf],
     language: AppLanguage,
 ) -> HashMap<String, Vec<(u32, SchemaAchInfo)>> {
@@ -25,7 +25,7 @@ pub(super) fn load_schema_achievement_bits(
         let schema_path = steam_root
             .join("appcache")
             .join("stats")
-            .join(format!("UserGameStatsSchema_{}.bin", app_id));
+            .join(format!("UserGameStatsSchema_{}.bin", steam_app_id));
         let Ok(data) = std::fs::read(&schema_path) else {
             continue;
         };
@@ -47,7 +47,7 @@ pub(super) fn load_schema_achievement_bits(
 }
 
 pub(super) fn load_schema_achievement_metadata(
-    app_id: u32,
+    steam_app_id: u32,
     steam_paths: &[PathBuf],
     language: AppLanguage,
 ) -> HashMap<String, SchemaAchInfo> {
@@ -55,7 +55,7 @@ pub(super) fn load_schema_achievement_metadata(
         let schema_path = steam_root
             .join("appcache")
             .join("stats")
-            .join(format!("UserGameStatsSchema_{}.bin", app_id));
+            .join(format!("UserGameStatsSchema_{}.bin", steam_app_id));
         let Ok(data) = std::fs::read(&schema_path) else {
             continue;
         };
@@ -85,12 +85,12 @@ pub(super) struct SchemaMetadataMaps {
 }
 
 pub(super) fn load_schema_metadata_maps(
-    app_id: u32,
+    steam_app_id: u32,
     steam_paths: &[PathBuf],
     language: AppLanguage,
 ) -> SchemaMetadataMaps {
-    let bits = load_schema_achievement_bits(app_id, steam_paths, language);
-    let hidden_flags = load_schema_achievement_metadata(app_id, steam_paths, language);
+    let bits = load_schema_achievement_bits(steam_app_id, steam_paths, language);
+    let hidden_flags = load_schema_achievement_metadata(steam_app_id, steam_paths, language);
     let mut display_names = HashMap::new();
     let mut descriptions = HashMap::new();
     let mut icon_urls = HashMap::new();
@@ -103,7 +103,7 @@ pub(super) fn load_schema_metadata_maps(
             if let Some(description) = &info.description {
                 descriptions.insert(info.api_name.clone(), description.clone());
             }
-            if let Some(icon_pair) = normalized_schema_icon_pair(app_id, info) {
+            if let Some(icon_pair) = normalized_schema_icon_pair(steam_app_id, info) {
                 icon_urls.insert(info.api_name.clone(), icon_pair);
             }
         }
@@ -120,7 +120,7 @@ pub(super) fn load_schema_metadata_maps(
                 .entry(api_name.clone())
                 .or_insert_with(|| description.clone());
         }
-        if let Some(icon_pair) = normalized_schema_icon_pair(app_id, info) {
+        if let Some(icon_pair) = normalized_schema_icon_pair(steam_app_id, info) {
             icon_urls.entry(api_name.clone()).or_insert(icon_pair);
         }
     }
@@ -133,15 +133,18 @@ pub(super) fn load_schema_metadata_maps(
     }
 }
 
-fn normalized_schema_icon_pair(app_id: u32, info: &SchemaAchInfo) -> Option<(String, String)> {
+fn normalized_schema_icon_pair(
+    steam_app_id: u32,
+    info: &SchemaAchInfo,
+) -> Option<(String, String)> {
     let icon = info
         .icon_url
         .as_deref()
-        .and_then(|value| normalize_schema_icon_value(app_id, value));
+        .and_then(|value| normalize_schema_icon_value(steam_app_id, value));
     let icon_gray = info
         .icon_gray_url
         .as_deref()
-        .and_then(|value| normalize_schema_icon_value(app_id, value));
+        .and_then(|value| normalize_schema_icon_value(steam_app_id, value));
     match (icon, icon_gray) {
         (Some(icon), Some(icon_gray)) => Some((icon, icon_gray)),
         (Some(icon), None) => Some((icon.clone(), icon)),
@@ -151,7 +154,7 @@ fn normalized_schema_icon_pair(app_id: u32, info: &SchemaAchInfo) -> Option<(Str
 }
 
 pub(super) fn load_local_schema_achievement_names(
-    app_id: u32,
+    steam_app_id: u32,
     steam_paths: &[PathBuf],
     language: AppLanguage,
 ) -> Vec<String> {
@@ -188,7 +191,7 @@ pub(super) fn load_local_schema_achievement_names(
         let schema_path = steam_root
             .join("appcache")
             .join("stats")
-            .join(format!("UserGameStatsSchema_{}.bin", app_id));
+            .join(format!("UserGameStatsSchema_{}.bin", steam_app_id));
         let Ok(bytes) = std::fs::read(&schema_path) else {
             continue;
         };
@@ -299,12 +302,12 @@ pub(super) fn load_local_schema_achievement_names(
 }
 
 pub(super) fn load_local_schema_items(
-    app_id: u32,
+    steam_app_id: u32,
     steam_paths: &[PathBuf],
     language: AppLanguage,
 ) -> HashMap<String, AchievementItem> {
-    let bits = load_schema_achievement_bits(app_id, steam_paths, language);
-    let metadata = load_schema_achievement_metadata(app_id, steam_paths, language);
+    let bits = load_schema_achievement_bits(steam_app_id, steam_paths, language);
+    let metadata = load_schema_achievement_metadata(steam_app_id, steam_paths, language);
     let mut items_map = HashMap::new();
 
     for (group_key, entries) in &bits {
@@ -339,13 +342,13 @@ pub(super) fn load_local_schema_items(
                 item.icon_url = info
                     .icon_url
                     .as_deref()
-                    .and_then(|value| normalize_schema_icon_value(app_id, value));
+                    .and_then(|value| normalize_schema_icon_value(steam_app_id, value));
             }
             if item.icon_gray_url.is_none() {
                 item.icon_gray_url = info
                     .icon_gray_url
                     .as_deref()
-                    .and_then(|value| normalize_schema_icon_value(app_id, value));
+                    .and_then(|value| normalize_schema_icon_value(steam_app_id, value));
             }
         }
     }
@@ -379,13 +382,13 @@ pub(super) fn load_local_schema_items(
             item.icon_url = info
                 .icon_url
                 .as_deref()
-                .and_then(|value| normalize_schema_icon_value(app_id, value));
+                .and_then(|value| normalize_schema_icon_value(steam_app_id, value));
         }
         if item.icon_gray_url.is_none() {
             item.icon_gray_url = info
                 .icon_gray_url
                 .as_deref()
-                .and_then(|value| normalize_schema_icon_value(app_id, value));
+                .and_then(|value| normalize_schema_icon_value(steam_app_id, value));
         }
     }
 
@@ -600,7 +603,7 @@ fn extract_hidden_flag(fields: &HashMap<String, BvdfVal>) -> bool {
         .unwrap_or(false)
 }
 
-fn normalize_schema_icon_value(app_id: u32, raw: &str) -> Option<String> {
+fn normalize_schema_icon_value(steam_app_id: u32, raw: &str) -> Option<String> {
     let value = raw.trim();
     if value.is_empty() {
         return None;
@@ -611,13 +614,13 @@ fn normalize_schema_icon_value(app_id: u32, raw: &str) -> Option<String> {
     if value.ends_with(".jpg") || value.ends_with(".png") {
         return Some(format!(
             "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/{}/{}",
-            app_id,
+            steam_app_id,
             value
         ));
     }
     Some(format!(
         "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/{}/{}.jpg",
-        app_id,
+        steam_app_id,
         value
     ))
 }

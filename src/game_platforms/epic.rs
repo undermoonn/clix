@@ -42,7 +42,7 @@ mod imp {
                 continue;
             };
 
-            let install_dir_key = normalize_windows_path(&game.path);
+            let install_dir_key = normalize_windows_path(&game.install_path);
             if !seen_install_dirs.insert(install_dir_key) {
                 continue;
             }
@@ -114,11 +114,11 @@ mod imp {
         Some(Game {
             source: GameSource::Epic,
             name,
-            path: install_dir,
+            install_path: install_dir,
             launch_target: Some(launch_target),
-            app_id: None,
-            launch_id: None,
-            persistent_id: app_name,
+            steam_app_id: None,
+            platform_launch_id: None,
+            platform_id: app_name,
             last_played,
             playtime_minutes: 0,
             installed_size_bytes: None,

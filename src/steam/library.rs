@@ -173,14 +173,18 @@ fn window_contains_app_name(window: &[u8], expected_name: &str) -> bool {
     haystack.contains(expected_name)
 }
 
-fn is_game_app_id(appinfo_bytes: Option<&[u8]>, app_id: u32, expected_name: &str) -> bool {
+fn is_game_steam_app_id(
+    appinfo_bytes: Option<&[u8]>,
+    steam_app_id: u32,
+    expected_name: &str,
+) -> bool {
     const WINDOW_SIZE: usize = 4096;
 
     let Some(appinfo_bytes) = appinfo_bytes else {
         return false;
     };
 
-    let needle = app_id.to_le_bytes();
+    let needle = steam_app_id.to_le_bytes();
     let mut index = 0usize;
 
     while index + needle.len() <= appinfo_bytes.len() {
@@ -219,7 +223,7 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                 }
                 if let Ok(content) = std::fs::read_to_string(&path) {
                     let vals = parse_acf_values(&content);
-                    let app_id = vals.get("appid").and_then(|v| v.parse::<u32>().ok());
+                    let steam_app_id = vals.get("appid").and_then(|v| v.parse::<u32>().ok());
                     let name = vals.get("name").cloned().unwrap_or_default();
                     let install_dir = vals.get("installdir").cloned().unwrap_or_default();
                     let state_flags = vals
@@ -230,8 +234,8 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                     if (state_flags & STEAM_STATE_FLAG_FULLY_INSTALLED) == 0 || name.is_empty() {
                         continue;
                     }
-                    if let Some(id) = app_id {
-                        if !is_game_app_id(appinfo_bytes.as_deref(), id, &name) {
+                    if let Some(id) = steam_app_id {
+                        if !is_game_steam_app_id(appinfo_bytes.as_deref(), id, &name) {
                             continue;
                         }
                         if !seen_app_ids.insert(id) {
@@ -241,11 +245,11 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                         games.push(Game {
                             source: GameSource::Steam,
                             name,
-                            path: game_path,
+                            install_path: game_path,
                             launch_target: None,
-                            app_id: Some(id),
-                            launch_id: None,
-                            persistent_id: None,
+                            steam_app_id: Some(id),
+                            platform_launch_id: None,
+                            platform_id: None,
                             last_played: last_played_map.get(&id).copied().unwrap_or(0),
                             playtime_minutes: playtime_map.get(&id).copied().unwrap_or(0),
                             installed_size_bytes: None,
@@ -270,12 +274,12 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
             if let Ok(uninstall_key) = hklm.open_subkey(uninstall_path) {
                 for subkey_name in uninstall_key.enum_keys().filter_map(|k| k.ok()) {
                     if let Some(caps) = steam_app_re.captures(&subkey_name) {
-                        let app_id: u32 =
+                        let steam_app_id: u32 =
                             match caps.get(1).and_then(|m| m.as_str().parse().ok()) {
                                 Some(id) => id,
                                 None => continue,
                             };
-                        if seen_app_ids.contains(&app_id) {
+                        if seen_app_ids.contains(&steam_app_id) {
                             continue;
                         }
                         if let Ok(subkey) = uninstall_key.open_subkey(&subkey_name) {
@@ -284,23 +288,30 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                             let install_location: String =
                                 subkey.get_value("InstallLocation").unwrap_or_default();
                             if display_name.is_empty()
-                                || !is_game_app_id(appinfo_bytes.as_deref(), app_id, &display_name)
+                                || !is_game_steam_app_id(
+                                    appinfo_bytes.as_deref(),
+                                    steam_app_id,
+                                    &display_name,
+                                )
                             {
                                 continue;
                             }
                             let install_path = PathBuf::from(install_location);
-                            seen_app_ids.insert(app_id);
+                            seen_app_ids.insert(steam_app_id);
                             games.push(Game {
                                 source: GameSource::Steam,
                                 name: display_name,
-                                path: install_path,
+                                install_path,
                                 launch_target: None,
-                                app_id: Some(app_id),
-                                launch_id: None,
-                                persistent_id: None,
-                                last_played: last_played_map.get(&app_id).copied().unwrap_or(0),
+                                steam_app_id: Some(steam_app_id),
+                                platform_launch_id: None,
+                                platform_id: None,
+                                last_played: last_played_map
+                                    .get(&steam_app_id)
+                                    .copied()
+                                    .unwrap_or(0),
                                 playtime_minutes: playtime_map
-                                    .get(&app_id)
+                                    .get(&steam_app_id)
                                     .copied()
                                     .unwrap_or(0),
                                 installed_size_bytes: None,
@@ -317,8 +328,11 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
     games
 }
 
-pub fn load_game_update_progress(app_id: u32, steam_paths: &[PathBuf]) -> Option<SteamUpdateProgress> {
-    let manifest_path = find_appmanifest_path(app_id, steam_paths)?;
+pub fn load_game_update_progress(
+    steam_app_id: u32,
+    steam_paths: &[PathBuf],
+) -> Option<SteamUpdateProgress> {
+    let manifest_path = find_appmanifest_path(steam_app_id, steam_paths)?;
     let content = std::fs::read_to_string(manifest_path).ok()?;
     let values = parse_acf_values(&content);
 
@@ -363,8 +377,8 @@ fn collect_library_folders(steam_paths: &[PathBuf]) -> Vec<PathBuf> {
     library_folders
 }
 
-fn find_appmanifest_path(app_id: u32, steam_paths: &[PathBuf]) -> Option<PathBuf> {
-    let manifest_name = format!("appmanifest_{}.acf", app_id);
+fn find_appmanifest_path(steam_app_id: u32, steam_paths: &[PathBuf]) -> Option<PathBuf> {
+    let manifest_name = format!("appmanifest_{}.acf", steam_app_id);
 
     collect_library_folders(steam_paths)
         .into_iter()
@@ -394,9 +408,9 @@ fn parse_userdata(steam_paths: &[PathBuf]) -> (HashMap<u32, u64>, HashMap<u32, u
     parse_userdata_filtered(steam_paths, None)
 }
 
-pub fn load_game_playtime_minutes(app_id: u32, steam_paths: &[PathBuf]) -> Option<u32> {
-    let (_, playtime) = parse_userdata_filtered(steam_paths, Some(app_id));
-    playtime.get(&app_id).copied()
+pub fn load_game_playtime_minutes(steam_app_id: u32, steam_paths: &[PathBuf]) -> Option<u32> {
+    let (_, playtime) = parse_userdata_filtered(steam_paths, Some(steam_app_id));
+    playtime.get(&steam_app_id).copied()
 }
 
 pub fn load_game_installed_size(path: &Path) -> Option<u64> {
@@ -491,9 +505,11 @@ fn parse_userdata_filtered(
                         expect_block = true;
                     }
                 } else if depth == 1 {
-                    if let (Some(app_id), Some(cap)) = (current_app_id, kv_re.captures(trimmed)) {
+                    if let (Some(steam_app_id), Some(cap)) =
+                        (current_app_id, kv_re.captures(trimmed))
+                    {
                         if target_app_id
-                            .map(|target| target != app_id)
+                            .map(|target| target != steam_app_id)
                             .unwrap_or(false)
                         {
                             continue;
@@ -504,7 +520,7 @@ fn parse_userdata_filtered(
                         match key {
                             "LastPlayed" => {
                                 if let Ok(ts) = val.parse::<u64>() {
-                                    let e = last_played.entry(app_id).or_insert(0);
+                                    let e = last_played.entry(steam_app_id).or_insert(0);
                                     if ts > *e {
                                         *e = ts;
                                     }
@@ -512,7 +528,7 @@ fn parse_userdata_filtered(
                             }
                             "Playtime" | "playtime_forever" => {
                                 if let Ok(mins) = val.parse::<u32>() {
-                                    let e = playtime.entry(app_id).or_insert(0);
+                                    let e = playtime.entry(steam_app_id).or_insert(0);
                                     if mins > *e {
                                         *e = mins;
                                     }
@@ -606,7 +622,7 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        is_game_app_id, parse_app_type_token, parse_userdata_filtered,
+        is_game_steam_app_id, parse_app_type_token, parse_userdata_filtered,
         window_contains_app_name,
     };
 
@@ -657,26 +673,30 @@ mod tests {
 
     #[test]
     fn game_app_id_requires_matching_name_and_game_type() {
-        let app_id = 480u32;
+        let steam_app_id = 480u32;
         let mut appinfo = Vec::new();
         appinfo.extend_from_slice(b"prefix");
-        appinfo.extend_from_slice(&app_id.to_le_bytes());
+        appinfo.extend_from_slice(&steam_app_id.to_le_bytes());
         appinfo.extend_from_slice(b"Spacewar\0Game\0windows\0");
 
-        assert!(is_game_app_id(Some(&appinfo), app_id, "Spacewar"));
-        assert!(!is_game_app_id(Some(&appinfo), app_id, "Wrong Name"));
+        assert!(is_game_steam_app_id(Some(&appinfo), steam_app_id, "Spacewar"));
+        assert!(!is_game_steam_app_id(
+            Some(&appinfo),
+            steam_app_id,
+            "Wrong Name"
+        ));
     }
 
     #[test]
     fn game_app_id_rejects_non_game_types() {
-        let app_id = 228980u32;
+        let steam_app_id = 228980u32;
         let mut appinfo = Vec::new();
-        appinfo.extend_from_slice(&app_id.to_le_bytes());
+        appinfo.extend_from_slice(&steam_app_id.to_le_bytes());
         appinfo.extend_from_slice(b"Steamworks Common Redistributables\0Tool\0windows\0");
 
-        assert!(!is_game_app_id(
+        assert!(!is_game_steam_app_id(
             Some(&appinfo),
-            app_id,
+            steam_app_id,
             "Steamworks Common Redistributables"
         ));
     }

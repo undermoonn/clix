@@ -44,13 +44,13 @@ pub fn sort_achievement_items(items: &mut [AchievementItem]) {
 }
 
 pub fn load_achievement_summary(
-    app_id: u32,
+    steam_app_id: u32,
     steam_paths: &[PathBuf],
     language: AppLanguage,
     allow_global_percentage_refresh: bool,
 ) -> Option<AchievementSummary> {
-    let local_unlocks = load_local_unlock_status(app_id, steam_paths, language);
-    let mut items_map = load_local_schema_items(app_id, steam_paths, language);
+    let local_unlocks = load_local_unlock_status(steam_app_id, steam_paths, language);
+    let mut items_map = load_local_schema_items(steam_app_id, steam_paths, language);
 
     let mut unlocked_count: Option<u32> = None;
     if !local_unlocks.is_empty() {
@@ -60,7 +60,7 @@ pub fn load_achievement_summary(
     }
 
     if items_map.is_empty() {
-        backfill_schema_names(app_id, steam_paths, language, &mut items_map);
+        backfill_schema_names(steam_app_id, steam_paths, language, &mut items_map);
     }
 
     if items_map.is_empty() {
@@ -68,7 +68,7 @@ pub fn load_achievement_summary(
     }
 
     merge_schema_metadata(
-        app_id,
+        steam_app_id,
         steam_paths,
         language,
         &mut items_map,
@@ -103,27 +103,27 @@ fn merge_unlocks_into_items(
 }
 
 fn backfill_schema_names(
-    app_id: u32,
+    steam_app_id: u32,
     steam_paths: &[PathBuf],
     language: AppLanguage,
     items_map: &mut HashMap<String, AchievementItem>,
 ) {
-    let names = load_local_schema_achievement_names(app_id, steam_paths, language);
+    let names = load_local_schema_achievement_names(steam_app_id, steam_paths, language);
     for name in names {
         items_map.insert(name.clone(), empty_achievement_item(name));
     }
 }
 
 fn merge_schema_metadata(
-    app_id: u32,
+    steam_app_id: u32,
     steam_paths: &[PathBuf],
     language: AppLanguage,
     items_map: &mut HashMap<String, AchievementItem>,
     allow_global_percentage_refresh: bool,
 ) {
-    let schema_metadata = load_schema_metadata_maps(app_id, steam_paths, language);
+    let schema_metadata = load_schema_metadata_maps(steam_app_id, steam_paths, language);
     let global_percentages =
-        load_global_achievement_percentages(app_id, allow_global_percentage_refresh);
+        load_global_achievement_percentages(steam_app_id, allow_global_percentage_refresh);
 
     for item in items_map.values_mut() {
         if item.display_name.is_none() {

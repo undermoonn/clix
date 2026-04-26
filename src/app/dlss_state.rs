@@ -35,12 +35,12 @@ impl DlssState {
         self.loading.insert(game_key.clone());
         self.checked.insert(game_key.clone());
         let pending = Arc::clone(&self.pending);
-        let game_path = game.path.clone();
-        let app_id = game.app_id;
+        let install_path = game.install_path.clone();
+        let steam_app_id = game.steam_app_id;
         let ctx_clone = ctx.clone();
 
         std::thread::spawn(move || {
-            let dlss_version = crate::assets::dlss::detect_version(&game_path, app_id);
+            let dlss_version = crate::assets::dlss::detect_version(&install_path, steam_app_id);
             if let Ok(mut lock) = pending.lock() {
                 lock.push((game_key, dlss_version));
             }

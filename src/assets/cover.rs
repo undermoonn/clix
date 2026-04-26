@@ -147,8 +147,8 @@ pub fn hd_cache_dir() -> PathBuf {
     cache::cache_subdir("cover_cache")
 }
 
-fn hero_logo_cache_path(app_id: u32) -> PathBuf {
-    hd_cache_dir().join(format!("{}_logo.png", app_id))
+fn hero_logo_cache_path(steam_app_id: u32) -> PathBuf {
+    hd_cache_dir().join(format!("{}_logo.png", steam_app_id))
 }
 
 fn is_png_bytes(bytes: &[u8]) -> bool {
@@ -166,9 +166,9 @@ fn game_icon_cache_dir() -> PathBuf {
 
 fn game_icon_cache_key(game: &crate::game::Game, source: &str) -> String {
     let mut key = format!("{}|{}", source, game.persistent_key());
-    if let Some(launch_id) = game.launch_id.as_deref() {
+    if let Some(platform_launch_id) = game.platform_launch_id.as_deref() {
         key.push('|');
-        key.push_str(launch_id);
+        key.push_str(platform_launch_id);
     }
     key
 }
@@ -268,16 +268,16 @@ pub fn load_achievement_icon_bytes(url: &str) -> Option<Vec<u8>> {
     Some(cache_bytes)
 }
 
-fn download_hd_cover(app_id: u32) -> Option<Vec<u8>> {
+fn download_hd_cover(steam_app_id: u32) -> Option<Vec<u8>> {
     // Download 3840x1240 library_hero from Steam CDN
     let urls = [
         format!(
             "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{}/library_hero.jpg",
-            app_id
+            steam_app_id
         ),
         format!(
             "https://steamcdn-a.akamaihd.net/steam/apps/{}/library_hero.jpg",
-            app_id
+            steam_app_id
         ),
     ];
     for url in &urls {
@@ -292,7 +292,7 @@ fn download_hd_cover(app_id: u32) -> Option<Vec<u8>> {
                     .is_ok()
                     && bytes.len() > 1024
                 {
-                    let cache_path = hd_cache_dir().join(format!("{}_hero.jpg", app_id));
+                    let cache_path = hd_cache_dir().join(format!("{}_hero.jpg", steam_app_id));
                     let _ = std::fs::write(&cache_path, &bytes);
                     return Some(bytes);
                 }
@@ -302,23 +302,23 @@ fn download_hd_cover(app_id: u32) -> Option<Vec<u8>> {
     None
 }
 
-fn download_logo_bytes(app_id: u32) -> Option<Vec<u8>> {
+fn download_logo_bytes(steam_app_id: u32) -> Option<Vec<u8>> {
     let urls = [
         format!(
             "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{}/library_logo.png",
-            app_id
+            steam_app_id
         ),
         format!(
             "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{}/logo.png",
-            app_id
+            steam_app_id
         ),
         format!(
             "https://steamcdn-a.akamaihd.net/steam/apps/{}/library_logo.png",
-            app_id
+            steam_app_id
         ),
         format!(
             "https://steamcdn-a.akamaihd.net/steam/apps/{}/logo.png",
-            app_id
+            steam_app_id
         ),
     ];
 
@@ -335,7 +335,7 @@ fn download_logo_bytes(app_id: u32) -> Option<Vec<u8>> {
                     && bytes.len() > 512
                     && is_png_bytes(&bytes)
                 {
-                    let cache_path = hero_logo_cache_path(app_id);
+                    let cache_path = hero_logo_cache_path(steam_app_id);
                     let _ = std::fs::write(&cache_path, &bytes);
                     return Some(bytes);
                 }
@@ -346,14 +346,14 @@ fn download_logo_bytes(app_id: u32) -> Option<Vec<u8>> {
     None
 }
 
-fn librarycache_candidate_dirs(steam_paths: &[PathBuf], app_id: u32) -> Vec<PathBuf> {
+fn librarycache_candidate_dirs(steam_paths: &[PathBuf], steam_app_id: u32) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
     for steam_root in steam_paths {
         let app_dir = steam_root
             .join("appcache")
             .join("librarycache")
-            .join(app_id.to_string());
+            .join(steam_app_id.to_string());
         if !app_dir.exists() {
             continue;
         }
@@ -375,12 +375,12 @@ fn librarycache_candidate_dirs(steam_paths: &[PathBuf], app_id: u32) -> Vec<Path
 
 fn load_named_librarycache_asset_bytes(
     steam_paths: &[PathBuf],
-    app_id: u32,
+    steam_app_id: u32,
     preferred_names: &[&str],
     min_size: usize,
     require_png: bool,
 ) -> Option<Vec<u8>> {
-    for dir in librarycache_candidate_dirs(steam_paths, app_id) {
+    for dir in librarycache_candidate_dirs(steam_paths, steam_app_id) {
         for name in preferred_names {
             let candidate = dir.join(name);
             if !candidate.exists() {
@@ -402,13 +402,13 @@ fn load_named_librarycache_asset_bytes(
     None
 }
 
-pub fn load_cover_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>> {
-    let cache_path = hd_cache_dir().join(format!("{}_hero.jpg", app_id));
+pub fn load_cover_bytes(steam_paths: &[PathBuf], steam_app_id: u32) -> Option<Vec<u8>> {
+    let cache_path = hd_cache_dir().join(format!("{}_hero.jpg", steam_app_id));
 
     // 1. Prefer Steam's local librarycache so hashed subdirectories override stale cache.
     if let Some(bytes) = load_named_librarycache_asset_bytes(
         steam_paths,
-        app_id,
+        steam_app_id,
         &["library_hero.jpg"],
         1024,
         false,
@@ -427,19 +427,19 @@ pub fn load_cover_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>>
     }
 
     // 3. Try downloading library_hero from Steam CDN
-    if let Some(bytes) = download_hd_cover(app_id) {
+    if let Some(bytes) = download_hd_cover(steam_app_id) {
         return Some(bytes);
     }
 
     None
 }
 
-pub fn load_logo_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>> {
-    let cache_path = hero_logo_cache_path(app_id);
+pub fn load_logo_bytes(steam_paths: &[PathBuf], steam_app_id: u32) -> Option<Vec<u8>> {
+    let cache_path = hero_logo_cache_path(steam_app_id);
 
     if let Some(bytes) = load_named_librarycache_asset_bytes(
         steam_paths,
-        app_id,
+        steam_app_id,
         &["library_logo.png", "logo.png"],
         512,
         true,
@@ -458,7 +458,7 @@ pub fn load_logo_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>> 
 
     let preferred_names = ["library_logo.png", "logo.png"];
 
-    for dir in librarycache_candidate_dirs(steam_paths, app_id) {
+    for dir in librarycache_candidate_dirs(steam_paths, steam_app_id) {
         for name in preferred_names {
             let candidate = dir.join(name);
             if !candidate.exists() {
@@ -494,7 +494,7 @@ pub fn load_logo_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>> 
         }
     }
 
-    download_logo_bytes(app_id)
+    download_logo_bytes(steam_app_id)
 }
 
 #[cfg(target_os = "windows")]
@@ -970,7 +970,7 @@ fn load_executable_icon_bytes(game: &crate::game::Game) -> Option<Vec<u8>> {
         }
     }
 
-    let executable = find_preferred_executable(&game.path, &game.name)?;
+    let executable = find_preferred_executable(&game.install_path, &game.name)?;
     let bytes = load_file_icon_bytes(&executable)?;
     store_cached_game_icon_bytes(game, "exe_icon", &bytes);
     Some(bytes)
@@ -1100,11 +1100,11 @@ fn load_xbox_manifest_icon_bytes(game: &crate::game::Game) -> Option<Vec<u8>> {
         return Some(bytes);
     }
 
-    let manifest_path = game.path.join("AppxManifest.xml");
+    let manifest_path = game.install_path.join("AppxManifest.xml");
     let manifest = std::fs::read_to_string(manifest_path).ok()?;
-    let application_block = find_application_block(&manifest, game.launch_id.as_deref())?;
+    let application_block = find_application_block(&manifest, game.platform_launch_id.as_deref())?;
     let relative_logo_path = preferred_msix_logo_relative_path(application_block, &manifest)?;
-    let logo_path = resolve_msix_logo_path(&game.path, &relative_logo_path)?;
+    let logo_path = resolve_msix_logo_path(&game.install_path, &relative_logo_path)?;
     let bytes = std::fs::read(logo_path).ok()?;
     store_cached_game_icon_bytes(game, "xbox_manifest_icon", &bytes);
     Some(bytes)
@@ -1123,12 +1123,13 @@ pub fn load_game_icon_bytes(steam_paths: &[PathBuf], game: &crate::game::Game) -
         return Some(bytes);
     }
 
-    game.app_id.and_then(|app_id| load_icon_bytes(steam_paths, app_id))
+    game.steam_app_id
+        .and_then(|steam_app_id| load_icon_bytes(steam_paths, steam_app_id))
 }
 
 /// Load game icon bytes from Steam's local library cache.
 /// The icon is the small hashed .jpg file (32x32) in librarycache/{appid}/.
-pub fn load_icon_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>> {
+pub fn load_icon_bytes(steam_paths: &[PathBuf], steam_app_id: u32) -> Option<Vec<u8>> {
     let known_names = [
         "header.jpg",
         "library_600x900.jpg",
@@ -1139,7 +1140,7 @@ pub fn load_icon_bytes(steam_paths: &[PathBuf], app_id: u32) -> Option<Vec<u8>> 
         let dir = steam_root
             .join("appcache")
             .join("librarycache")
-            .join(app_id.to_string());
+            .join(steam_app_id.to_string());
         if !dir.exists() {
             continue;
         }

@@ -25,40 +25,40 @@ impl SteamUpdateState {
         }
     }
 
-    pub fn refresh_for_app_id(
+    pub fn refresh_for_steam_app_id(
         &mut self,
-        app_id: Option<u32>,
+        steam_app_id: Option<u32>,
         steam_paths: &[std::path::PathBuf],
         now: Instant,
         ctx: &egui::Context,
     ) {
-        let Some(app_id) = app_id else {
+        let Some(steam_app_id) = steam_app_id else {
             return;
         };
 
-        if self.loading.contains(&app_id) {
+        if self.loading.contains(&steam_app_id) {
             return;
         }
 
         if self
             .last_polled_at
-            .get(&app_id)
+            .get(&steam_app_id)
             .is_some_and(|last| now.duration_since(*last) < STEAM_UPDATE_POLL_INTERVAL)
         {
             return;
         }
 
-        self.loading.insert(app_id);
-        self.last_polled_at.insert(app_id, now);
+        self.loading.insert(steam_app_id);
+        self.last_polled_at.insert(steam_app_id, now);
 
         let pending = Arc::clone(&self.pending);
         let paths = steam_paths.to_vec();
         let ctx_clone = ctx.clone();
 
         std::thread::spawn(move || {
-            let progress = steam::load_game_update_progress(app_id, &paths);
+            let progress = steam::load_game_update_progress(steam_app_id, &paths);
             if let Ok(mut lock) = pending.lock() {
-                lock.push((app_id, progress));
+                lock.push((steam_app_id, progress));
             }
             ctx_clone.request_repaint();
         });
@@ -69,18 +69,21 @@ impl SteamUpdateState {
             return;
         };
 
-        for (app_id, progress) in lock.drain(..) {
-            self.loading.remove(&app_id);
+        for (steam_app_id, progress) in lock.drain(..) {
+            self.loading.remove(&steam_app_id);
 
             if let Some(progress) = progress {
-                self.latest.insert(app_id, progress);
+                self.latest.insert(steam_app_id, progress);
             } else {
-                self.latest.remove(&app_id);
+                self.latest.remove(&steam_app_id);
             }
         }
     }
 
-    pub fn status_for_app_id(&self, app_id: Option<u32>) -> Option<&SteamUpdateProgress> {
-        app_id.and_then(|app_id| self.latest.get(&app_id))
+    pub fn status_for_steam_app_id(
+        &self,
+        steam_app_id: Option<u32>,
+    ) -> Option<&SteamUpdateProgress> {
+        steam_app_id.and_then(|steam_app_id| self.latest.get(&steam_app_id))
     }
 }

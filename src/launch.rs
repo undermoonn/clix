@@ -15,7 +15,7 @@ pub struct LaunchState {
     pub game_index: usize,
     game_name: String,
     started_at: Instant,
-    launch_app_id: Option<u32>,
+    launch_steam_app_id: Option<u32>,
     awaiting_launch_release: bool,
     #[cfg(target_os = "windows")]
     baseline_pids: HashSet<u32>,
@@ -33,7 +33,7 @@ pub struct LaunchState {
 
 pub struct RunningGameState {
     pub game_index: usize,
-    app_id: Option<u32>,
+    steam_app_id: Option<u32>,
     game_name: String,
     #[cfg(target_os = "windows")]
     target_path: Option<PathBuf>,
@@ -73,12 +73,12 @@ pub fn begin_launch(
     game: &Game,
     steam_paths: &[PathBuf],
 ) -> LaunchAttemptResult {
-    let target_path = game.path.clone();
+    let target_path = game.install_path.clone();
     let launch_target = game.launch_target.clone();
-    let launch_id = game.launch_id.clone();
-    let persistent_id = game.persistent_id.clone();
+    let platform_launch_id = game.platform_launch_id.clone();
+    let platform_id = game.platform_id.clone();
     let game_name = game.name.clone();
-    let launch_app_id = game.app_id;
+    let launch_steam_app_id = game.steam_app_id;
     let mut blocked_reason: Option<LaunchBlockedReason> = None;
     #[cfg(target_os = "windows")]
     let baseline_pids = collect_process_ids();
@@ -90,18 +90,18 @@ pub fn begin_launch(
 
     let launched = match game.source {
         GameSource::Steam => {
-            if let Some(app_id) = game.app_id {
+            if let Some(steam_app_id) = game.steam_app_id {
                 #[cfg(target_os = "windows")]
                 {
                     match steam_client_state() {
                         SteamClientState::Ready => {
                             if let Some(steam_exe) = resolve_steam_exe_path(steam_paths) {
                                 Command::new(steam_exe)
-                                    .args(["-applaunch", &app_id.to_string()])
+                                    .args(["-applaunch", &steam_app_id.to_string()])
                                     .spawn()
                                     .is_ok()
                             } else {
-                                let url = format!("steam://rungameid/{}", app_id);
+                                let url = format!("steam://rungameid/{}", steam_app_id);
                                 Command::new("cmd")
                                     .args(["/C", "start", "", &url])
                                     .spawn()
@@ -127,18 +127,18 @@ pub fn begin_launch(
             } else {
                 launch_target
                     .as_ref()
-                    .or(Some(&game.path))
-                    .and_then(|path| spawn_direct_game(path, &game.path).ok())
+                    .or(Some(&game.install_path))
+                    .and_then(|path| spawn_direct_game(path, &game.install_path).ok())
                     .is_some()
             }
         }
         GameSource::Epic => launch_target
             .as_ref()
-            .and_then(|path| spawn_direct_game(path, &game.path).ok())
+            .and_then(|path| spawn_direct_game(path, &game.install_path).ok())
             .is_some(),
-        GameSource::Xbox => persistent_id
+        GameSource::Xbox => platform_id
             .as_deref()
-            .zip(launch_id.as_deref())
+            .zip(platform_launch_id.as_deref())
             .is_some_and(|(family_name, application_id)| {
                 launch_xbox_app(family_name, application_id)
             }),
@@ -154,7 +154,7 @@ pub fn begin_launch(
         game_index,
         game_name,
         started_at: Instant::now(),
-        launch_app_id,
+        launch_steam_app_id,
         awaiting_launch_release: false,
         #[cfg(target_os = "windows")]
         baseline_pids,
@@ -204,7 +204,7 @@ pub fn begin_focus_transition(game_index: usize, state: &RunningGameState) -> Op
             game_index,
             game_name: state.game_name.clone(),
             started_at: Instant::now(),
-            launch_app_id: state.app_id,
+            launch_steam_app_id: state.steam_app_id,
             awaiting_launch_release: true,
             baseline_pids: HashSet::new(),
             baseline_hwnds: HashSet::new(),
@@ -249,7 +249,7 @@ pub fn tick_launch_progress(state: &mut LaunchState, launch_held: bool) -> Launc
 
         if let Some(focus_pids) = &state.focus_pids {
             if let Some((hwnd, pid)) = find_best_window_for_pids(focus_pids, &state.game_name) {
-                maybe_align_window_top_left(hwnd, state.launch_app_id);
+                maybe_align_window_top_left(hwnd, state.launch_steam_app_id);
                 bring_window_to_foreground(hwnd);
                 return LaunchTickResult::Ready(build_running_game_state(state, pid));
             }
@@ -267,7 +267,7 @@ pub fn tick_launch_progress(state: &mut LaunchState, launch_held: bool) -> Launc
             state.target_path.as_deref(),
             &state.game_name,
         ) {
-            maybe_align_window_top_left(hwnd, state.launch_app_id);
+            maybe_align_window_top_left(hwnd, state.launch_steam_app_id);
             if let Some(current_hwnd) = state.current_app_hwnd.map(|hwnd| hwnd as HWND) {
                 if current_hwnd != hwnd {
                     if let Some(transition) = start_window_transition(current_hwnd, hwnd, pid) {
@@ -370,7 +370,7 @@ use winapi::um::winuser::{
 };
 
 #[cfg(target_os = "windows")]
-const ALIGN_TOP_LEFT_APP_ID: u32 = 601150;
+const ALIGN_TOP_LEFT_STEAM_APP_ID: u32 = 601150;
 #[cfg(target_os = "windows")]
 const WINDOW_TRANSITION_MS: u64 = 100;
 #[cfg(target_os = "windows")]
@@ -687,7 +687,7 @@ fn build_running_game_state(state: &LaunchState, fallback_pid: u32) -> RunningGa
 
     RunningGameState {
         game_index: state.game_index,
-        app_id: state.launch_app_id,
+        steam_app_id: state.launch_steam_app_id,
         game_name: state.game_name.clone(),
         target_path: state.target_path.clone(),
         tracked_pids,
@@ -768,8 +768,8 @@ fn tick_window_transition(transition: &mut WindowTransition) -> bool {
 }
 
 #[cfg(target_os = "windows")]
-fn maybe_align_window_top_left(hwnd: HWND, app_id: Option<u32>) {
-    if app_id != Some(ALIGN_TOP_LEFT_APP_ID) {
+fn maybe_align_window_top_left(hwnd: HWND, steam_app_id: Option<u32>) {
+    if steam_app_id != Some(ALIGN_TOP_LEFT_STEAM_APP_ID) {
         return;
     }
 

@@ -153,7 +153,7 @@ fn ach_map_unlocks(root: &HashMap<String, BvdfVal>) -> Option<HashMap<String, (b
 }
 
 pub(super) fn load_local_unlock_status(
-    app_id: u32,
+    steam_app_id: u32,
     steam_paths: &[PathBuf],
     language: AppLanguage,
 ) -> HashMap<String, (bool, Option<u64>)> {
@@ -164,7 +164,10 @@ pub(super) fn load_local_unlock_status(
     };
 
     for steam_root in steam_paths {
-        let base = steam_root.join("userdata").join(&account_id).join(app_id.to_string());
+        let base = steam_root
+            .join("userdata")
+            .join(&account_id)
+            .join(steam_app_id.to_string());
         let candidates = [
             base.join("stats").join("UserGameStats.bin"),
             base.join("local").join("achievements.bin"),
@@ -185,16 +188,16 @@ pub(super) fn load_local_unlock_status(
         }
     }
 
-    load_appcache_unlock_status(app_id, &account_id, steam_paths, language)
+    load_appcache_unlock_status(steam_app_id, &account_id, steam_paths, language)
 }
 
 fn load_appcache_unlock_status(
-    app_id: u32,
+    steam_app_id: u32,
     account_id: &str,
     steam_paths: &[PathBuf],
     language: AppLanguage,
 ) -> HashMap<String, (bool, Option<u64>)> {
-    let bit_mapping = load_schema_achievement_bits(app_id, steam_paths, language);
+    let bit_mapping = load_schema_achievement_bits(steam_app_id, steam_paths, language);
     if bit_mapping.is_empty() {
         return HashMap::new();
     }
@@ -203,7 +206,7 @@ fn load_appcache_unlock_status(
         let stats_path = steam_root
             .join("appcache")
             .join("stats")
-            .join(format!("UserGameStats_{}_{}.bin", account_id, app_id));
+            .join(format!("UserGameStats_{}_{}.bin", account_id, steam_app_id));
         let Ok(data) = std::fs::read(&stats_path) else {
             continue;
         };

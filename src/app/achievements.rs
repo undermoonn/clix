@@ -119,48 +119,50 @@ impl AchievementState {
         ctx: &egui::Context,
         force_refresh: bool,
     ) {
-        let Some(app_id) = selected_game.and_then(|game| game.app_id) else {
+        let Some(steam_app_id) = selected_game.and_then(|game| game.steam_app_id) else {
             self.checked_overview_for = None;
             self.sync_summary_scope(None);
             return;
         };
 
         self.language = language;
-        self.sync_summary_scope(Some(app_id));
+        self.sync_summary_scope(Some(steam_app_id));
 
-        if !force_refresh && self.overview_cache.contains_key(&app_id) {
-            self.no_data.remove(&app_id);
-            self.checked_overview_for = Some(app_id);
+        if !force_refresh && self.overview_cache.contains_key(&steam_app_id) {
+            self.no_data.remove(&steam_app_id);
+            self.checked_overview_for = Some(steam_app_id);
             return;
         }
 
-        if !force_refresh && self.checked_overview_for == Some(app_id) {
+        if !force_refresh && self.checked_overview_for == Some(steam_app_id) {
             return;
         }
-        self.checked_overview_for = Some(app_id);
+        self.checked_overview_for = Some(steam_app_id);
 
         if !force_refresh {
-            if let Some(summary) = steam::load_cached_achievement_overview(app_id, language) {
-                self.no_data.remove(&app_id);
-                self.store_overview_summary(app_id, summary, true);
+            if let Some(summary) =
+                steam::load_cached_achievement_overview(steam_app_id, language)
+            {
+                self.no_data.remove(&steam_app_id);
+                self.store_overview_summary(steam_app_id, summary, true);
                 return;
             }
         }
 
-        self.no_data.remove(&app_id);
-        if self.overview_loading.contains(&app_id) {
+        self.no_data.remove(&steam_app_id);
+        if self.overview_loading.contains(&steam_app_id) {
             return;
         }
 
-        self.overview_loading.insert(app_id);
+        self.overview_loading.insert(steam_app_id);
         let pending = Arc::clone(&self.pending);
         let paths = steam_paths.to_vec();
         let ctx_clone = ctx.clone();
 
         std::thread::spawn(move || {
-            let data = steam::load_achievement_summary(app_id, &paths, language, false);
+            let data = steam::load_achievement_summary(steam_app_id, &paths, language, false);
             if let Ok(mut lock) = pending.lock() {
-                lock.push((PendingAchievementKind::Overview, app_id, data));
+                lock.push((PendingAchievementKind::Overview, steam_app_id, data));
             }
             ctx_clone.request_repaint();
         });
@@ -175,11 +177,11 @@ impl AchievementState {
         updated_app_ids: &[u32],
         ctx: &egui::Context,
     ) {
-        let Some(app_id) = selected_game.and_then(|game| game.app_id) else {
+        let Some(steam_app_id) = selected_game.and_then(|game| game.steam_app_id) else {
             return;
         };
 
-        if !updated_app_ids.contains(&app_id) {
+        if !updated_app_ids.contains(&steam_app_id) {
             return;
         }
 
@@ -218,52 +220,56 @@ impl AchievementState {
         ctx: &egui::Context,
         force_refresh: bool,
     ) {
-        let Some(app_id) = selected_game.and_then(|game| game.app_id) else {
+        let Some(steam_app_id) = selected_game.and_then(|game| game.steam_app_id) else {
             self.checked_detail_for = None;
             self.sync_detail_scope(None);
             return;
         };
 
         self.language = language;
-        self.sync_detail_scope(Some(app_id));
+        self.sync_detail_scope(Some(steam_app_id));
 
         if !force_refresh {
-            steam::request_global_achievement_percentages_refresh(app_id);
+            steam::request_global_achievement_percentages_refresh(steam_app_id);
         }
 
         if !force_refresh
-            && self.checked_detail_for == Some(app_id)
+            && self.checked_detail_for == Some(steam_app_id)
             && self.detail_cache
                 .as_ref()
-                .is_some_and(|(detail_app_id, summary)| *detail_app_id == app_id && !summary.items.is_empty())
+                .is_some_and(|(detail_app_id, summary)| {
+                    *detail_app_id == steam_app_id && !summary.items.is_empty()
+                })
         {
             return;
         }
 
-        self.checked_detail_for = Some(app_id);
+        self.checked_detail_for = Some(steam_app_id);
 
         if !force_refresh {
-            if let Some(mut summary) = steam::load_cached_achievement_summary(app_id, language) {
+            if let Some(mut summary) =
+                steam::load_cached_achievement_summary(steam_app_id, language)
+            {
                 steam::sort_achievement_items(&mut summary.items);
-                self.no_data.remove(&app_id);
-                self.store_detail_summary(app_id, summary, false);
+                self.no_data.remove(&steam_app_id);
+                self.store_detail_summary(steam_app_id, summary, false);
                 return;
             }
         }
 
-        self.no_data.remove(&app_id);
+        self.no_data.remove(&steam_app_id);
 
         if force_refresh {
-            self.refreshing.insert(app_id);
+            self.refreshing.insert(steam_app_id);
             self.refresh_indicator_until
-                .insert(app_id, Instant::now() + MIN_REFRESH_RING_DURATION);
+                .insert(steam_app_id, Instant::now() + MIN_REFRESH_RING_DURATION);
         }
 
-        if self.detail_loading.contains(&app_id) {
+        if self.detail_loading.contains(&steam_app_id) {
             return;
         }
 
-        self.detail_loading.insert(app_id);
+        self.detail_loading.insert(steam_app_id);
         let pending = Arc::clone(&self.pending);
         let paths = steam_paths.to_vec();
         let ctx_clone = ctx.clone();
@@ -271,13 +277,13 @@ impl AchievementState {
 
         std::thread::spawn(move || {
             let data = steam::load_achievement_summary(
-                app_id,
+                steam_app_id,
                 &paths,
                 language,
                 allow_global_percentage_refresh,
             );
             if let Ok(mut lock) = pending.lock() {
-                lock.push((PendingAchievementKind::Details, app_id, data));
+                lock.push((PendingAchievementKind::Details, steam_app_id, data));
             }
             ctx_clone.request_repaint();
         });
@@ -291,48 +297,60 @@ impl AchievementState {
             lock.drain(..).collect::<Vec<_>>()
         };
 
-        for (kind, app_id, summary) in pending_results {
+        for (kind, steam_app_id, summary) in pending_results {
             match kind {
                 PendingAchievementKind::Overview => {
-                    self.overview_loading.remove(&app_id);
+                    self.overview_loading.remove(&steam_app_id);
                     match summary {
                         Some(summary) => {
-                            steam::store_cached_achievement_summary(app_id, &summary, self.language);
-                            self.no_data.remove(&app_id);
-                            self.store_overview_summary(app_id, overview_from_summary(&summary), true);
+                            steam::store_cached_achievement_summary(
+                                steam_app_id,
+                                &summary,
+                                self.language,
+                            );
+                            self.no_data.remove(&steam_app_id);
+                            self.store_overview_summary(
+                                steam_app_id,
+                                overview_from_summary(&summary),
+                                true,
+                            );
                         }
                         None => {
-                            if !self.overview_cache.contains_key(&app_id) {
-                                self.no_data.insert(app_id);
+                            if !self.overview_cache.contains_key(&steam_app_id) {
+                                self.no_data.insert(steam_app_id);
                             }
                         }
                     }
                 }
                 PendingAchievementKind::Details => {
-                    self.detail_loading.remove(&app_id);
-                    self.refreshing.remove(&app_id);
+                    self.detail_loading.remove(&steam_app_id);
+                    self.refreshing.remove(&steam_app_id);
                     match summary {
                         Some(mut summary) => {
                             let previous_detail = self
                                 .detail_cache
                                 .as_ref()
-                                .filter(|(detail_app_id, _)| *detail_app_id == app_id)
+                                .filter(|(detail_app_id, _)| *detail_app_id == steam_app_id)
                                 .map(|(_, detail)| detail);
                             if let Some(previous_summary) = previous_detail {
                                 preserve_missing_global_percents(&mut summary, previous_summary);
                             }
                             steam::sort_achievement_items(&mut summary.items);
-                            steam::store_cached_achievement_summary(app_id, &summary, self.language);
-                            self.no_data.remove(&app_id);
-                            self.store_detail_summary(app_id, summary, true);
+                            steam::store_cached_achievement_summary(
+                                steam_app_id,
+                                &summary,
+                                self.language,
+                            );
+                            self.no_data.remove(&steam_app_id);
+                            self.store_detail_summary(steam_app_id, summary, true);
                         }
                         None => {
                             let has_detail = self
                                 .detail_cache
                                 .as_ref()
-                                .is_some_and(|(detail_app_id, _)| *detail_app_id == app_id);
-                            if !has_detail && !self.overview_cache.contains_key(&app_id) {
-                                self.no_data.insert(app_id);
+                                .is_some_and(|(detail_app_id, _)| *detail_app_id == steam_app_id);
+                            if !has_detail && !self.overview_cache.contains_key(&steam_app_id) {
+                                self.no_data.insert(steam_app_id);
                             }
                         }
                     }
@@ -346,13 +364,13 @@ impl AchievementState {
         selected_game: Option<&Game>,
         selected_index: usize,
     ) -> bool {
-        let Some(app_id) = selected_game.and_then(|game| game.app_id) else {
+        let Some(steam_app_id) = selected_game.and_then(|game| game.steam_app_id) else {
             return false;
         };
         let Some(api_name) = self
             .detail_cache
             .as_ref()
-            .filter(|(detail_app_id, _)| *detail_app_id == app_id)
+            .filter(|(detail_app_id, _)| *detail_app_id == steam_app_id)
             .map(|(_, summary)| summary)
             .and_then(|summary| summary.items.get(selected_index))
             .filter(|item| item.is_hidden && item.unlocked != Some(true))
@@ -363,14 +381,14 @@ impl AchievementState {
 
         if self
             .revealed_hidden
-            .get(&app_id)
+            .get(&steam_app_id)
             .is_some_and(|state| state.api_name == api_name)
         {
             return false;
         }
 
         self.revealed_hidden.insert(
-            app_id,
+            steam_app_id,
             HiddenRevealState {
                 api_name,
                 progress: 0.0,
@@ -381,35 +399,43 @@ impl AchievementState {
     }
 
     pub fn clear_revealed_hidden_for_selected(&mut self, selected_game: Option<&Game>) {
-        if let Some(app_id) = selected_game.and_then(|game| game.app_id) {
-            self.revealed_hidden.remove(&app_id);
+        if let Some(steam_app_id) = selected_game.and_then(|game| game.steam_app_id) {
+            self.revealed_hidden.remove(&steam_app_id);
         }
     }
 
     pub fn revealed_hidden_for_selected(&self, selected_game: Option<&Game>) -> Option<&str> {
         selected_game
-            .and_then(|game| game.app_id)
-            .and_then(|app_id| self.revealed_hidden.get(&app_id).map(|state| state.api_name.as_str()))
+            .and_then(|game| game.steam_app_id)
+            .and_then(|steam_app_id| {
+                self.revealed_hidden
+                    .get(&steam_app_id)
+                    .map(|state| state.api_name.as_str())
+            })
     }
 
     pub fn hidden_reveal_progress_for_selected(&self, selected_game: Option<&Game>) -> f32 {
         selected_game
-            .and_then(|game| game.app_id)
-            .and_then(|app_id| self.revealed_hidden.get(&app_id).map(|state| state.progress))
+            .and_then(|game| game.steam_app_id)
+            .and_then(|steam_app_id| {
+                self.revealed_hidden
+                    .get(&steam_app_id)
+                    .map(|state| state.progress)
+            })
             .unwrap_or(0.0)
     }
 
-    pub fn sync_icon_scope(&mut self, app_id: Option<u32>) {
-        self.reset_icon_scope(app_id);
+    pub fn sync_icon_scope(&mut self, steam_app_id: Option<u32>) {
+        self.reset_icon_scope(steam_app_id);
     }
 
     pub fn ensure_icons_for_urls(
         &mut self,
-        app_id: Option<u32>,
+        steam_app_id: Option<u32>,
         ctx: &egui::Context,
         visible_icon_urls: &[String],
     ) {
-        self.reset_icon_scope(app_id);
+        self.reset_icon_scope(steam_app_id);
         let generation = self.icon_generation;
 
         for url in visible_icon_urls {
@@ -539,8 +565,8 @@ impl AchievementState {
         }
 
         let mut finished_text_reveals = Vec::new();
-        for (app_id, progress) in &mut self.text_reveal {
-            let Some(started_at) = self.text_reveal_started_at.get(app_id).copied() else {
+        for (steam_app_id, progress) in &mut self.text_reveal {
+            let Some(started_at) = self.text_reveal_started_at.get(steam_app_id).copied() else {
                 continue;
             };
 
@@ -549,11 +575,11 @@ impl AchievementState {
                 ctx.request_repaint();
             } else {
                 *progress = 1.0;
-                finished_text_reveals.push(*app_id);
+                finished_text_reveals.push(*steam_app_id);
             }
         }
-        for app_id in finished_text_reveals {
-            self.text_reveal_started_at.remove(&app_id);
+        for steam_app_id in finished_text_reveals {
+            self.text_reveal_started_at.remove(&steam_app_id);
         }
 
         if let Some(started_at) = self.previous_overview_reveal_started_at {
@@ -581,15 +607,17 @@ impl AchievementState {
 
     pub fn summary_for_selected(&self, selected_game: Option<&Game>) -> Option<&AchievementSummary> {
         selected_game
-            .and_then(|game| game.app_id)
-            .and_then(|app_id| self.overview_cache.get(&app_id))
+            .and_then(|game| game.steam_app_id)
+            .and_then(|steam_app_id| self.overview_cache.get(&steam_app_id))
     }
 
     pub fn detail_for_selected(&self, selected_game: Option<&Game>) -> Option<&AchievementSummary> {
-        let app_id = selected_game.and_then(|game| game.app_id)?;
+        let steam_app_id = selected_game.and_then(|game| game.steam_app_id)?;
         self.detail_cache
             .as_ref()
-            .and_then(|(detail_app_id, summary)| (*detail_app_id == app_id).then_some(summary))
+            .and_then(|(detail_app_id, summary)| {
+                (*detail_app_id == steam_app_id).then_some(summary)
+            })
     }
 
     pub fn detail_len_for_selected(&self, selected_game: Option<&Game>) -> usize {
@@ -608,34 +636,35 @@ impl AchievementState {
 
     pub fn text_reveal_for_selected(&self, selected_game: Option<&Game>) -> f32 {
         selected_game
-            .and_then(|game| game.app_id)
-            .and_then(|app_id| self.text_reveal.get(&app_id).copied())
+            .and_then(|game| game.steam_app_id)
+            .and_then(|steam_app_id| self.text_reveal.get(&steam_app_id).copied())
             .unwrap_or(1.0)
     }
 
     pub fn loading_for_selected(&self, selected_game: Option<&Game>) -> bool {
         selected_game
-            .and_then(|game| game.app_id)
-            .map(|app_id| {
+            .and_then(|game| game.steam_app_id)
+            .map(|steam_app_id| {
                 let has_current_detail = self
                     .detail_cache
                     .as_ref()
-                    .is_some_and(|(detail_app_id, _)| *detail_app_id == app_id);
+                    .is_some_and(|(detail_app_id, _)| *detail_app_id == steam_app_id);
 
                 !has_current_detail
-                    && (self.detail_loading.contains(&app_id) || !self.no_data.contains(&app_id))
+                    && (self.detail_loading.contains(&steam_app_id)
+                        || !self.no_data.contains(&steam_app_id))
             })
             .unwrap_or(false)
     }
 
     pub fn refresh_loading_for_selected(&self, selected_game: Option<&Game>) -> bool {
         selected_game
-            .and_then(|game| game.app_id)
-            .map(|app_id| {
-                self.refreshing.contains(&app_id)
+            .and_then(|game| game.steam_app_id)
+            .map(|steam_app_id| {
+                self.refreshing.contains(&steam_app_id)
                     || self
                         .refresh_indicator_until
-                        .get(&app_id)
+                        .get(&steam_app_id)
                         .is_some_and(|until| *until > Instant::now())
             })
             .unwrap_or(false)
@@ -647,8 +676,8 @@ impl AchievementState {
 
     pub fn has_no_data_for_selected(&self, selected_game: Option<&Game>) -> bool {
         selected_game
-            .and_then(|game| game.app_id)
-            .map(|app_id| self.no_data.contains(&app_id))
+            .and_then(|game| game.steam_app_id)
+            .map(|steam_app_id| self.no_data.contains(&steam_app_id))
             .unwrap_or(true)
     }
 
@@ -664,8 +693,8 @@ impl AchievementState {
         &self.percent_reveal
     }
 
-    pub fn sync_summary_scope(&mut self, app_id: Option<u32>) {
-        if self.displayed_overview_app_id != app_id {
+    pub fn sync_summary_scope(&mut self, steam_app_id: Option<u32>) {
+        if self.displayed_overview_app_id != steam_app_id {
             if let Some(previous_app_id) = self.displayed_overview_app_id {
                 if let Some(previous_summary) = self.overview_cache.get(&previous_app_id) {
                     if previous_summary.total > 0 {
@@ -687,37 +716,37 @@ impl AchievementState {
                 self.previous_overview_reveal = 0.0;
                 self.previous_overview_reveal_started_at = None;
             }
-            self.displayed_overview_app_id = app_id;
+            self.displayed_overview_app_id = steam_app_id;
         }
-        if app_id.is_none() {
+        if steam_app_id.is_none() {
             self.displayed_overview_app_id = None;
             self.checked_overview_for = None;
         }
     }
 
-    pub fn sync_detail_scope(&mut self, app_id: Option<u32>) {
+    pub fn sync_detail_scope(&mut self, steam_app_id: Option<u32>) {
         if self
             .detail_cache
             .as_ref()
-            .is_some_and(|(detail_app_id, _)| Some(*detail_app_id) != app_id)
+            .is_some_and(|(detail_app_id, _)| Some(*detail_app_id) != steam_app_id)
         {
             self.detail_cache = None;
             self.percent_reveal.clear();
             self.percent_reveal_started_at.clear();
         }
-        if app_id.is_none() {
+        if steam_app_id.is_none() {
             self.checked_detail_for = None;
             self.percent_reveal.clear();
             self.percent_reveal_started_at.clear();
         }
     }
 
-    fn reset_icon_scope(&mut self, app_id: Option<u32>) {
-        if self.icon_scope_app_id == app_id {
+    fn reset_icon_scope(&mut self, steam_app_id: Option<u32>) {
+        if self.icon_scope_app_id == steam_app_id {
             return;
         }
 
-        self.icon_scope_app_id = app_id;
+        self.icon_scope_app_id = steam_app_id;
         self.icon_generation = self.icon_generation.wrapping_add(1);
         self.icon_cache.clear();
         self.icon_loading.clear();
@@ -728,31 +757,31 @@ impl AchievementState {
 
     fn store_overview_summary(
         &mut self,
-        app_id: u32,
+        steam_app_id: u32,
         summary: AchievementSummary,
         animate_reveal: bool,
     ) {
-        let had_summary = self.overview_cache.contains_key(&app_id);
-        self.overview_cache.insert(app_id, summary);
+        let had_summary = self.overview_cache.contains_key(&steam_app_id);
+        self.overview_cache.insert(steam_app_id, summary);
         if animate_reveal && !had_summary {
-            self.text_reveal.insert(app_id, 0.0);
-            self.text_reveal_started_at.insert(app_id, Instant::now());
+            self.text_reveal.insert(steam_app_id, 0.0);
+            self.text_reveal_started_at.insert(steam_app_id, Instant::now());
         } else {
-            self.text_reveal.insert(app_id, 1.0);
-            self.text_reveal_started_at.remove(&app_id);
+            self.text_reveal.insert(steam_app_id, 1.0);
+            self.text_reveal_started_at.remove(&steam_app_id);
         }
     }
 
     fn store_detail_summary(
         &mut self,
-        app_id: u32,
+        steam_app_id: u32,
         summary: AchievementSummary,
         animate_reveal: bool,
     ) {
         let previous_percents: HashMap<String, f32> = self
             .detail_cache
             .as_ref()
-            .filter(|(detail_app_id, _)| *detail_app_id == app_id)
+            .filter(|(detail_app_id, _)| *detail_app_id == steam_app_id)
             .map(|(_, detail)| {
                 detail
                     .items
@@ -763,8 +792,8 @@ impl AchievementState {
             .unwrap_or_default();
         self.update_percent_reveal(&summary, &previous_percents, animate_reveal);
         let overview = overview_from_summary(&summary);
-        self.detail_cache = Some((app_id, summary));
-        self.store_overview_summary(app_id, overview, animate_reveal);
+        self.detail_cache = Some((steam_app_id, summary));
+        self.store_overview_summary(steam_app_id, overview, animate_reveal);
     }
 
     fn update_percent_reveal(

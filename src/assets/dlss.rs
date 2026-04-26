@@ -8,12 +8,12 @@ fn cache_dir() -> PathBuf {
     cache::cache_subdir("dlss_cache")
 }
 
-fn cache_path(app_id: u32) -> PathBuf {
-    cache_dir().join(format!("{}.txt", app_id))
+fn cache_path(steam_app_id: u32) -> PathBuf {
+    cache_dir().join(format!("{}.txt", steam_app_id))
 }
 
-fn load_cached_path(app_id: u32) -> Option<PathBuf> {
-    let path = std::fs::read_to_string(cache_path(app_id)).ok()?;
+fn load_cached_path(steam_app_id: u32) -> Option<PathBuf> {
+    let path = std::fs::read_to_string(cache_path(steam_app_id)).ok()?;
     let dll_path = PathBuf::from(path.trim());
     if !dll_path.is_file() {
         return None;
@@ -21,8 +21,8 @@ fn load_cached_path(app_id: u32) -> Option<PathBuf> {
     Some(dll_path)
 }
 
-fn store_cached_path(app_id: u32, dll_path: &Path) {
-    let _ = std::fs::write(cache_path(app_id), dll_path.to_string_lossy().as_bytes());
+fn store_cached_path(steam_app_id: u32, dll_path: &Path) {
+    let _ = std::fs::write(cache_path(steam_app_id), dll_path.to_string_lossy().as_bytes());
 }
 
 #[cfg(target_os = "windows")]
@@ -125,7 +125,7 @@ fn read_windows_file_version(path: &Path) -> Option<String> {
 }
 
 #[cfg(target_os = "windows")]
-pub fn detect_version(install_path: &Path, app_id: Option<u32>) -> Option<String> {
+pub fn detect_version(install_path: &Path, steam_app_id: Option<u32>) -> Option<String> {
     const DLSS_DLL_NAMES: &[&str] = &[
         "nvngx_dlss.dll",
         "nvngx_dlssg.dll",
@@ -134,8 +134,8 @@ pub fn detect_version(install_path: &Path, app_id: Option<u32>) -> Option<String
         "sl.dlss_g.dll",
     ];
 
-    if let Some(app_id) = app_id {
-        if let Some(cached_path) = load_cached_path(app_id) {
+    if let Some(steam_app_id) = steam_app_id {
+        if let Some(cached_path) = load_cached_path(steam_app_id) {
             return Some(read_windows_file_version(&cached_path).unwrap_or_default());
         }
     }
@@ -177,8 +177,8 @@ pub fn detect_version(install_path: &Path, app_id: Option<u32>) -> Option<String
         return None;
     };
 
-    if let Some(app_id) = app_id {
-        store_cached_path(app_id, &dll_path);
+    if let Some(steam_app_id) = steam_app_id {
+        store_cached_path(steam_app_id, &dll_path);
     }
 
     let version = read_windows_file_version(&dll_path).unwrap_or_default();
@@ -186,6 +186,6 @@ pub fn detect_version(install_path: &Path, app_id: Option<u32>) -> Option<String
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn detect_version(_install_path: &Path, _app_id: Option<u32>) -> Option<String> {
+pub fn detect_version(_install_path: &Path, _steam_app_id: Option<u32>) -> Option<String> {
     None
 }

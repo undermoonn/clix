@@ -24,23 +24,23 @@ impl PlaytimeState {
         steam_paths: &[std::path::PathBuf],
         ctx: &egui::Context,
     ) {
-        let Some(app_id) = selected_game.and_then(|game| game.app_id) else {
+        let Some(steam_app_id) = selected_game.and_then(|game| game.steam_app_id) else {
             return;
         };
 
-        if self.loading.contains(&app_id) {
+        if self.loading.contains(&steam_app_id) {
             return;
         }
 
-        self.loading.insert(app_id);
+        self.loading.insert(steam_app_id);
         let pending = Arc::clone(&self.pending);
         let paths = steam_paths.to_vec();
         let ctx_clone = ctx.clone();
 
         std::thread::spawn(move || {
-            let playtime_minutes = steam::load_game_playtime_minutes(app_id, &paths);
+            let playtime_minutes = steam::load_game_playtime_minutes(steam_app_id, &paths);
             if let Ok(mut lock) = pending.lock() {
-                lock.push((app_id, playtime_minutes));
+                lock.push((steam_app_id, playtime_minutes));
             }
             ctx_clone.request_repaint();
         });
@@ -51,10 +51,13 @@ impl PlaytimeState {
             return;
         };
 
-        for (app_id, playtime_minutes) in lock.drain(..) {
-            self.loading.remove(&app_id);
+        for (steam_app_id, playtime_minutes) in lock.drain(..) {
+            self.loading.remove(&steam_app_id);
 
-            let Some(game) = games.iter_mut().find(|game| game.app_id == Some(app_id)) else {
+            let Some(game) = games
+                .iter_mut()
+                .find(|game| game.steam_app_id == Some(steam_app_id))
+            else {
                 continue;
             };
 

@@ -36,11 +36,11 @@ impl InstallSizeState {
         self.loading.insert(game_key.clone());
         self.checked.insert(game_key.clone());
         let pending = Arc::clone(&self.pending);
-        let game_path = game.path.clone();
+        let install_path = game.install_path.clone();
         let ctx_clone = ctx.clone();
 
         std::thread::spawn(move || {
-            let installed_size_bytes = steam::load_game_installed_size(&game_path);
+            let installed_size_bytes = steam::load_game_installed_size(&install_path);
             if let Ok(mut lock) = pending.lock() {
                 lock.push((game_key, installed_size_bytes));
             }

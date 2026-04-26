@@ -8,7 +8,7 @@ use crate::{animation, assets::cover};
 const ARTWORK_FADE_SECONDS: f32 = 1.0 / 3.0;
 
 struct PendingBackgroundAssets {
-    app_id: u32,
+    steam_app_id: u32,
     cover_bytes: Option<Vec<u8>>,
     logo_bytes: Option<Vec<u8>>,
 }
@@ -56,7 +56,7 @@ impl ArtworkState {
     pub fn tick_selection(
         &mut self,
         selected: usize,
-        selected_app_id: Option<u32>,
+        selected_steam_app_id: Option<u32>,
         steam_paths: &[PathBuf],
         ctx: &egui::Context,
     ) -> bool {
@@ -72,7 +72,7 @@ impl ArtworkState {
                 self.debounce_until = None;
                 if self.loaded_for != Some(selected) {
                     self.loaded_for = Some(selected);
-                    self.refresh(selected_app_id, steam_paths, ctx);
+                    self.refresh(selected_steam_app_id, steam_paths, ctx);
                     return true;
                 }
             } else {
@@ -83,14 +83,19 @@ impl ArtworkState {
         false
     }
 
-    fn refresh(&mut self, selected_app_id: Option<u32>, steam_paths: &[PathBuf], ctx: &egui::Context) {
+    fn refresh(
+        &mut self,
+        selected_steam_app_id: Option<u32>,
+        steam_paths: &[PathBuf],
+        ctx: &egui::Context,
+    ) {
         self.cover_prev = self.cover.take();
         self.logo_prev = self.logo.take();
         self.fade = 0.0;
         self.fade_started_at = None;
         self.transition_ready = false;
 
-        let Some(app_id) = selected_app_id else {
+        let Some(steam_app_id) = selected_steam_app_id else {
             self.transition_ready = true;
             if self.cover_prev.is_some() || self.logo_prev.is_some() {
                 self.fade_started_at = Some(Instant::now());
@@ -107,11 +112,11 @@ impl ArtworkState {
             *lock = None;
         }
         std::thread::spawn(move || {
-            let cover_bytes = cover::load_cover_bytes(&paths, app_id);
-            let logo_bytes = cover::load_logo_bytes(&paths, app_id);
+            let cover_bytes = cover::load_cover_bytes(&paths, steam_app_id);
+            let logo_bytes = cover::load_logo_bytes(&paths, steam_app_id);
             if let Ok(mut lock) = pending.lock() {
                 *lock = Some(PendingBackgroundAssets {
-                    app_id,
+                    steam_app_id,
                     cover_bytes,
                     logo_bytes,
                 });
@@ -120,26 +125,36 @@ impl ArtworkState {
         });
     }
 
-    pub fn drain_pending(&mut self, selected_app_id: Option<u32>, ctx: &egui::Context) {
+    pub fn drain_pending(&mut self, selected_steam_app_id: Option<u32>, ctx: &egui::Context) {
         let result = self.pending.lock().ok().and_then(|mut lock| lock.take());
         if let Some(assets) = result {
-            if Some(assets.app_id) == selected_app_id {
+            if Some(assets.steam_app_id) == selected_steam_app_id {
                 let mut loaded_any = false;
 
                 self.cover = assets.cover_bytes.and_then(|bytes| {
-                    cover::bytes_to_cover_texture(ctx, &bytes, format!("cover_{}", assets.app_id)).map(
+                    cover::bytes_to_cover_texture(
+                        ctx,
+                        &bytes,
+                        format!("cover_{}", assets.steam_app_id),
+                    )
+                    .map(
                         |texture| {
                             loaded_any = true;
-                            (assets.app_id, texture)
+                            (assets.steam_app_id, texture)
                         },
                     )
                 });
 
                 self.logo = assets.logo_bytes.and_then(|bytes| {
-                    cover::bytes_to_logo_texture(ctx, &bytes, format!("logo_{}", assets.app_id)).map(
+                    cover::bytes_to_logo_texture(
+                        ctx,
+                        &bytes,
+                        format!("logo_{}", assets.steam_app_id),
+                    )
+                    .map(
                         |texture| {
                             loaded_any = true;
-                            (assets.app_id, texture)
+                            (assets.steam_app_id, texture)
                         },
                     )
                 });

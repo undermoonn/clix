@@ -69,8 +69,8 @@ fn achievement_cache_dir(language: AppLanguage) -> PathBuf {
     dir
 }
 
-fn achievement_cache_path(app_id: u32, language: AppLanguage) -> PathBuf {
-    achievement_cache_dir(language).join(format!("{}.json", app_id))
+fn achievement_cache_path(steam_app_id: u32, language: AppLanguage) -> PathBuf {
+    achievement_cache_dir(language).join(format!("{}.json", steam_app_id))
 }
 
 fn achievement_diagnostics_log_path() -> PathBuf {
@@ -83,8 +83,8 @@ fn global_achievement_percentages_cache_dir() -> PathBuf {
     dir
 }
 
-fn global_achievement_percentages_cache_path(app_id: u32) -> PathBuf {
-    global_achievement_percentages_cache_dir().join(format!("{}.json", app_id))
+fn global_achievement_percentages_cache_path(steam_app_id: u32) -> PathBuf {
+    global_achievement_percentages_cache_dir().join(format!("{}.json", steam_app_id))
 }
 
 fn current_unix_secs() -> u64 {
@@ -100,20 +100,23 @@ fn global_achievement_percentages_cache_is_fresh(fetched_at_unix_secs: u64) -> b
 }
 
 fn load_cached_global_achievement_percentages(
-    app_id: u32,
+    steam_app_id: u32,
 ) -> Option<CachedGlobalAchievementPercentages> {
-    let bytes = std::fs::read(global_achievement_percentages_cache_path(app_id)).ok()?;
+    let bytes = std::fs::read(global_achievement_percentages_cache_path(steam_app_id)).ok()?;
     serde_json::from_slice::<CachedGlobalAchievementPercentages>(&bytes).ok()
 }
 
-fn store_cached_global_achievement_percentages(app_id: u32, percentages: &HashMap<String, f32>) {
+fn store_cached_global_achievement_percentages(
+    steam_app_id: u32,
+    percentages: &HashMap<String, f32>,
+) {
     let payload = CachedGlobalAchievementPercentages {
         fetched_at_unix_secs: current_unix_secs(),
         percentages: percentages.clone(),
     };
 
     if let Ok(bytes) = serde_json::to_vec(&payload) {
-        let _ = std::fs::write(global_achievement_percentages_cache_path(app_id), bytes);
+        let _ = std::fs::write(global_achievement_percentages_cache_path(steam_app_id), bytes);
     }
 }
 
@@ -132,7 +135,7 @@ pub fn take_updated_global_achievement_percentages() -> Vec<u32> {
     updated.drain(..).collect()
 }
 
-fn log_achievement_request_failure(app_id: u32, url: &str, detail: &str) {
+fn log_achievement_request_failure(steam_app_id: u32, url: &str, detail: &str) {
     let log_path = achievement_diagnostics_log_path();
     if let Some(parent) = log_path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -146,7 +149,7 @@ fn log_achievement_request_failure(app_id: u32, url: &str, detail: &str) {
         let _ = writeln!(
             file,
             "[big-screen-launcher] app {}: global achievement percentage request failed: url={}, {}",
-            app_id,
+            steam_app_id,
             url,
             detail
         );
@@ -158,10 +161,10 @@ fn should_retry_achievement_request(err: &ureq::Error) -> bool {
 }
 
 pub fn load_cached_achievement_summary(
-    app_id: u32,
+    steam_app_id: u32,
     language: AppLanguage,
 ) -> Option<AchievementSummary> {
-    let bytes = std::fs::read(achievement_cache_path(app_id, language)).ok()?;
+    let bytes = std::fs::read(achievement_cache_path(steam_app_id, language)).ok()?;
     let cached = serde_json::from_slice::<CachedAchievementSummary>(&bytes).ok()?;
     if cached.summary.items.is_empty() {
         return None;
@@ -170,10 +173,10 @@ pub fn load_cached_achievement_summary(
 }
 
 pub fn load_cached_achievement_overview(
-    app_id: u32,
+    steam_app_id: u32,
     language: AppLanguage,
 ) -> Option<AchievementSummary> {
-    load_cached_achievement_summary(app_id, language).map(|summary| AchievementSummary {
+    load_cached_achievement_summary(steam_app_id, language).map(|summary| AchievementSummary {
         unlocked: summary.unlocked,
         total: summary.total,
         items: Vec::new(),
@@ -181,7 +184,7 @@ pub fn load_cached_achievement_overview(
 }
 
 pub fn store_cached_achievement_summary(
-    app_id: u32,
+    steam_app_id: u32,
     summary: &AchievementSummary,
     language: AppLanguage,
 ) {
@@ -189,7 +192,7 @@ pub fn store_cached_achievement_summary(
         return;
     }
 
-    let cache_path = achievement_cache_path(app_id, language);
+    let cache_path = achievement_cache_path(steam_app_id, language);
     let payload = CachedAchievementSummary {
         summary: summary.clone(),
     };
@@ -198,12 +201,12 @@ pub fn store_cached_achievement_summary(
     }
 }
 
-fn fetch_global_achievement_percentages(app_id: u32) -> Option<HashMap<String, f32>> {
+fn fetch_global_achievement_percentages(steam_app_id: u32) -> Option<HashMap<String, f32>> {
     let request_timeout = Duration::from_secs(5);
     let max_attempts = 2;
     let url = format!(
         "https://api.steampowered.com/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/?gameid={}",
-        app_id
+        steam_app_id
     );
     let mut attempt = 1;
     let resp = loop {
@@ -216,7 +219,7 @@ fn fetch_global_achievement_percentages(app_id: u32) -> Option<HashMap<String, f
             Ok(resp) => break resp,
             Err(ureq::Error::StatusCode(status)) => {
                 log_achievement_request_failure(
-                    app_id,
+                    steam_app_id,
                     &url,
                     &format!("status={}, attempt={}/{}", status, attempt, max_attempts),
                 );
@@ -229,7 +232,7 @@ fn fetch_global_achievement_percentages(app_id: u32) -> Option<HashMap<String, f
                 }
 
                 log_achievement_request_failure(
-                    app_id,
+                    steam_app_id,
                     &url,
                     &format!("error={}, attempt={}/{}", err, attempt, max_attempts),
                 );
@@ -264,12 +267,12 @@ fn fetch_global_achievement_percentages(app_id: u32) -> Option<HashMap<String, f
     Some(percentages)
 }
 
-fn refresh_global_achievement_percentages_in_background(app_id: u32) {
+fn refresh_global_achievement_percentages_in_background(steam_app_id: u32) {
     let should_start = {
         let Ok(mut in_flight) = global_achievement_percentage_refreshes().lock() else {
             return;
         };
-        in_flight.insert(app_id)
+        in_flight.insert(steam_app_id)
     };
 
     if !should_start {
@@ -277,34 +280,34 @@ fn refresh_global_achievement_percentages_in_background(app_id: u32) {
     }
 
     std::thread::spawn(move || {
-        if let Some(percentages) = fetch_global_achievement_percentages(app_id) {
-            store_cached_global_achievement_percentages(app_id, &percentages);
+        if let Some(percentages) = fetch_global_achievement_percentages(steam_app_id) {
+            store_cached_global_achievement_percentages(steam_app_id, &percentages);
             if let Ok(mut updated) = global_achievement_percentage_updates().lock() {
-                updated.push(app_id);
+                updated.push(steam_app_id);
             }
         }
 
         if let Ok(mut in_flight) = global_achievement_percentage_refreshes().lock() {
-            in_flight.remove(&app_id);
+            in_flight.remove(&steam_app_id);
         }
     });
 }
 
-pub fn request_global_achievement_percentages_refresh(app_id: u32) {
-    if let Some(cached) = load_cached_global_achievement_percentages(app_id) {
+pub fn request_global_achievement_percentages_refresh(steam_app_id: u32) {
+    if let Some(cached) = load_cached_global_achievement_percentages(steam_app_id) {
         if global_achievement_percentages_cache_is_fresh(cached.fetched_at_unix_secs) {
             return;
         }
     }
 
-    refresh_global_achievement_percentages_in_background(app_id);
+    refresh_global_achievement_percentages_in_background(steam_app_id);
 }
 
 pub(super) fn load_global_achievement_percentages(
-    app_id: u32,
+    steam_app_id: u32,
     allow_network_refresh: bool,
 ) -> HashMap<String, f32> {
-    if let Some(cached) = load_cached_global_achievement_percentages(app_id) {
+    if let Some(cached) = load_cached_global_achievement_percentages(steam_app_id) {
         if global_achievement_percentages_cache_is_fresh(cached.fetched_at_unix_secs) {
             return cached.percentages;
         }
@@ -314,7 +317,7 @@ pub(super) fn load_global_achievement_percentages(
         }
 
         if !cached.percentages.is_empty() {
-            refresh_global_achievement_percentages_in_background(app_id);
+            refresh_global_achievement_percentages_in_background(steam_app_id);
             return cached.percentages;
         }
     }
@@ -323,11 +326,11 @@ pub(super) fn load_global_achievement_percentages(
         return HashMap::new();
     }
 
-    let Some(percentages) = fetch_global_achievement_percentages(app_id) else {
+    let Some(percentages) = fetch_global_achievement_percentages(steam_app_id) else {
         return HashMap::new();
     };
 
-    store_cached_global_achievement_percentages(app_id, &percentages);
+    store_cached_global_achievement_percentages(steam_app_id, &percentages);
     percentages
 }
 

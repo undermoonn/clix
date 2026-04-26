@@ -40,18 +40,24 @@ impl GameSource {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum GameIconKey {
-    AppId(u32),
+    SteamAppId(u32),
     InstallPath(PathBuf),
 }
 
 pub struct Game {
     pub source: GameSource,
     pub name: String,
-    pub path: PathBuf,
+    pub install_path: PathBuf,
     pub launch_target: Option<PathBuf>,
-    pub app_id: Option<u32>,
-    pub launch_id: Option<String>,
-    pub persistent_id: Option<String>,
+    // Steam app id used for launching, icon cache keys, and stable game identity.
+    // Populated from Steam library metadata or Windows uninstall registry entries.
+    pub steam_app_id: Option<u32>,
+    // Platform-specific launch entry id.
+    // Currently only Xbox uses this, populated from the Appx manifest Application Id.
+    pub platform_launch_id: Option<String>,
+    // Platform-specific stable id used when no Steam app id is available.
+    // Epic stores AppName here; Xbox stores the package family name.
+    pub platform_id: Option<String>,
     pub last_played: u64,
     pub playtime_minutes: u32,
     pub installed_size_bytes: Option<u64>,
@@ -60,9 +66,9 @@ pub struct Game {
 
 impl Game {
     pub fn icon_key(&self) -> GameIconKey {
-        self.app_id
-            .map(GameIconKey::AppId)
-            .unwrap_or_else(|| GameIconKey::InstallPath(self.path.clone()))
+        self.steam_app_id
+            .map(GameIconKey::SteamAppId)
+            .unwrap_or_else(|| GameIconKey::InstallPath(self.install_path.clone()))
     }
 
     pub fn persistent_key(&self) -> String {
@@ -72,12 +78,12 @@ impl Game {
             GameSource::Xbox => "xbox",
         };
 
-        if let Some(app_id) = self.app_id {
-            format!("{}:app:{}", source, app_id)
-        } else if let Some(persistent_id) = self.persistent_id.as_deref() {
-            format!("{}:id:{}", source, normalize_identifier_key(persistent_id))
+        if let Some(steam_app_id) = self.steam_app_id {
+            format!("{}:app:{}", source, steam_app_id)
+        } else if let Some(platform_id) = self.platform_id.as_deref() {
+            format!("{}:id:{}", source, normalize_identifier_key(platform_id))
         } else {
-            format!("{}:path:{}", source, normalize_path_key(&self.path))
+            format!("{}:path:{}", source, normalize_path_key(&self.install_path))
         }
     }
 }
