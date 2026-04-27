@@ -16,7 +16,7 @@ use winapi::um::processthreadsapi::GetCurrentThreadId;
 use winapi::um::winuser::{
     AttachThreadInput, BringWindowToTop, GetForegroundWindow, GetWindowLongW, SetActiveWindow,
     SetFocus, SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongW,
-    SetWindowPos, ShowWindow, GetWindowThreadProcessId, GWL_EXSTYLE, LWA_ALPHA,
+    SetWindowPos, ShowWindow, GetWindowThreadProcessId, IsIconic, GWL_EXSTYLE, LWA_ALPHA,
     SW_MINIMIZE, SW_RESTORE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_LAYERED,
 };
 
@@ -198,7 +198,9 @@ fn find_current_app_window() -> Option<HWND> {
 
 fn bring_window_to_foreground(hwnd: HWND) {
     unsafe {
-        ShowWindow(hwnd, SW_RESTORE);
+        if IsIconic(hwnd) != 0 {
+            ShowWindow(hwnd, SW_RESTORE);
+        }
 
         let current_thread_id = GetCurrentThreadId();
         let foreground_hwnd = GetForegroundWindow();

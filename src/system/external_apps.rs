@@ -47,8 +47,18 @@ mod imp {
     use std::os::windows::ffi::OsStrExt;
     use std::path::{Path, PathBuf};
 
+    use winapi::shared::minwindef::{BOOL, DWORD, LPARAM, TRUE};
+    use winapi::shared::windef::HWND;
+    use winapi::um::handleapi::CloseHandle;
+    use winapi::um::processthreadsapi::{GetCurrentThreadId, OpenProcess};
+    use winapi::um::psapi::GetModuleFileNameExW;
     use winapi::um::shellapi::ShellExecuteW;
-    use winapi::um::winuser::SW_SHOWNORMAL;
+    use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+    use winapi::um::winuser::{
+        AttachThreadInput, BringWindowToTop, EnumWindows, GetForegroundWindow,
+        GetWindowThreadProcessId, IsIconic, IsWindowVisible, SetActiveWindow, SetFocus,
+        SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOWNORMAL,
+    };
     use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
     use winreg::RegKey;
 
@@ -79,6 +89,10 @@ mod imp {
     }
 
     pub fn launch_path(path: &Path) -> bool {
+        if focus_running_instance(path) {
+            return true;
+        }
+
         unsafe {
             let operation = wide("open");
             let target = wide_os(path.as_os_str());
@@ -91,6 +105,121 @@ mod imp {
                 SW_SHOWNORMAL,
             ) as isize)
                 > 32
+        }
+    }
+
+    fn focus_running_instance(path: &Path) -> bool {
+        let target_norm = normalize_windows_path(path);
+
+        for (hwnd, pid) in collect_visible_windows() {
+            let Some(exe_path) = process_image_path(pid) else {
+                continue;
+            };
+
+            if normalize_windows_path(&exe_path) == target_norm {
+                bring_window_to_foreground(hwnd);
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn normalize_windows_path(path: &Path) -> String {
+        path.to_string_lossy().replace('/', "\\").to_ascii_lowercase()
+    }
+
+    fn process_image_path(pid: u32) -> Option<PathBuf> {
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid as DWORD);
+            if handle.is_null() {
+                return None;
+            }
+
+            let mut buf = vec![0_u16; 1024];
+            let len = GetModuleFileNameExW(
+                handle,
+                std::ptr::null_mut(),
+                buf.as_mut_ptr(),
+                buf.len() as DWORD,
+            );
+            CloseHandle(handle);
+
+            if len == 0 {
+                return None;
+            }
+
+            let path = String::from_utf16_lossy(&buf[..len as usize]);
+            Some(PathBuf::from(path))
+        }
+    }
+
+    fn collect_visible_windows() -> Vec<(HWND, u32)> {
+        struct WindowCollector {
+            windows: Vec<(HWND, u32)>,
+        }
+
+        unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+            let collector = &mut *(lparam as *mut WindowCollector);
+
+            if IsWindowVisible(hwnd) == 0 {
+                return TRUE;
+            }
+
+            let mut pid: DWORD = 0;
+            GetWindowThreadProcessId(hwnd, &mut pid);
+            if pid == 0 {
+                return TRUE;
+            }
+
+            collector.windows.push((hwnd, pid as u32));
+            TRUE
+        }
+
+        let mut collector = WindowCollector { windows: Vec::new() };
+        unsafe {
+            EnumWindows(
+                Some(enum_windows_proc),
+                &mut collector as *mut WindowCollector as LPARAM,
+            );
+        }
+
+        collector.windows
+    }
+
+    fn bring_window_to_foreground(hwnd: HWND) {
+        unsafe {
+            if IsIconic(hwnd) != 0 {
+                ShowWindow(hwnd, SW_RESTORE);
+            }
+
+            let current_thread_id = GetCurrentThreadId();
+            let foreground_hwnd = GetForegroundWindow();
+            let foreground_thread_id = if foreground_hwnd.is_null() {
+                0
+            } else {
+                GetWindowThreadProcessId(foreground_hwnd, std::ptr::null_mut())
+            };
+            let target_thread_id = GetWindowThreadProcessId(hwnd, std::ptr::null_mut());
+
+            let attach_foreground = foreground_thread_id != 0
+                && foreground_thread_id != current_thread_id
+                && AttachThreadInput(current_thread_id, foreground_thread_id, TRUE) != 0;
+            let attach_target = target_thread_id != 0
+                && target_thread_id != current_thread_id
+                && AttachThreadInput(current_thread_id, target_thread_id, TRUE) != 0;
+
+            BringWindowToTop(hwnd);
+            SetForegroundWindow(hwnd);
+            SetActiveWindow(hwnd);
+            SetFocus(hwnd);
+
+            if attach_target {
+                AttachThreadInput(current_thread_id, target_thread_id, 0);
+            }
+            if attach_foreground {
+                AttachThreadInput(current_thread_id, foreground_thread_id, 0);
+            }
         }
     }
 
