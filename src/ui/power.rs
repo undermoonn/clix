@@ -187,7 +187,7 @@ pub fn draw_power_menu(
         );
     }
 
-    let content_left_bias = 12.0;
+    let centered_content_left_bias = 12.0;
     for (index, option, option_rect, option_t) in &option_rects {
         let selectedness = if selected_index == *index { 1.0 } else { 0.0 };
         let text_color = egui::Color32::from_rgb(
@@ -217,8 +217,12 @@ pub fn draw_power_menu(
             egui::pos2(option_rect.min.x + option_inner_padding, option_rect.min.y),
             egui::pos2(option_rect.max.x - option_inner_padding, option_rect.max.y),
         );
-        let content_start_x = (content_rect.center().x - content_width * 0.5 - content_left_bias)
-            .max(content_rect.min.x);
+        let content_start_x = if language == AppLanguage::English {
+            content_rect.min.x
+        } else {
+            (content_rect.center().x - content_width * 0.5 - centered_content_left_bias)
+                .max(content_rect.min.x)
+        };
         let leading_icon_rect = egui::Rect::from_min_size(
             egui::pos2(
                 content_start_x,
