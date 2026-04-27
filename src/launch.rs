@@ -3,13 +3,17 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{Duration, Instant};
+#[cfg(not(target_os = "windows"))]
+use std::time::Duration;
+use std::time::Instant;
+
+use crate::game::{Game, GameSource};
 
 #[cfg(target_os = "windows")]
-use std::sync::atomic::{AtomicIsize, Ordering};
+mod windows;
 
-use crate::animation;
-use crate::game::{Game, GameSource};
+#[cfg(target_os = "windows")]
+use self::windows::WindowTransition;
 
 pub struct LaunchState {
     pub game_index: usize,
@@ -39,9 +43,6 @@ pub struct RunningGameState {
     target_path: Option<PathBuf>,
     #[cfg(target_os = "windows")]
     tracked_pids: HashSet<u32>,
-}
-
-impl RunningGameState {
 }
 
 pub enum LaunchTickResult {
@@ -81,39 +82,17 @@ pub fn begin_launch(
     let launch_steam_app_id = game.steam_app_id;
     let mut blocked_reason: Option<LaunchBlockedReason> = None;
     #[cfg(target_os = "windows")]
-    let baseline_pids = collect_process_ids();
-    #[cfg(target_os = "windows")]
-    let baseline_hwnds: HashSet<isize> = collect_visible_windows()
-        .into_iter()
-        .map(|(hwnd, _)| hwnd as isize)
-        .collect();
+    let (baseline_pids, baseline_hwnds, current_app_hwnd) = windows::capture_launch_baseline();
 
     let launched = match game.source {
         GameSource::Steam => {
             if let Some(steam_app_id) = game.steam_app_id {
                 #[cfg(target_os = "windows")]
                 {
-                    match steam_client_state() {
-                        SteamClientState::Ready => {
-                            if let Some(steam_exe) = resolve_steam_exe_path(steam_paths) {
-                                Command::new(steam_exe)
-                                    .args(["-applaunch", &steam_app_id.to_string()])
-                                    .spawn()
-                                    .is_ok()
-                            } else {
-                                let url = format!("steam://rungameid/{}", steam_app_id);
-                                Command::new("cmd")
-                                    .args(["/C", "start", "", &url])
-                                    .spawn()
-                                    .is_ok()
-                            }
-                        }
-                        SteamClientState::Loading => {
-                            blocked_reason = Some(LaunchBlockedReason::SteamClientLoading);
-                            false
-                        }
-                        SteamClientState::NotRunning => {
-                            blocked_reason = Some(LaunchBlockedReason::SteamClientNotRunning);
+                    match windows::launch_steam_game(steam_app_id, steam_paths) {
+                        Ok(()) => true,
+                        Err(reason) => {
+                            blocked_reason = reason;
                             false
                         }
                     }
@@ -165,7 +144,7 @@ pub fn begin_launch(
         #[cfg(target_os = "windows")]
         focus_pids: None,
         #[cfg(target_os = "windows")]
-        current_app_hwnd: find_current_app_window().map(|hwnd| hwnd as isize),
+        current_app_hwnd,
         #[cfg(target_os = "windows")]
         transition: None,
     })
@@ -200,19 +179,7 @@ fn launch_xbox_app(_family_name: &str, _application_id: &str) -> bool {
 pub fn begin_focus_transition(game_index: usize, state: &RunningGameState) -> Option<LaunchState> {
     #[cfg(target_os = "windows")]
     {
-        Some(LaunchState {
-            game_index,
-            game_name: state.game_name.clone(),
-            started_at: Instant::now(),
-            launch_steam_app_id: state.steam_app_id,
-            awaiting_launch_release: true,
-            baseline_pids: HashSet::new(),
-            baseline_hwnds: HashSet::new(),
-            target_path: state.target_path.clone(),
-            focus_pids: Some(state.tracked_pids.clone()),
-            current_app_hwnd: find_current_app_window().map(|hwnd| hwnd as isize),
-            transition: None,
-        })
+        Some(windows::begin_focus_transition(game_index, state))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -230,62 +197,7 @@ pub fn restart_launch_timeout(state: &mut LaunchState) {
 pub fn tick_launch_progress(state: &mut LaunchState, launch_held: bool) -> LaunchTickResult {
     #[cfg(target_os = "windows")]
     {
-        let now = Instant::now();
-
-        if state.awaiting_launch_release {
-            if launch_held {
-                return LaunchTickResult::Pending;
-            }
-            state.awaiting_launch_release = false;
-        }
-
-        if let Some(mut transition) = state.transition.take() {
-            if tick_window_transition(&mut transition) {
-                return LaunchTickResult::Ready(build_running_game_state(state, transition.target_pid));
-            }
-            state.transition = Some(transition);
-            return LaunchTickResult::Pending;
-        }
-
-        if let Some(focus_pids) = &state.focus_pids {
-            if let Some((hwnd, pid)) = find_best_window_for_pids(focus_pids, &state.game_name) {
-                maybe_align_window_top_left(hwnd, state.launch_steam_app_id);
-                bring_window_to_foreground(hwnd);
-                return LaunchTickResult::Ready(build_running_game_state(state, pid));
-            }
-
-            if now.duration_since(state.started_at) >= Duration::from_secs(3) {
-                return LaunchTickResult::TimedOut;
-            }
-
-            return LaunchTickResult::Pending;
-        }
-
-        if let Some((hwnd, pid)) = detect_launched_window(
-            &state.baseline_pids,
-            &state.baseline_hwnds,
-            state.target_path.as_deref(),
-            &state.game_name,
-        ) {
-            maybe_align_window_top_left(hwnd, state.launch_steam_app_id);
-            if let Some(current_hwnd) = state.current_app_hwnd.map(|hwnd| hwnd as HWND) {
-                if current_hwnd != hwnd {
-                    if let Some(transition) = start_window_transition(current_hwnd, hwnd, pid) {
-                        state.transition = Some(transition);
-                        return LaunchTickResult::Pending;
-                    }
-                }
-            }
-
-            bring_window_to_foreground(hwnd);
-            return LaunchTickResult::Ready(build_running_game_state(state, pid));
-        }
-
-        if now.duration_since(state.started_at) >= Duration::from_secs(25) {
-            LaunchTickResult::TimedOut
-        } else {
-            LaunchTickResult::Pending
-        }
+        windows::tick_launch_progress(state, launch_held)
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -302,13 +214,7 @@ pub fn tick_launch_progress(state: &mut LaunchState, launch_held: bool) -> Launc
 pub fn refresh_running_game(state: &mut RunningGameState) -> bool {
     #[cfg(target_os = "windows")]
     {
-        let matched = collect_matching_process_ids(
-            state.target_path.as_deref(),
-            &state.game_name,
-            &state.tracked_pids,
-        );
-        state.tracked_pids = matched;
-        !state.tracked_pids.is_empty()
+        windows::refresh_running_game(state)
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -321,20 +227,7 @@ pub fn refresh_running_game(state: &mut RunningGameState) -> bool {
 pub fn close_running_game(state: &mut RunningGameState) -> bool {
     #[cfg(target_os = "windows")]
     {
-        let matched = collect_matching_process_ids(
-            state.target_path.as_deref(),
-            &state.game_name,
-            &state.tracked_pids,
-        );
-        if matched.is_empty() {
-            state.tracked_pids.clear();
-            return false;
-        }
-
-        request_close_for_pids(&matched);
-        terminate_pids(&matched);
-        state.tracked_pids = matched;
-        true
+        windows::close_running_game(state)
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -344,106 +237,17 @@ pub fn close_running_game(state: &mut RunningGameState) -> bool {
     }
 }
 
-#[cfg(target_os = "windows")]
-use winapi::shared::minwindef::{BOOL, DWORD, LPARAM, TRUE};
-#[cfg(target_os = "windows")]
-use winapi::shared::windef::HWND;
-#[cfg(target_os = "windows")]
-use winapi::um::handleapi::CloseHandle;
-#[cfg(target_os = "windows")]
-use winapi::um::processthreadsapi::{
-    GetCurrentProcessId, GetCurrentThreadId, OpenProcess, TerminateProcess,
-};
-#[cfg(target_os = "windows")]
-use winapi::um::psapi::{EnumProcesses, GetModuleFileNameExW};
-#[cfg(target_os = "windows")]
-use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE, PROCESS_VM_READ};
-#[cfg(target_os = "windows")]
-use winapi::um::winuser::{
-    AttachThreadInput, BringWindowToTop,
-    EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
-    GetForegroundWindow, GetWindowLongW, PostMessageW, SetActiveWindow, SetFocus,
-    SetForegroundWindow,
-    SetLayeredWindowAttributes,
-    SetWindowLongW, SetWindowPos, ShowWindow, GWL_EXSTYLE, LWA_ALPHA, SWP_NOSIZE,
-    SWP_NOZORDER, SW_MINIMIZE, SW_RESTORE, WM_CLOSE, WS_EX_LAYERED,
-};
-
-#[cfg(target_os = "windows")]
-const ALIGN_TOP_LEFT_STEAM_APP_ID: u32 = 601150;
-#[cfg(target_os = "windows")]
-const WINDOW_TRANSITION_MS: u64 = 100;
-#[cfg(target_os = "windows")]
-static CURRENT_APP_HWND: AtomicIsize = AtomicIsize::new(0);
-#[cfg(target_os = "windows")]
-static STEAM_MAIN_HWND: AtomicIsize = AtomicIsize::new(0);
-
-#[cfg(target_os = "windows")]
-struct WindowTransition {
-    target_hwnd: HWND,
-    target_pid: u32,
-    started_at: Instant,
-    target_ex_style: i32,
-}
-
-#[cfg(target_os = "windows")]
-fn normalize_windows_path(path: &Path) -> String {
-    path.to_string_lossy().replace('/', "\\").to_ascii_lowercase()
-}
-
-#[cfg(target_os = "windows")]
-fn resolve_steam_exe_path(steam_paths: &[PathBuf]) -> Option<PathBuf> {
-    steam_paths
-        .iter()
-        .map(|path| path.join("steam.exe"))
-        .find(|path| path.exists())
-}
-
 pub fn start_steam_client(steam_paths: &[PathBuf]) -> bool {
     #[cfg(target_os = "windows")]
     {
-        if let Some(steam_exe) = resolve_steam_exe_path(steam_paths) {
-            return Command::new(steam_exe)
-                .arg("-silent")
-                .spawn()
-                .is_ok();
-        }
+        windows::start_steam_client(steam_paths)
     }
 
-    let _ = steam_paths;
-    false
-}
-
-#[cfg(target_os = "windows")]
-fn is_steam_process_path(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.eq_ignore_ascii_case("steam.exe"))
-}
-
-#[cfg(target_os = "windows")]
-fn is_steam_process(pid: u32) -> bool {
-    process_image_path(pid)
-        .as_deref()
-        .is_some_and(is_steam_process_path)
-}
-
-#[cfg(target_os = "windows")]
-fn has_steam_main_window() -> bool {
-    let cached_hwnd = STEAM_MAIN_HWND.load(Ordering::Acquire);
-    if cached_hwnd != 0 && window_title(cached_hwnd as HWND) == "Steam" {
-        return true;
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = steam_paths;
+        false
     }
-
-    for (hwnd, _) in collect_titled_windows() {
-        if window_title(hwnd) == "Steam" {
-            STEAM_MAIN_HWND.store(hwnd as isize, Ordering::Release);
-            return true;
-        }
-    }
-
-    STEAM_MAIN_HWND.store(0, Ordering::Release);
-    false
 }
 
 fn append_steam_client_state_log(state: SteamClientState, elapsed_ms: u128) {
@@ -465,18 +269,7 @@ fn append_steam_client_state_log(state: SteamClientState, elapsed_ms: u128) {
 pub fn steam_client_state() -> SteamClientState {
     #[cfg(target_os = "windows")]
     {
-        let started_at = Instant::now();
-        let state = if has_steam_main_window() {
-            SteamClientState::Ready
-        } else if collect_process_ids().into_iter().any(is_steam_process) {
-            SteamClientState::Loading
-        } else {
-            SteamClientState::NotRunning
-        };
-
-        append_steam_client_state_log(state, started_at.elapsed().as_millis());
-
-        state
+        windows::steam_client_state()
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -488,303 +281,21 @@ pub fn steam_client_state() -> SteamClientState {
     }
 }
 
-#[cfg(target_os = "windows")]
-fn process_image_path(pid: u32) -> Option<PathBuf> {
-    unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid as DWORD);
-        if handle.is_null() {
-            return None;
-        }
-        let mut buf = vec![0_u16; 1024];
-        let len = GetModuleFileNameExW(
-            handle,
-            std::ptr::null_mut(),
-            buf.as_mut_ptr(),
-            buf.len() as DWORD,
-        );
-        CloseHandle(handle);
-
-        if len == 0 {
-            return None;
-        }
-
-        let path = String::from_utf16_lossy(&buf[..len as usize]);
-        Some(PathBuf::from(path))
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn collect_process_ids() -> HashSet<u32> {
-    unsafe {
-        let mut pids = vec![0_u32; 8192];
-        let mut needed_bytes: DWORD = 0;
-
-        if EnumProcesses(
-            pids.as_mut_ptr(),
-            (pids.len() * std::mem::size_of::<u32>()) as DWORD,
-            &mut needed_bytes,
-        ) == 0
-        {
-            return HashSet::new();
-        }
-
-        let count = (needed_bytes as usize) / std::mem::size_of::<u32>();
-        pids.into_iter()
-            .take(count)
-            .filter(|pid| *pid != 0)
-            .collect::<HashSet<u32>>()
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn collect_visible_windows() -> Vec<(HWND, u32)> {
-    struct WindowCollector {
-        windows: Vec<(HWND, u32)>,
-    }
-
-    unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        if IsWindowVisible(hwnd) == 0 {
-            return TRUE;
-        }
-        if GetWindowTextLengthW(hwnd) <= 0 {
-            return TRUE;
-        }
-
-        let mut pid: DWORD = 0;
-        GetWindowThreadProcessId(hwnd, &mut pid);
-        if pid == 0 {
-            return TRUE;
-        }
-
-        let collector = &mut *(lparam as *mut WindowCollector);
-        collector.windows.push((hwnd, pid as u32));
-        TRUE
-    }
-
-    let mut collector = WindowCollector { windows: Vec::new() };
-    unsafe {
-        EnumWindows(
-            Some(enum_windows_proc),
-            &mut collector as *mut WindowCollector as LPARAM,
-        );
-    }
-    collector.windows
-}
-
-#[cfg(target_os = "windows")]
-fn collect_titled_windows() -> Vec<(HWND, u32)> {
-    struct WindowCollector {
-        windows: Vec<(HWND, u32)>,
-    }
-
-    unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        if GetWindowTextLengthW(hwnd) <= 0 {
-            return TRUE;
-        }
-
-        let mut pid: DWORD = 0;
-        GetWindowThreadProcessId(hwnd, &mut pid);
-        if pid == 0 {
-            return TRUE;
-        }
-
-        let collector = &mut *(lparam as *mut WindowCollector);
-        collector.windows.push((hwnd, pid as u32));
-        TRUE
-    }
-
-    let mut collector = WindowCollector { windows: Vec::new() };
-    unsafe {
-        EnumWindows(
-            Some(enum_windows_proc),
-            &mut collector as *mut WindowCollector as LPARAM,
-        );
-    }
-    collector.windows
-}
-
-#[cfg(target_os = "windows")]
 pub fn set_current_app_hwnd(hwnd: isize) {
-    CURRENT_APP_HWND.store(hwnd, Ordering::Release);
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn set_current_app_hwnd(_hwnd: isize) {}
-
-#[cfg(target_os = "windows")]
-fn cached_current_app_window() -> Option<HWND> {
-    let hwnd = CURRENT_APP_HWND.load(Ordering::Acquire);
-    (hwnd != 0).then_some(hwnd as HWND)
-}
-
-#[cfg(target_os = "windows")]
-fn window_title(hwnd: HWND) -> String {
-    unsafe {
-        let len = GetWindowTextLengthW(hwnd);
-        if len <= 0 {
-            return String::new();
-        }
-        let mut buf = vec![0_u16; (len as usize) + 1];
-        let copied = GetWindowTextW(hwnd, buf.as_mut_ptr(), len + 1);
-        if copied <= 0 {
-            return String::new();
-        }
-        String::from_utf16_lossy(&buf[..copied as usize])
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn bring_window_to_foreground(hwnd: HWND) {
-    unsafe {
-        ShowWindow(hwnd, SW_RESTORE);
-
-        let current_thread_id = GetCurrentThreadId();
-        let foreground_hwnd = GetForegroundWindow();
-        let foreground_thread_id = if foreground_hwnd.is_null() {
-            0
-        } else {
-            GetWindowThreadProcessId(foreground_hwnd, std::ptr::null_mut())
-        };
-        let target_thread_id = GetWindowThreadProcessId(hwnd, std::ptr::null_mut());
-
-        let attach_foreground = foreground_thread_id != 0
-            && foreground_thread_id != current_thread_id
-            && AttachThreadInput(current_thread_id, foreground_thread_id, TRUE) != 0;
-        let attach_target = target_thread_id != 0
-            && target_thread_id != current_thread_id
-            && AttachThreadInput(current_thread_id, target_thread_id, TRUE) != 0;
-
-        BringWindowToTop(hwnd);
-        SetForegroundWindow(hwnd);
-        SetActiveWindow(hwnd);
-        SetFocus(hwnd);
-
-        if attach_target {
-            AttachThreadInput(current_thread_id, target_thread_id, 0);
-        }
-        if attach_foreground {
-            AttachThreadInput(current_thread_id, foreground_thread_id, 0);
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn build_running_game_state(state: &LaunchState, fallback_pid: u32) -> RunningGameState {
-    let tracked_pids = if let Some(tracked_pids) = &state.focus_pids {
-        let matched = collect_matching_process_ids(
-            state.target_path.as_deref(),
-            &state.game_name,
-            tracked_pids,
-        );
-        if matched.is_empty() {
-            tracked_pids.clone()
-        } else {
-            matched
-        }
-    } else {
-        std::iter::once(fallback_pid).collect()
-    };
-
-    RunningGameState {
-        game_index: state.game_index,
-        steam_app_id: state.launch_steam_app_id,
-        game_name: state.game_name.clone(),
-        target_path: state.target_path.clone(),
-        tracked_pids,
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn enable_layered_alpha(hwnd: HWND) -> Option<i32> {
-    unsafe {
-        let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-        SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_LAYERED as i32);
-        let updated_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-        if (updated_style & WS_EX_LAYERED as i32) == 0 {
-            None
-        } else {
-            Some(ex_style)
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn restore_window_ex_style(hwnd: HWND, ex_style: i32) {
-    unsafe {
-        SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style);
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn set_window_alpha(hwnd: HWND, alpha: u8) -> bool {
-    unsafe { SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA) != 0 }
-}
-
-#[cfg(target_os = "windows")]
-fn start_window_transition(_source_hwnd: HWND, target_hwnd: HWND, target_pid: u32) -> Option<WindowTransition> {
-    let target_ex_style = enable_layered_alpha(target_hwnd)?;
-
-    if !set_window_alpha(target_hwnd, 0) {
-        restore_window_ex_style(target_hwnd, target_ex_style);
-        return None;
+    #[cfg(target_os = "windows")]
+    {
+        windows::set_current_app_hwnd(hwnd);
     }
 
-    bring_window_to_foreground(target_hwnd);
-
-    Some(WindowTransition {
-        target_hwnd,
-        target_pid,
-        started_at: Instant::now(),
-        target_ex_style,
-    })
-}
-
-#[cfg(target_os = "windows")]
-fn finish_window_transition(transition: &WindowTransition) {
-    let _ = set_window_alpha(transition.target_hwnd, 255);
-    restore_window_ex_style(transition.target_hwnd, transition.target_ex_style);
-    bring_window_to_foreground(transition.target_hwnd);
-}
-
-#[cfg(target_os = "windows")]
-fn tick_window_transition(transition: &mut WindowTransition) -> bool {
-    let elapsed = Instant::now().duration_since(transition.started_at);
-    let progress = (animation::scale_seconds(elapsed.as_secs_f32())
-        / (WINDOW_TRANSITION_MS as f32 / 1000.0))
-        .clamp(0.0, 1.0);
-    let target_alpha = (progress * 255.0).round().clamp(0.0, 255.0) as u8;
-
-    if !set_window_alpha(transition.target_hwnd, target_alpha) {
-        finish_window_transition(transition);
-        return true;
-    }
-
-    if progress >= 1.0 {
-        finish_window_transition(transition);
-        true
-    } else {
-        false
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn maybe_align_window_top_left(hwnd: HWND, steam_app_id: Option<u32>) {
-    if steam_app_id != Some(ALIGN_TOP_LEFT_STEAM_APP_ID) {
-        return;
-    }
-
-    unsafe {
-        SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = hwnd;
     }
 }
 
 #[cfg(target_os = "windows")]
 pub fn current_app_window_is_background() -> bool {
-    if let Some(hwnd) = find_current_app_window() {
-        unsafe { GetForegroundWindow() != hwnd }
-    } else {
-        false
-    }
+    windows::current_app_window_is_background()
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -794,13 +305,7 @@ pub fn current_app_window_is_background() -> bool {
 
 #[cfg(target_os = "windows")]
 pub fn focus_current_app_window() -> bool {
-    if let Some(hwnd) = find_current_app_window() {
-        let was_background = unsafe { GetForegroundWindow() != hwnd };
-        bring_window_to_foreground(hwnd);
-        was_background
-    } else {
-        false
-    }
+    windows::focus_current_app_window()
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -810,156 +315,18 @@ pub fn focus_current_app_window() -> bool {
 
 #[cfg(target_os = "windows")]
 pub fn send_current_app_to_background() -> bool {
-    if let Some(hwnd) = find_current_app_window() {
-        unsafe {
-            ShowWindow(hwnd, SW_MINIMIZE);
-        }
-        true
-    } else {
-        false
-    }
+    windows::send_current_app_to_background()
 }
 
 #[cfg(not(target_os = "windows"))]
 pub fn send_current_app_to_background() -> bool {
     false
-}
-
-#[cfg(target_os = "windows")]
-fn find_current_app_window() -> Option<HWND> {
-    cached_current_app_window()
-}
-
-#[cfg(target_os = "windows")]
-fn detect_launched_window(
-    baseline_pids: &HashSet<u32>,
-    baseline_hwnds: &HashSet<isize>,
-    target_path: Option<&Path>,
-    game_name: &str,
-) -> Option<(HWND, u32)> {
-    let target_norm = target_path.map(normalize_windows_path);
-    let game_name_lower = game_name.to_ascii_lowercase();
-
-    for (hwnd, pid) in collect_visible_windows() {
-        let hwnd_key = hwnd as isize;
-        let is_new_pid = !baseline_pids.contains(&pid);
-        let is_new_window = !baseline_hwnds.contains(&hwnd_key);
-
-        if !is_new_pid && !is_new_window {
-            continue;
-        }
-
-        let title = window_title(hwnd).to_ascii_lowercase();
-        let title_matches = !game_name_lower.is_empty() && title.contains(&game_name_lower);
-
-        if let Some(target_norm) = &target_norm {
-            if let Some(exe_path) = process_image_path(pid) {
-                let exe_norm = normalize_windows_path(&exe_path);
-                if exe_norm.starts_with(target_norm) {
-                    return Some((hwnd, pid));
-                }
-            }
-            if title_matches {
-                return Some((hwnd, pid));
-            }
-            if is_new_pid && !title.is_empty() {
-                return Some((hwnd, pid));
-            }
-        } else {
-            return Some((hwnd, pid));
-        }
-
-        if is_new_window && title_matches {
-            return Some((hwnd, pid));
-        }
-    }
-
-    None
-}
-
-#[cfg(target_os = "windows")]
-fn collect_matching_process_ids(
-    target_path: Option<&Path>,
-    game_name: &str,
-    tracked_pids: &HashSet<u32>,
-) -> HashSet<u32> {
-    let current_pids = collect_process_ids();
-    let visible_windows = collect_visible_windows();
-    let current_pid = unsafe { GetCurrentProcessId() } as u32;
-    let target_norm = target_path.map(normalize_windows_path);
-    let game_name_lower = game_name.to_ascii_lowercase();
-    let mut matched = HashSet::new();
-
-    for pid in current_pids {
-        if pid == 0 || pid == current_pid {
-            continue;
-        }
-
-        if tracked_pids.contains(&pid) {
-            matched.insert(pid);
-            continue;
-        }
-
-        if let Some(target_norm) = &target_norm {
-            if let Some(exe_path) = process_image_path(pid) {
-                let exe_norm = normalize_windows_path(&exe_path);
-                if exe_norm.starts_with(target_norm) {
-                    matched.insert(pid);
-                    continue;
-                }
-            }
-        }
-
-        if !game_name_lower.is_empty()
-            && visible_windows.iter().any(|(hwnd, window_pid)| {
-                *window_pid == pid
-                    && window_title(*hwnd)
-                        .to_ascii_lowercase()
-                        .contains(&game_name_lower)
-            })
-        {
-            matched.insert(pid);
-        }
-    }
-
-    matched
-}
-
-#[cfg(target_os = "windows")]
-fn request_close_for_pids(pids: &HashSet<u32>) {
-    for (hwnd, pid) in collect_visible_windows() {
-        if pids.contains(&pid) {
-            unsafe {
-                PostMessageW(hwnd, WM_CLOSE, 0, 0);
-            }
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn terminate_pids(pids: &HashSet<u32>) {
-    for pid in pids {
-        unsafe {
-            let handle = OpenProcess(PROCESS_TERMINATE, 0, *pid as DWORD);
-            if handle.is_null() {
-                continue;
-            }
-
-            let _ = TerminateProcess(handle, 1);
-            CloseHandle(handle);
-        }
-    }
 }
 
 pub fn focus_running_game(state: &RunningGameState) -> bool {
     #[cfg(target_os = "windows")]
     {
-        let matched = collect_matching_process_ids(
-            state.target_path.as_deref(),
-            &state.game_name,
-            &state.tracked_pids,
-        );
-        focus_best_window_for_pids(&matched, &state.game_name)
+        windows::focus_running_game(state)
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -969,40 +336,3 @@ pub fn focus_running_game(state: &RunningGameState) -> bool {
     }
 }
 
-#[cfg(target_os = "windows")]
-fn focus_best_window_for_pids(pids: &HashSet<u32>, game_name: &str) -> bool {
-    if let Some((hwnd, _)) = find_best_window_for_pids(pids, game_name) {
-        bring_window_to_foreground(hwnd);
-        return true;
-    }
-
-    false
-}
-
-#[cfg(target_os = "windows")]
-fn find_best_window_for_pids(pids: &HashSet<u32>, game_name: &str) -> Option<(HWND, u32)> {
-    if pids.is_empty() {
-        return None;
-    }
-
-    let game_name_lower = game_name.to_ascii_lowercase();
-
-    for (hwnd, pid) in collect_visible_windows() {
-        if pids.contains(&pid)
-            && !game_name_lower.is_empty()
-            && window_title(hwnd)
-                .to_ascii_lowercase()
-                .contains(&game_name_lower)
-        {
-            return Some((hwnd, pid));
-        }
-    }
-
-    for (hwnd, pid) in collect_visible_windows() {
-        if pids.contains(&pid) {
-            return Some((hwnd, pid));
-        }
-    }
-
-    None
-}
