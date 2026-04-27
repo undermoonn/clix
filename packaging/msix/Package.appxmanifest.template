@@ -13,7 +13,7 @@
   <Properties>
     <DisplayName>__DISPLAY_NAME__</DisplayName>
     <PublisherDisplayName>__PUBLISHER_DISPLAY_NAME__</PublisherDisplayName>
-    <Description>Controller-first game launcher for Windows.</Description>
+    <Description>Requires Microsoft Visual C++ Redistributable. Controller-first game launcher for Windows.</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
@@ -36,7 +36,7 @@
         EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
           DisplayName="__DISPLAY_NAME__"
-          Description="Controller-first game launcher for Windows."
+          Description="Requires Microsoft Visual C++ Redistributable. Controller-first game launcher for Windows."
           BackgroundColor="#121212"
           Square150x150Logo="Assets\Square150x150Logo.png"
           Square44x44Logo="Assets\Square44x44Logo.png">

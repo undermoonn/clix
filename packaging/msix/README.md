@@ -32,3 +32,4 @@ Notes:
 - Use `-SkipBuild` if you already built `target/release/big-screen-launcher.exe`.
 - If `makeappx.exe` is not on the machine, omit `-Pack` to generate only the package layout.
 - For local sideload testing, you still need a signing step after `.msix` creation.
+- If you submit to Microsoft Store, keep any required non-integrated software disclosure in the first two lines of the Store description. For the current package, disclose the Microsoft Visual C++ Redistributable dependency there as well.
