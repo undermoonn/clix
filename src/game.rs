@@ -78,14 +78,14 @@ impl Game {
             GameSource::Xbox => "xbox",
         };
 
-        if let Some(steam_app_id) = self.steam_app_id {
-            format!("{}:app:{}", source, steam_app_id)
-        } else if let Some(platform_id) = match self.source {
+        if let Some(v) = self.steam_app_id {
+            format!("{}:app:{}", source, v)
+        } else if let Some(v) = match self.source {
             GameSource::Steam => None,
             GameSource::Epic => self.epic_app_name.as_deref(),
             GameSource::Xbox => self.xbox_package_family_name.as_deref(),
         } {
-            format!("{}:id:{}", source, normalize_identifier_key(platform_id))
+            format!("{}:id:{}", source, normalize_identifier_key(v))
         } else {
             format!("{}:path:{}", source, normalize_path_key(&self.install_path))
         }
