@@ -316,12 +316,6 @@ pub fn draw_game_list(
             Some(GameStatusDot::Running)
         } else if launching_index == Some(i) {
             Some(GameStatusDot::Launching)
-        } else if !matches!(g.source, GameSource::Steam)
-            && launch_feedback
-                .map(|(launch_index, _)| launch_index == i)
-                .unwrap_or(false)
-        {
-            Some(GameStatusDot::Running)
         } else {
             None
         };

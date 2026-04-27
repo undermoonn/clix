@@ -1,6 +1,12 @@
 use std::collections::HashSet;
+#[cfg(target_os = "windows")]
+use std::ffi::OsStr;
 use std::fs::OpenOptions;
 use std::io::Write;
+#[cfg(target_os = "windows")]
+use std::iter;
+#[cfg(target_os = "windows")]
+use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(not(target_os = "windows"))]
@@ -14,6 +20,10 @@ mod windows;
 
 #[cfg(target_os = "windows")]
 use self::windows::WindowTransition;
+#[cfg(target_os = "windows")]
+use winapi::um::shellapi::ShellExecuteW;
+#[cfg(target_os = "windows")]
+use winapi::um::winuser::SW_SHOWNORMAL;
 
 pub struct LaunchState {
     pub game_index: usize,
@@ -111,10 +121,7 @@ pub fn begin_launch(
                     .is_some()
             }
         }
-        GameSource::Epic => launch_target
-            .as_ref()
-            .and_then(|path| spawn_direct_game(path, &game.install_path).ok())
-            .is_some(),
+        GameSource::Epic => launch_epic_game(&game.install_path),
         GameSource::Xbox => xbox_package_family_name
             .as_deref()
             .zip(appx_id.as_deref())
@@ -160,6 +167,69 @@ fn spawn_direct_game(path: &Path, install_dir: &Path) -> std::io::Result<std::pr
     }
 
     command.spawn()
+}
+
+#[cfg(target_os = "windows")]
+fn launch_epic_game(install_dir: &Path) -> bool {
+    if install_dir.is_dir() {
+        let uri = format!(
+            "com.epicgames.launcher://apps/{}?action=launch&silent=true",
+            percent_encode_uri_path(install_dir)
+        );
+
+        return shell_open(&uri);
+    }
+
+    false
+}
+
+#[cfg(not(target_os = "windows"))]
+fn launch_epic_game(_install_dir: &Path) -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn shell_open(target: &str) -> bool {
+    unsafe {
+        let operation = wide("open");
+        let target = wide(target);
+        (ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            target.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        ) as isize)
+            > 32
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn percent_encode_uri_path(path: &Path) -> String {
+    let value = path.to_string_lossy();
+    let mut encoded = String::with_capacity(value.len());
+
+    for byte in value.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(*byte as char);
+            }
+            _ => {
+                let _ = std::fmt::Write::write_fmt(&mut encoded, format_args!("%{:02X}", byte));
+            }
+        }
+    }
+
+    encoded
+}
+
+#[cfg(target_os = "windows")]
+fn wide(value: &str) -> Vec<u16> {
+    OsStr::new(value)
+        .encode_wide()
+        .chain(iter::once(0))
+        .collect()
 }
 
 #[cfg(target_os = "windows")]
