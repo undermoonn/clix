@@ -249,7 +249,8 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                             launch_target: None,
                             steam_app_id: Some(id),
                             appx_id: None,
-                            platform_id: None,
+                            epic_app_name: None,
+                            xbox_package_family_name: None,
                             last_played: last_played_map.get(&id).copied().unwrap_or(0),
                             playtime_minutes: playtime_map.get(&id).copied().unwrap_or(0),
                             installed_size_bytes: None,
@@ -305,7 +306,8 @@ pub fn scan_games_with_paths(steam_paths: &[PathBuf]) -> Vec<Game> {
                                 launch_target: None,
                                 steam_app_id: Some(steam_app_id),
                                 appx_id: None,
-                                platform_id: None,
+                                epic_app_name: None,
+                                xbox_package_family_name: None,
                                 last_played: last_played_map
                                     .get(&steam_app_id)
                                     .copied()

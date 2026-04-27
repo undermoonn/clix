@@ -54,9 +54,10 @@ pub struct Game {
     pub steam_app_id: Option<u32>,
     // Xbox Appx manifest Application Id used for shell activation.
     pub appx_id: Option<String>,
-    // Platform-specific stable id used when no Steam app id is available.
-    // Epic stores AppName here; Xbox stores the package family name.
-    pub platform_id: Option<String>,
+    // Epic AppName used as the stable identity when no Steam app id is available.
+    pub epic_app_name: Option<String>,
+    // Xbox package family name used as the stable identity when no Steam app id is available.
+    pub xbox_package_family_name: Option<String>,
     pub last_played: u64,
     pub playtime_minutes: u32,
     pub installed_size_bytes: Option<u64>,
@@ -79,7 +80,11 @@ impl Game {
 
         if let Some(steam_app_id) = self.steam_app_id {
             format!("{}:app:{}", source, steam_app_id)
-        } else if let Some(platform_id) = self.platform_id.as_deref() {
+        } else if let Some(platform_id) = match self.source {
+            GameSource::Steam => None,
+            GameSource::Epic => self.epic_app_name.as_deref(),
+            GameSource::Xbox => self.xbox_package_family_name.as_deref(),
+        } {
             format!("{}:id:{}", source, normalize_identifier_key(platform_id))
         } else {
             format!("{}:path:{}", source, normalize_path_key(&self.install_path))

@@ -75,8 +75,8 @@ pub fn begin_launch(
 ) -> LaunchAttemptResult {
     let target_path = game.install_path.clone();
     let launch_target = game.launch_target.clone();
-    let platform_launch_id = game.appx_id.clone();
-    let platform_id = game.platform_id.clone();
+    let appx_id = game.appx_id.clone();
+    let xbox_package_family_name = game.xbox_package_family_name.clone();
     let game_name = game.name.clone();
     let launch_steam_app_id = game.steam_app_id;
     let mut blocked_reason: Option<LaunchBlockedReason> = None;
@@ -136,9 +136,9 @@ pub fn begin_launch(
             .as_ref()
             .and_then(|path| spawn_direct_game(path, &game.install_path).ok())
             .is_some(),
-        GameSource::Xbox => platform_id
+        GameSource::Xbox => xbox_package_family_name
             .as_deref()
-            .zip(platform_launch_id.as_deref())
+            .zip(appx_id.as_deref())
             .is_some_and(|(family_name, application_id)| {
                 launch_xbox_app(family_name, application_id)
             }),
