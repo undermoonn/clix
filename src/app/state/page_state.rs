@@ -2,9 +2,9 @@ use std::time::Instant;
 
 use eframe::egui;
 
+use super::power::{PowerMenuLayout, PowerMenuOption};
 use crate::animation::ExponentialAnimation;
 use crate::input::ControllerAction;
-use crate::power_menu::{PowerMenuLayout, PowerMenuOption};
 use crate::system::external_apps::ExternalAppKind;
 
 const ANIMATION_EPSILON: f32 = 0.001;
@@ -1028,8 +1028,8 @@ mod tests {
     };
     use crate::animation::scale_seconds;
     use crate::input::ControllerAction;
-    use crate::power_menu::PowerMenuLayout;
     use crate::system::external_apps::ExternalAppKind;
+    use super::super::power::PowerMenuLayout;
 
     fn open_settings_page(page: &mut PageState) {
         let _ = page.handle_action(&ControllerAction::Settings, 3, true, 4);

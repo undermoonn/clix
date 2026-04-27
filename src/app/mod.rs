@@ -8,6 +8,8 @@ mod playtime;
 mod state;
 mod steam_update;
 
+pub(crate) use self::state::{PowerMenuLayout, PowerMenuOption};
+
 use eframe::egui;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -20,10 +22,10 @@ use crate::game_last_played;
 use crate::i18n::{AppLanguage, AppLanguageSetting};
 use crate::input::{self, InputController};
 use crate::launch::{self, LaunchState};
-use crate::power_menu;
 use crate::system::{
     display_mode::{self, DisplayModeSetting, DisplayScaleOptions, ResolutionOptions},
     external_apps::{self, ExternalApp},
+    power,
     startup,
 };
 use crate::steam;
@@ -1052,7 +1054,7 @@ impl LauncherApp {
         self.refresh_screen_settings_options();
         self.launch_on_startup_enabled = startup::is_enabled();
         self.power_menu_external_apps = external_apps::detect_installed();
-        let layout = crate::power_menu::PowerMenuLayout::new(power_menu::supported());
+        let layout = PowerMenuLayout::new(power::supported());
         if layout.is_empty() {
             return;
         }
@@ -1138,15 +1140,15 @@ impl LauncherApp {
 
         match action {
             PowerAction::Sleep => {
-                let _ = power_menu::sleep_system();
+                let _ = power::sleep_system();
             }
             PowerAction::Reboot => {
-                if power_menu::reboot_system() {
+                if power::reboot_system() {
                     self.close_root_viewport(ctx);
                 }
             }
             PowerAction::Shutdown => {
-                if power_menu::shutdown_system() {
+                if power::shutdown_system() {
                     self.close_root_viewport(ctx);
                 }
             }
@@ -1710,7 +1712,7 @@ impl eframe::App for LauncherApp {
                     &self.resolution_options.current.label,
                     "",
                     "",
-                    power_menu::supported(),
+                    power::supported(),
                     self.page.power_menu_anim(),
                     self.page.power_menu_select_anim(),
                     self.page.power_menu_scroll_offset(),

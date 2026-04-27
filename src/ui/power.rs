@@ -2,13 +2,12 @@ use std::borrow::Cow;
 
 use eframe::egui;
 
+use crate::app::{PowerMenuLayout, PowerMenuOption};
 use crate::i18n::AppLanguage;
 use crate::ui::{
-    color_with_scaled_alpha, corner_radius, layout_main_clock, main_clock_right_edge,
-    lerp_f32, smoothstep01, HintIcons, PANEL_CORNER_RADIUS,
+    color_with_scaled_alpha, corner_radius, layout_main_clock, lerp_f32,
+    main_clock_right_edge, smoothstep01, HintIcons, PANEL_CORNER_RADIUS,
 };
-
-use super::{PowerMenuLayout, PowerMenuOption};
 
 const POWER_MENU_SELECTION_CORNER_RADIUS: f32 = 12.0;
 
@@ -154,14 +153,14 @@ pub fn draw_power_menu(
 
     let selected_index = layout.clamp_selected(selected_option_t.round().max(0.0) as usize);
     let highlight_offset = egui::vec2(0.0, lerp_f32(6.0, 0.0, highlight_t));
-    let Some((_, _, selected_rect, _)) = option_rects
+    let Some(selected_option_rect): Option<egui::Rect> = option_rects
         .iter()
         .find(|(index, _, _, _)| *index == selected_index)
-        .copied()
+        .map(|(_, _, rect, _)| *rect)
     else {
         return;
     };
-    let selected_rect = selected_rect.translate(highlight_offset);
+    let selected_rect = selected_option_rect.translate(highlight_offset);
 
     let focus_t = smoothstep01(select_anim) * highlight_t;
     if focus_t > 0.001 {
