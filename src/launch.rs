@@ -75,7 +75,7 @@ pub fn begin_launch(
 ) -> LaunchAttemptResult {
     let target_path = game.install_path.clone();
     let launch_target = game.launch_target.clone();
-    let platform_launch_id = game.platform_launch_id.clone();
+    let platform_launch_id = game.appx_id.clone();
     let platform_id = game.platform_id.clone();
     let game_name = game.name.clone();
     let launch_steam_app_id = game.steam_app_id;

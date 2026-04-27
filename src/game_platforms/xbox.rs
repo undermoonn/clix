@@ -107,7 +107,7 @@ mod imp {
                 install_path: install_dir,
                 launch_target,
                 steam_app_id: None,
-                platform_launch_id: Some(application.id),
+                appx_id: Some(application.id),
                 platform_id: Some(package.family_name),
                 last_played: 0,
                 playtime_minutes: 0,

@@ -166,7 +166,7 @@ fn game_icon_cache_dir() -> PathBuf {
 
 fn game_icon_cache_key(game: &crate::game::Game, source: &str) -> String {
     let mut key = format!("{}|{}", source, game.persistent_key());
-    if let Some(platform_launch_id) = game.platform_launch_id.as_deref() {
+    if let Some(platform_launch_id) = game.appx_id.as_deref() {
         key.push('|');
         key.push_str(platform_launch_id);
     }
@@ -1102,7 +1102,7 @@ fn load_xbox_manifest_icon_bytes(game: &crate::game::Game) -> Option<Vec<u8>> {
 
     let manifest_path = game.install_path.join("AppxManifest.xml");
     let manifest = std::fs::read_to_string(manifest_path).ok()?;
-    let application_block = find_application_block(&manifest, game.platform_launch_id.as_deref())?;
+    let application_block = find_application_block(&manifest, game.appx_id.as_deref())?;
     let relative_logo_path = preferred_msix_logo_relative_path(application_block, &manifest)?;
     let logo_path = resolve_msix_logo_path(&game.install_path, &relative_logo_path)?;
     let bytes = std::fs::read(logo_path).ok()?;

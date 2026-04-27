@@ -52,9 +52,8 @@ pub struct Game {
     // Steam app id used for launching, icon cache keys, and stable game identity.
     // Populated from Steam library metadata or Windows uninstall registry entries.
     pub steam_app_id: Option<u32>,
-    // Platform-specific launch entry id.
-    // Currently only Xbox uses this, populated from the Appx manifest Application Id.
-    pub platform_launch_id: Option<String>,
+    // Xbox Appx manifest Application Id used for shell activation.
+    pub appx_id: Option<String>,
     // Platform-specific stable id used when no Steam app id is available.
     // Epic stores AppName here; Xbox stores the package family name.
     pub platform_id: Option<String>,
