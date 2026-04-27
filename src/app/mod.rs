@@ -221,7 +221,7 @@ impl LauncherApp {
         #[cfg(not(target_os = "windows"))]
         let _ = ctx;
 
-        let steam_paths = steam::find_steam_paths();
+        let steam_paths = crate::game_scan::steam::find_steam_paths();
         let game_scan_options = crate::config::load_game_scan_options();
         let games = game::scan_installed_games(&steam_paths, &game_scan_options);
         let launch_on_startup_enabled = startup::is_enabled();

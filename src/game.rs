@@ -112,19 +112,19 @@ pub fn scan_installed_games(steam_paths: &[PathBuf], options: &GameScanOptions) 
     let mut games = Vec::new();
     if options.detect_steam_games {
         games.extend(scan_platform_games("steam", || {
-            crate::steam::scan_games_with_paths(steam_paths)
+            crate::game_scan::steam::scan_games_with_paths(steam_paths)
         }));
     }
     if options.detect_epic_games {
         games.extend(scan_platform_games(
             "epic",
-            crate::game_platforms::epic::scan_games,
+            crate::game_scan::epic::scan_games,
         ));
     }
     if options.detect_xbox_games {
         games.extend(scan_platform_games(
             "xbox",
-            crate::game_platforms::xbox::scan_games,
+            crate::game_scan::xbox::scan_games,
         ));
     }
     crate::game_last_played::merge_into_games(&mut games);

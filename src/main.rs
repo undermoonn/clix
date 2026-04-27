@@ -5,7 +5,7 @@ mod app;
 mod assets;
 mod config;
 mod game;
-mod game_platforms;
+mod game_scan;
 mod game_last_played;
 mod power_menu;
 mod i18n;
