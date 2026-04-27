@@ -159,6 +159,34 @@ pub(super) fn focus_running_game(state: &RunningGameState) -> bool {
     focus_best_window_for_pids(&matched, &state.game_name)
 }
 
+pub(super) fn minimize_running_game(state: &RunningGameState) -> bool {
+    let matched = matched_running_game_pids(state);
+    if matched.is_empty() {
+        return false;
+    }
+
+    unsafe {
+        let foreground_hwnd = GetForegroundWindow();
+        if !foreground_hwnd.is_null() {
+            let mut foreground_pid = 0;
+            GetWindowThreadProcessId(foreground_hwnd, &mut foreground_pid);
+            if matched.contains(&(foreground_pid as u32)) {
+                ShowWindow(foreground_hwnd, SW_MINIMIZE);
+                return true;
+            }
+        }
+    }
+
+    if let Some((hwnd, _)) = find_best_window_for_pids(&matched, &state.game_name) {
+        unsafe {
+            ShowWindow(hwnd, SW_MINIMIZE);
+        }
+        return true;
+    }
+
+    false
+}
+
 fn cached_current_app_window() -> Option<HWND> {
     let hwnd = CURRENT_APP_HWND.load(Ordering::Acquire);
     (hwnd != 0).then_some(hwnd as HWND)

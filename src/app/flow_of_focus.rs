@@ -70,6 +70,9 @@ impl LauncherApp {
 
         let wake_requested = input::take_wake_request();
         if wake_requested && self.background_home_wake_enabled {
+            if let Some(state) = self.running_games.get(&self.page.selected()) {
+                let _ = launch::minimize_running_game(state);
+            }
             self.page.prepare_wake_animation();
             self.wake_focus_pending = true;
             self.runtime.suppress_home_hold_until_release();

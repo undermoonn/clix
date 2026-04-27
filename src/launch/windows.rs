@@ -79,3 +79,7 @@ pub(super) fn send_current_app_to_background() -> bool {
 pub(super) fn focus_running_game(state: &RunningGameState) -> bool {
     focus::focus_running_game(state)
 }
+
+pub(super) fn minimize_running_game(state: &RunningGameState) -> bool {
+    focus::minimize_running_game(state)
+}

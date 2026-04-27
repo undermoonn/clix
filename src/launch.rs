@@ -406,3 +406,16 @@ pub fn focus_running_game(state: &RunningGameState) -> bool {
     }
 }
 
+pub fn minimize_running_game(state: &RunningGameState) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        windows::minimize_running_game(state)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = state;
+        false
+    }
+}
+
