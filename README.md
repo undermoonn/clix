@@ -33,6 +33,16 @@ A controller friendly game launcher on Windows, built with Rust and eframe (egui
 
 ![Screenshot 4](./screenshots/en/big-screen-launcher_2026_04_28_17_50_56_572.png)
 
+## Development
+
+Enable the versioned Git hooks once per clone:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+The pre-commit hook formats staged Rust files with `rustfmt` and re-stages them automatically. If formatting removes all staged Rust changes, the commit is stopped so you can review before retrying.
+
 ## License
 
 This project is licensed under the GNU General Public License v3.0 (GPLv3). See [LICENSE](./LICENSE) for the authoritative license text and [LICENSE.zh-cn.md](./LICENSE.zh-cn.md) for a Chinese explainer.

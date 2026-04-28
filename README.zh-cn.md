@@ -33,6 +33,16 @@
 
 ![alt text](screenshots/zh-cn/big-screen-launcher_2026_04_28_17_50_39_106.png)
 
+## 开发
+
+每次 clone 后执行一次下面的命令，启用仓库内维护的 Git hooks：
+
+```sh
+git config core.hooksPath .githooks
+```
+
+当前的 pre-commit hook 会在提交前自动用 `rustfmt` 格式化已暂存的 Rust 文件，并把格式化结果重新加入暂存区。如果格式化后已暂存的 Rust 改动为空，提交会被拦下，方便你确认后再提交。
+
 ## 许可证
 
 本项目采用 GNU General Public License v3.0（GPLv3）许可证。正式许可证文本请参见 [LICENSE](./LICENSE)，中文说明请参见 [LICENSE.zh-cn.md](./LICENSE.zh-cn.md)。

@@ -1,0 +1,41 @@
+#!/bin/sh
+
+set -e
+
+staged_files=$(git diff --cached --name-only --diff-filter=ACMR)
+
+if [ -z "$staged_files" ]; then
+    exit 0
+fi
+
+if ! command -v rustfmt >/dev/null 2>&1; then
+    echo "pre-commit: rustfmt not found. Install it with 'rustup component add rustfmt'." >&2
+    exit 1
+fi
+
+old_ifs=$IFS
+IFS='
+'
+
+formatted_any=0
+
+for file in $staged_files; do
+    case "$file" in
+        *.rs)
+            if [ "$formatted_any" -eq 0 ]; then
+                echo "pre-commit: formatting staged Rust files"
+                formatted_any=1
+            fi
+
+            rustfmt --edition 2021 "$file"
+            git add "$file"
+            ;;
+    esac
+done
+
+IFS=$old_ifs
+
+if [ "$formatted_any" -eq 1 ] && git diff --cached --quiet -- '*.rs'; then
+    echo "pre-commit: rustfmt removed all staged Rust changes. Review the file and stage a real change before committing." >&2
+    exit 1
+fi
