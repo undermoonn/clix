@@ -5,8 +5,9 @@ use eframe::egui;
 use crate::app::{PowerMenuLayout, PowerMenuOption};
 use crate::i18n::AppLanguage;
 use crate::ui::{
-    color_with_scaled_alpha, corner_radius, layout_main_clock, lerp_f32,
-    main_clock_right_edge, smoothstep01, HintIcons, PANEL_CORNER_RADIUS,
+    color_with_scaled_alpha, corner_radius, design_units, layout_main_clock, lerp_f32,
+    main_clock_right_edge, smoothstep01, viewport_layout_scale, HintIcons,
+    PANEL_CORNER_RADIUS,
 };
 
 const POWER_MENU_SELECTION_CORNER_RADIUS: f32 = 12.0;
@@ -50,6 +51,7 @@ pub fn draw_power_menu(
     let sheet_t = phase_t(0.06, 0.68);
     let highlight_t = phase_t(0.22, 1.0);
     let panel_rect = ui.available_rect_before_wrap();
+    let layout_scale = viewport_layout_scale(panel_rect);
     let painter = ui.painter();
 
     painter.rect_filled(
@@ -61,7 +63,7 @@ pub fn draw_power_menu(
         ),
     );
 
-    let clock_galley = layout_main_clock(&painter, wake_t);
+    let clock_galley = layout_main_clock(&painter, wake_t, layout_scale);
     let clock_anchor_rect = egui::Rect::from_min_size(
         panel_rect.min,
         egui::vec2(panel_rect.width(), panel_rect.width() * (1240.0 / 3840.0)),
@@ -73,12 +75,12 @@ pub fn draw_power_menu(
     );
     let top_icon_size = clock_galley.size().y * 0.63;
     let power_icon_size = top_icon_size * 1.18;
-    let settings_icon_offset_x = 56.0;
+    let settings_icon_offset_x = design_units(56.0, layout_scale);
     let settings_icon_pos = egui::pos2(
         clock_pos.x - top_icon_size - settings_icon_offset_x,
         clock_pos.y + (clock_galley.size().y - top_icon_size) * 0.5,
     );
-    let power_icon_gap = 54.0;
+    let power_icon_gap = design_units(54.0, layout_scale);
     let power_anchor_rect = egui::Rect::from_min_size(
         egui::pos2(
             settings_icon_pos.x - power_icon_size - power_icon_gap,
@@ -87,23 +89,35 @@ pub fn draw_power_menu(
         egui::vec2(power_icon_size, power_icon_size),
     );
 
-    let option_height = 72.0;
-    let option_gap = 10.0;
-    let dropdown_padding = egui::vec2(14.0, 14.0);
+    let option_height = design_units(72.0, layout_scale);
+    let option_gap = design_units(10.0, layout_scale);
+    let dropdown_padding = egui::vec2(
+        design_units(14.0, layout_scale),
+        design_units(14.0, layout_scale),
+    );
     let option_count = layout.options().len() as f32;
     let dropdown_size = egui::vec2(
-        232.0,
+        design_units(232.0, layout_scale),
         dropdown_padding.y * 2.0
             + option_count * option_height
             + (option_count - 1.0).max(0.0) * option_gap,
     );
     let dropdown_origin_x = (power_anchor_rect.center().x - dropdown_size.x * 0.5)
-        .clamp(panel_rect.min.x + 40.0, panel_rect.max.x - dropdown_size.x - 40.0);
+        .clamp(
+            panel_rect.min.x + design_units(40.0, layout_scale),
+            panel_rect.max.x - dropdown_size.x - design_units(40.0, layout_scale),
+        );
     let dropdown_rect = egui::Rect::from_min_size(
-        egui::pos2(dropdown_origin_x, power_anchor_rect.max.y + 18.0),
+        egui::pos2(
+            dropdown_origin_x,
+            power_anchor_rect.max.y + design_units(18.0, layout_scale),
+        ),
         dropdown_size,
     )
-    .translate(egui::vec2(0.0, lerp_f32(8.0, 0.0, sheet_t)));
+    .translate(egui::vec2(
+        0.0,
+        lerp_f32(design_units(8.0, layout_scale), 0.0, sheet_t),
+    ));
 
     painter.rect_filled(
         dropdown_rect,
@@ -117,7 +131,7 @@ pub fn draw_power_menu(
         dropdown_rect,
         corner_radius(PANEL_CORNER_RADIUS),
         egui::Stroke::new(
-            1.0,
+            design_units(1.0, layout_scale),
             color_with_scaled_alpha(
                 egui::Color32::from_rgba_unmultiplied(255, 255, 255, 36),
                 sheet_t,
@@ -126,8 +140,8 @@ pub fn draw_power_menu(
         egui::StrokeKind::Middle,
     );
 
-    let option_font = egui::FontId::proportional(22.0);
-    let option_inner_padding = 18.0;
+    let option_font = egui::FontId::proportional(design_units(22.0, layout_scale));
+    let option_inner_padding = design_units(18.0, layout_scale);
     let option_rects: Vec<_> = layout
         .options()
         .iter()
@@ -136,7 +150,10 @@ pub fn draw_power_menu(
         .map(|(index, option)| {
             let row = index as f32;
             let option_t = phase_t(0.14 + row * 0.1, 0.74 + row * 0.1);
-            let option_offset = egui::vec2(0.0, lerp_f32(10.0, 0.0, option_t));
+            let option_offset = egui::vec2(
+                0.0,
+                lerp_f32(design_units(10.0, layout_scale), 0.0, option_t),
+            );
             let rect = egui::Rect::from_min_size(
                 egui::pos2(
                     dropdown_rect.min.x + dropdown_padding.x,
@@ -152,7 +169,10 @@ pub fn draw_power_menu(
         .collect();
 
     let selected_index = layout.clamp_selected(selected_option_t.round().max(0.0) as usize);
-    let highlight_offset = egui::vec2(0.0, lerp_f32(6.0, 0.0, highlight_t));
+    let highlight_offset = egui::vec2(
+        0.0,
+        lerp_f32(design_units(6.0, layout_scale), 0.0, highlight_t),
+    );
     let Some(selected_option_rect): Option<egui::Rect> = option_rects
         .iter()
         .find(|(index, _, _, _)| *index == selected_index)
@@ -164,10 +184,10 @@ pub fn draw_power_menu(
 
     let focus_t = smoothstep01(select_anim) * highlight_t;
     if focus_t > 0.001 {
-        let focus_rect = selected_rect.expand(5.0);
+        let focus_rect = selected_rect.expand(design_units(5.0, layout_scale));
         painter.rect_filled(
             focus_rect,
-            corner_radius(POWER_MENU_SELECTION_CORNER_RADIUS),
+            corner_radius(design_units(POWER_MENU_SELECTION_CORNER_RADIUS, layout_scale)),
             color_with_scaled_alpha(
                 egui::Color32::from_rgba_unmultiplied(248, 250, 255, 54),
                 focus_t,
@@ -175,9 +195,13 @@ pub fn draw_power_menu(
         );
         painter.rect_stroke(
             focus_rect,
-            corner_radius(POWER_MENU_SELECTION_CORNER_RADIUS),
+            corner_radius(design_units(POWER_MENU_SELECTION_CORNER_RADIUS, layout_scale)),
             egui::Stroke::new(
-                lerp_f32(1.2, 3.0, focus_t),
+                lerp_f32(
+                    design_units(1.2, layout_scale),
+                    design_units(3.0, layout_scale),
+                    focus_t,
+                ),
                 color_with_scaled_alpha(
                     egui::Color32::from_rgba_unmultiplied(255, 255, 255, 168),
                     focus_t,
@@ -187,7 +211,7 @@ pub fn draw_power_menu(
         );
     }
 
-    let centered_content_left_bias = 12.0;
+    let centered_content_left_bias = design_units(12.0, layout_scale);
     for (index, option, option_rect, option_t) in &option_rects {
         let selectedness = if selected_index == *index { 1.0 } else { 0.0 };
         let text_color = egui::Color32::from_rgb(
@@ -206,7 +230,7 @@ pub fn draw_power_menu(
             PowerMenuOption::Shutdown => power_off_icon,
         };
         let leading_icon_size = top_icon_size;
-        let icon_text_gap = 16.0;
+        let icon_text_gap = design_units(16.0, layout_scale);
         let option_text = painter.layout_no_wrap(
             label.into_owned(),
             option_font.clone(),

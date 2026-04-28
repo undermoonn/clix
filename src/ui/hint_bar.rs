@@ -5,7 +5,7 @@ use eframe::egui;
 use crate::i18n::AppLanguage;
 
 use super::hint_icons::HintIcons;
-use super::{lerp_f32, smoothstep01};
+use super::{design_units, lerp_f32, smoothstep01, viewport_layout_scale};
 use super::text::{color_with_scaled_alpha, main_clock_right_edge};
 
 pub fn draw_hint_bar(
@@ -25,18 +25,21 @@ pub fn draw_hint_bar(
     wake_anim: f32,
 ) {
     let panel_rect = ui.available_rect_before_wrap();
-    let padding = 50.0;
+    let layout_scale = viewport_layout_scale(panel_rect);
+    let padding = design_units(50.0, layout_scale);
     let padded_rect = panel_rect.shrink(padding);
     let wake_t = smoothstep01(wake_anim);
-    let hint_font = egui::FontId::proportional(24.0);
+    let hint_font = egui::FontId::proportional(design_units(24.0, layout_scale));
     let hint_color = color_with_scaled_alpha(
         egui::Color32::from_rgba_unmultiplied(236, 238, 244, 220),
         wake_t,
     );
-    let action_icon_h = 40.0_f32;
-    let group_gap = 30.0_f32;
+    let action_icon_h = design_units(40.0, layout_scale);
+    let group_gap = design_units(30.0, layout_scale);
     let row_h = action_icon_h;
-    let hint_y = padded_rect.max.y - 10.0 + lerp_f32(24.0, 0.0, wake_t);
+    let hint_y = padded_rect.max.y
+        - design_units(10.0, layout_scale)
+        + lerp_f32(design_units(24.0, layout_scale), 0.0, wake_t);
     let clock_anchor_rect = egui::Rect::from_min_size(
         panel_rect.min,
         egui::vec2(panel_rect.width(), panel_rect.width() * (1240.0 / 3840.0)),
@@ -55,7 +58,9 @@ pub fn draw_hint_bar(
             color_with_scaled_alpha(egui::Color32::WHITE, wake_t),
         );
     };
-    let label_y = |galley: &Arc<egui::Galley>| hint_y + (row_h - galley.size().y) * 0.5 - 2.0;
+    let label_y = |galley: &Arc<egui::Galley>| {
+        hint_y + (row_h - galley.size().y) * 0.5 - design_units(2.0, layout_scale)
+    };
     let draw_progress_ring = |painter: &egui::Painter,
                               center: egui::Pos2,
                               radius: f32,
@@ -66,14 +71,14 @@ pub fn draw_hint_bar(
 
         let clamped = progress.clamp(0.0, 1.0);
         let bg_stroke = egui::Stroke::new(
-            2.0,
+            design_units(2.0, layout_scale),
             color_with_scaled_alpha(
                 egui::Color32::from_rgba_unmultiplied(255, 255, 255, 40),
                 wake_t,
             ),
         );
         let fg_stroke = egui::Stroke::new(
-            2.5,
+            design_units(2.5, layout_scale),
             color_with_scaled_alpha(egui::Color32::from_rgb(255, 255, 255), wake_t),
         );
         painter.circle_stroke(center, radius, bg_stroke);
@@ -98,14 +103,14 @@ pub fn draw_hint_bar(
         let start_angle = rotation - std::f32::consts::FRAC_PI_2;
         let end_angle = start_angle + sweep;
         let bg_stroke = egui::Stroke::new(
-            1.8,
+            design_units(1.8, layout_scale),
             color_with_scaled_alpha(
                 egui::Color32::from_rgba_unmultiplied(255, 255, 255, 36),
                 wake_t,
             ),
         );
         let fg_stroke = egui::Stroke::new(
-            2.4,
+            design_units(2.4, layout_scale),
             color_with_scaled_alpha(
                 egui::Color32::from_rgba_unmultiplied(255, 255, 255, 220),
                 wake_t,
@@ -129,12 +134,14 @@ pub fn draw_hint_bar(
     let draw_labeled_icon_group = |tex: &egui::TextureHandle, x: f32, label: &Arc<egui::Galley>| {
         draw_icon(painter, tex, x, action_icon_h);
         painter.galley(
-            egui::pos2(x + action_icon_h + 6.0, label_y(label)),
+            egui::pos2(x + action_icon_h + design_units(6.0, layout_scale), label_y(label)),
             label.clone(),
             egui::Color32::WHITE,
         );
     };
-    let group_width = |galley: &Arc<egui::Galley>| action_icon_h + 6.0 + galley.size().x;
+    let group_width = |galley: &Arc<egui::Galley>| {
+        action_icon_h + design_units(6.0, layout_scale) + galley.size().x
+    };
     let mut next_group_x = main_clock_right_edge(clock_anchor_rect);
     let mut reserve_group = |galley: &Arc<egui::Galley>| {
         let x = next_group_x - group_width(galley);
@@ -195,7 +202,10 @@ pub fn draw_hint_bar(
             );
         }
         painter.galley(
-            egui::pos2(refresh_x + action_icon_h + 6.0, label_y(&g_refresh)),
+            egui::pos2(
+                refresh_x + action_icon_h + design_units(6.0, layout_scale),
+                label_y(&g_refresh),
+            ),
             g_refresh,
             egui::Color32::WHITE,
         );
@@ -226,7 +236,10 @@ pub fn draw_hint_bar(
                 force_close_hold_progress,
             );
             painter.galley(
-                egui::pos2(force_close_x + action_icon_h + 6.0, label_y(&g_force_close)),
+                egui::pos2(
+                    force_close_x + action_icon_h + design_units(6.0, layout_scale),
+                    label_y(&g_force_close),
+                ),
                 g_force_close,
                 egui::Color32::WHITE,
             );
@@ -255,7 +268,10 @@ pub fn draw_hint_bar(
 
         let gy = label_y(&g_force_close);
         painter.galley(
-            egui::pos2(force_close_x + action_icon_h + 6.0, gy),
+            egui::pos2(
+                force_close_x + action_icon_h + design_units(6.0, layout_scale),
+                gy,
+            ),
             g_force_close,
             egui::Color32::WHITE,
         );

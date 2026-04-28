@@ -1,6 +1,6 @@
 use eframe::egui;
 
-use super::{lerp_f32, smoothstep01};
+use super::{design_units, lerp_f32, smoothstep01, viewport_layout_scale};
 use super::text::{
     color_with_scaled_alpha, corner_radius, draw_main_clock, layout_main_clock, main_clock_color,
     main_clock_right_edge, scale_alpha,
@@ -54,6 +54,7 @@ pub fn draw_background(
     wake_anim: f32,
 ) {
     let screen = ctx.content_rect();
+    let layout_scale = viewport_layout_scale(screen);
     let bg_painter = ctx.layer_painter(egui::LayerId::background());
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
     let base_alpha: f32 = 170.0;
@@ -135,7 +136,7 @@ pub fn draw_background(
             return;
         }
 
-        let clock_galley = layout_main_clock(&bg_painter, wake_t);
+        let clock_galley = layout_main_clock(&bg_painter, wake_t, layout_scale);
         let margin_y = hero_rect.height() * 0.075;
         let clock_pos = egui::pos2(
             main_clock_right_edge(clock_anchor_rect) - clock_galley.size().x,
@@ -148,13 +149,13 @@ pub fn draw_background(
                 let power_t = smoothstep01(power_button_visibility_anim);
                 let power_focus_t = smoothstep01(power_button_focus_anim);
                 let icon_size = clock_galley.size().y * 0.63;
-                let icon_offset_x = 56.0;
+                let icon_offset_x = design_units(56.0, layout_scale);
                 let icon_pos = egui::pos2(
                     clock_pos.x - icon_size - icon_offset_x,
                     clock_pos.y + (clock_galley.size().y - icon_size) * 0.5,
                 );
                 let icon_rect = egui::Rect::from_min_size(icon_pos, egui::vec2(icon_size, icon_size));
-                let power_gap = 54.0;
+                let power_gap = design_units(54.0, layout_scale);
 
                 if power_t > 0.001 {
                     if let Some(power_icon) = power_icon {
@@ -200,7 +201,11 @@ pub fn draw_background(
                                 highlight_center,
                                 highlight_radius,
                                 egui::Stroke::new(
-                                    lerp_f32(1.0, 2.8, power_focus_t),
+                                    lerp_f32(
+                                        design_units(1.0, layout_scale),
+                                        design_units(2.8, layout_scale),
+                                        power_focus_t,
+                                    ),
                                     color_with_scaled_alpha(
                                         egui::Color32::from_rgba_unmultiplied(255, 255, 255, 164),
                                         wake_t * power_focus_t,
@@ -245,7 +250,11 @@ pub fn draw_background(
                         highlight_center,
                         highlight_radius,
                         egui::Stroke::new(
-                            lerp_f32(1.0, 2.8, focus_t),
+                            lerp_f32(
+                                design_units(1.0, layout_scale),
+                                design_units(2.8, layout_scale),
+                                focus_t,
+                            ),
                             color_with_scaled_alpha(
                                 egui::Color32::from_rgba_unmultiplied(255, 255, 255, 164),
                                 wake_t * focus_t,
@@ -263,7 +272,7 @@ pub fn draw_background(
             }
         }
 
-        draw_main_clock(&bg_painter, clock_pos, wake_t);
+        draw_main_clock(&bg_painter, clock_pos, wake_t, layout_scale);
     };
 
     if cover_fade < 1.0 {

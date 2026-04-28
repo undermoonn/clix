@@ -62,8 +62,11 @@ pub(crate) fn color_with_scaled_alpha(color: egui::Color32, scale: f32) -> egui:
     )
 }
 
-pub(crate) fn main_clock_font() -> egui::FontId {
-    egui::FontId::new(40.0, egui::FontFamily::Name("Bold".into()))
+pub(crate) fn main_clock_font(layout_scale: f32) -> egui::FontId {
+    egui::FontId::new(
+        super::design_units(40.0, layout_scale),
+        egui::FontFamily::Name("Bold".into()),
+    )
 }
 
 pub(crate) fn main_clock_color(wake_t: f32) -> egui::Color32 {
@@ -73,10 +76,14 @@ pub(crate) fn main_clock_color(wake_t: f32) -> egui::Color32 {
     )
 }
 
-pub(crate) fn layout_main_clock(painter: &egui::Painter, wake_t: f32) -> Arc<egui::Galley> {
+pub(crate) fn layout_main_clock(
+    painter: &egui::Painter,
+    wake_t: f32,
+    layout_scale: f32,
+) -> Arc<egui::Galley> {
     painter.layout_no_wrap(
         chrono::Local::now().format("%H:%M").to_string(),
-        main_clock_font(),
+        main_clock_font(layout_scale),
         main_clock_color(wake_t),
     )
 }
@@ -86,11 +93,16 @@ pub(crate) fn main_clock_right_edge(anchor_rect: egui::Rect) -> f32 {
     anchor_rect.max.x - margin_x
 }
 
-pub(crate) fn draw_main_clock(painter: &egui::Painter, time_pos: egui::Pos2, wake_t: f32) {
+pub(crate) fn draw_main_clock(
+    painter: &egui::Painter,
+    time_pos: egui::Pos2,
+    wake_t: f32,
+    layout_scale: f32,
+) {
     if wake_t <= 0.001 {
         return;
     }
 
-    let time_galley = layout_main_clock(painter, wake_t);
+    let time_galley = layout_main_clock(painter, wake_t, layout_scale);
     painter.galley(time_pos, time_galley, egui::Color32::WHITE);
 }

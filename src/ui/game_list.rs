@@ -6,25 +6,12 @@ use crate::game::{Game, GameIconKey, GameSource};
 use crate::i18n::AppLanguage;
 use crate::steam::AchievementSummary;
 
-use super::{lerp_f32, smoothstep01};
+use super::{design_units, lerp_f32, smoothstep01, viewport_layout_scale};
 use super::header::{
     build_selected_game_header, draw_selected_game_badge, draw_selected_game_summary,
     draw_selected_game_title, SelectedGameSummaryStyle,
 };
 use super::text::{build_wrapped_galley, color_with_scaled_alpha, corner_radius};
-
-const HOME_LAYOUT_BASELINE_WIDTH: f32 = 1920.0;
-const HOME_LAYOUT_BASELINE_HEIGHT: f32 = 1080.0;
-
-fn home_layout_scale(panel_rect: egui::Rect) -> f32 {
-    (panel_rect.width() / HOME_LAYOUT_BASELINE_WIDTH)
-        .min(panel_rect.height() / HOME_LAYOUT_BASELINE_HEIGHT)
-        .max(0.01)
-}
-
-fn design_units(value: f32, layout_scale: f32) -> f32 {
-    value * layout_scale
-}
 
 fn launch_press_t(elapsed_seconds: f32) -> f32 {
     let press_in_duration = 0.06;
@@ -253,7 +240,7 @@ pub fn draw_game_list(
     wake_anim: f32,
 ) {
     let panel_rect = ui.available_rect_before_wrap();
-    let home_layout_scale = home_layout_scale(panel_rect);
+    let home_layout_scale = viewport_layout_scale(panel_rect);
     let base_icon_size = design_units(152.0, home_layout_scale);
     let selected_icon_size = design_units(224.0, home_layout_scale);
     let selected_icon_extra = selected_icon_size - base_icon_size;
