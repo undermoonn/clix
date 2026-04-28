@@ -27,6 +27,7 @@ impl LauncherApp {
         self.language = next_setting.resolve();
         crate::config::store_app_language_setting(next_setting);
         crate::configure_fonts(ctx, self.language);
+        crate::system::overlay::set_language(self.language);
         ctx.request_repaint();
     }
 

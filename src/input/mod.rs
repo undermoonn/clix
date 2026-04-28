@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use std::time::Instant;
 #[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_os = "windows")]
+use std::sync::{Mutex, OnceLock};
 
 use buttons::Buttons;
 use crate::config::PromptIconTheme;
@@ -22,9 +24,33 @@ pub const NAV_REPEAT_ACCEL_STAGE2_AFTER_MS: u128 = 1300;
 pub const NAV_REPEAT_INTERVAL_STAGE1_MS: u128 = 80;
 pub const NAV_REPEAT_INTERVAL_STAGE2_MS: u128 = 45;
 pub const FOCUS_COOLDOWN_MS: u128 = 100;
+#[cfg(target_os = "windows")]
+const HOME_OVERLAY_HOLD_MS: u128 = 700;
 
 #[cfg(target_os = "windows")]
 static BACKGROUND_HOME_WAKE_ENABLED: AtomicBool = AtomicBool::new(true);
+#[cfg(target_os = "windows")]
+static HOME_WAKE_PENDING: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "windows")]
+static HOME_BUTTON_STATE: OnceLock<Mutex<HomeButtonState>> = OnceLock::new();
+
+#[cfg(target_os = "windows")]
+#[derive(Clone, Copy)]
+pub(super) enum HomeButtonSource {
+    XInput,
+    DualSense,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Default)]
+struct HomeButtonState {
+    xinput_held: bool,
+    dualsense_held: bool,
+    held_since: Option<Instant>,
+    started_in_background: bool,
+    overlay_visible: bool,
+    suppress_overlay_until_home_release: bool,
+}
 
 #[cfg(target_os = "windows")]
 pub fn start_watchers(ctx: egui::Context) {
@@ -55,7 +81,7 @@ pub(super) fn background_home_wake_enabled() -> bool {
 
 #[cfg(target_os = "windows")]
 pub fn take_wake_request() -> bool {
-    xinput::take_wake_request() || dualsense::take_wake_request()
+    HOME_WAKE_PENDING.swap(false, Ordering::AcqRel)
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -71,6 +97,88 @@ pub fn home_held() -> bool {
 #[cfg(not(target_os = "windows"))]
 pub fn home_held() -> bool {
     false
+}
+
+#[cfg(target_os = "windows")]
+pub(super) fn update_home_button_source(
+    source: HomeButtonSource,
+    held: bool,
+    app_is_background: bool,
+) -> bool {
+    let mut state = HOME_BUTTON_STATE
+        .get_or_init(|| Mutex::new(HomeButtonState::default()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    match source {
+        HomeButtonSource::XInput => state.xinput_held = held,
+        HomeButtonSource::DualSense => state.dualsense_held = held,
+    }
+
+    let any_held = state.xinput_held || state.dualsense_held;
+    let now = Instant::now();
+
+    if any_held {
+        if state.held_since.is_none() {
+            state.held_since = Some(now);
+            state.started_in_background = app_is_background;
+        }
+
+        if state.suppress_overlay_until_home_release {
+            return false;
+        }
+
+        if !state.overlay_visible
+            && state.held_since.is_some_and(|started_at| {
+                now.duration_since(started_at).as_millis() >= HOME_OVERLAY_HOLD_MS
+            })
+        {
+            crate::system::overlay::set_visible(true);
+            state.overlay_visible = true;
+            return true;
+        }
+
+        return false;
+    }
+
+    if state.overlay_visible {
+        state.held_since = None;
+        state.started_in_background = false;
+        state.suppress_overlay_until_home_release = false;
+        return false;
+    } else if state.started_in_background && background_home_wake_enabled() {
+        HOME_WAKE_PENDING.store(true, Ordering::Release);
+        state.held_since = None;
+        state.started_in_background = false;
+        state.overlay_visible = false;
+        state.suppress_overlay_until_home_release = false;
+        return true;
+    }
+
+    state.held_since = None;
+    state.started_in_background = false;
+    state.overlay_visible = false;
+    state.suppress_overlay_until_home_release = false;
+    false
+}
+
+#[cfg(target_os = "windows")]
+pub(super) fn close_home_overlay() -> bool {
+    let mut state = HOME_BUTTON_STATE
+        .get_or_init(|| Mutex::new(HomeButtonState::default()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    if !state.overlay_visible {
+        return false;
+    }
+
+    crate::system::overlay::set_visible(false);
+    state.held_since = None;
+    state.started_in_background = false;
+    state.overlay_visible = false;
+    state.suppress_overlay_until_home_release = state.xinput_held || state.dualsense_held;
+    true
 }
 
 pub enum ControllerAction {

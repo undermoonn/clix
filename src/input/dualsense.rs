@@ -57,8 +57,6 @@ const EFFECT_RUMBLE_LEFT_INDEX: usize = 3;
 const EFFECT_ENABLE_BITS3_INDEX: usize = 38;
 
 #[cfg(target_os = "windows")]
-static WAKE_PENDING: AtomicBool = AtomicBool::new(false);
-#[cfg(target_os = "windows")]
 static SNAPSHOT: OnceLock<Mutex<DualSenseSnapshot>> = OnceLock::new();
 #[cfg(target_os = "windows")]
 static DEVICE_PRESENT: AtomicBool = AtomicBool::new(false);
@@ -95,16 +93,6 @@ pub fn snapshot() -> DualSenseSnapshot {
 
 #[cfg(not(target_os = "windows"))]
 pub fn snapshot() {}
-
-#[cfg(target_os = "windows")]
-pub fn take_wake_request() -> bool {
-    WAKE_PENDING.swap(false, Ordering::AcqRel)
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn take_wake_request() -> bool {
-    false
-}
 
 #[cfg(target_os = "windows")]
 pub(super) fn home_held() -> bool {
@@ -306,15 +294,24 @@ fn run_dualsense_watcher(ctx: egui::Context) {
                 let app_is_background = crate::launch::current_app_window_is_background();
                 let pressed_now = snapshot.buttons.intersects(Buttons::HOME)
                     && !previous.buttons.intersects(Buttons::HOME);
+                let home_held = snapshot.buttons.intersects(Buttons::HOME);
+                let b_pressed_now = snapshot.buttons.intersects(Buttons::B)
+                    && !previous.buttons.intersects(Buttons::B);
 
                 previous = snapshot;
                 store_snapshot(snapshot);
 
+                if b_pressed_now && super::close_home_overlay() {
+                    ctx.request_repaint();
+                }
                 if pressed_now {
-                    if app_is_background && super::background_home_wake_enabled() {
-                        WAKE_PENDING.store(true, Ordering::Release);
-                    }
-
+                    ctx.request_repaint();
+                }
+                if super::update_home_button_source(
+                    super::HomeButtonSource::DualSense,
+                    home_held,
+                    app_is_background,
+                ) {
                     ctx.request_repaint();
                 }
 
@@ -326,6 +323,13 @@ fn run_dualsense_watcher(ctx: egui::Context) {
             Err(_) => {
                 previous = DualSenseSnapshot::default();
                 store_snapshot(previous);
+                if super::update_home_button_source(
+                    super::HomeButtonSource::DualSense,
+                    false,
+                    crate::launch::current_app_window_is_background(),
+                ) {
+                    ctx.request_repaint();
+                }
                 connection = None;
                 DEVICE_PRESENT.store(false, Ordering::Release);
                 std::thread::sleep(std::time::Duration::from_millis(250));

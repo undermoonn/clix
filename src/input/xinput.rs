@@ -32,8 +32,6 @@ const XINPUT_SELECTION_RUMBLE_LEFT_STRENGTH: u16 = 0;
 const XINPUT_SELECTION_RUMBLE_RIGHT_STRENGTH: u16 = 10_000;
 
 #[cfg(target_os = "windows")]
-static HOME_WAKE_PENDING: AtomicBool = AtomicBool::new(false);
-#[cfg(target_os = "windows")]
 static HOME_GUIDE_HELD: AtomicBool = AtomicBool::new(false);
 
 #[cfg(target_os = "windows")]
@@ -47,16 +45,6 @@ pub(super) fn start(ctx: egui::Context) {
 
 #[cfg(not(target_os = "windows"))]
 pub(super) fn start(_ctx: eframe::egui::Context) {}
-
-#[cfg(target_os = "windows")]
-pub fn take_wake_request() -> bool {
-    HOME_WAKE_PENDING.swap(false, Ordering::AcqRel)
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn take_wake_request() -> bool {
-    false
-}
 
 #[cfg(target_os = "windows")]
 pub(super) fn home_held() -> bool {
@@ -141,32 +129,48 @@ unsafe fn run_home_watcher(ctx: egui::Context) {
 
     let get_state_ex: XInputGetStateExFn = std::mem::transmute(func);
     let mut prev_guide = [false; 4];
+    let mut prev_b = [false; 4];
 
     loop {
         let mut any_held = false;
         let app_is_background = crate::launch::current_app_window_is_background();
+        let mut b_pressed_now = false;
 
         for i in 0..4u32 {
             let mut state: XINPUT_STATE = std::mem::zeroed();
             if get_state_ex(i, &mut state) == 0 {
-                let pressed = normalize_buttons(state.Gamepad.wButtons as u16).intersects(Buttons::HOME);
+                let buttons = normalize_buttons(state.Gamepad.wButtons as u16);
+                let pressed = buttons.intersects(Buttons::HOME);
+                let b_pressed = buttons.intersects(Buttons::B);
                 if pressed {
                     any_held = true;
                 }
+                if b_pressed && !prev_b[i as usize] {
+                    b_pressed_now = true;
+                }
                 if pressed && !prev_guide[i as usize] {
-                    if app_is_background && super::background_home_wake_enabled() {
-                        HOME_WAKE_PENDING.store(true, Ordering::Release);
-                    }
-
                     ctx.request_repaint();
                 }
                 prev_guide[i as usize] = pressed;
+                prev_b[i as usize] = b_pressed;
             } else {
                 prev_guide[i as usize] = false;
+                prev_b[i as usize] = false;
             }
         }
 
+        if b_pressed_now && super::close_home_overlay() {
+            ctx.request_repaint();
+        }
+
         HOME_GUIDE_HELD.store(any_held, Ordering::Release);
+        if super::update_home_button_source(
+            super::HomeButtonSource::XInput,
+            any_held,
+            app_is_background,
+        ) {
+            ctx.request_repaint();
+        }
         if any_held && !app_is_background {
             ctx.request_repaint();
         }

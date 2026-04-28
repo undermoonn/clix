@@ -147,6 +147,7 @@ impl LauncherApp {
         let background_home_wake_enabled = crate::config::load_background_home_wake_enabled();
         #[cfg(target_os = "windows")]
         {
+            crate::system::overlay::start(language);
             input::set_background_home_wake_enabled(background_home_wake_enabled);
             input::start_watchers(ctx.clone());
         }
