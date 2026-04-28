@@ -1,12 +1,12 @@
 # Big Screen Launcher
 
-[English](./README.md)
-[License](./LICENSE)
-[许可说明（简体中文）](./LICENSE.zh-cn.md)
-[Privacy Policy](./PRIVACY.md)
-[隐私政策](./PRIVACY.zh-cn.md)
+[English Version](./README.md)
 
-一个面向手柄交互优先设计的 Windows 游戏启动器，使用 Rust 与 eframe（egui）构建，旨在为 Windows玩家提供接近家用游戏主机风格的使用体验。
+[许可说明](./LICENSE.zh-cn.md) / [License](./LICENSE)
+
+[隐私政策](./PRIVACY.zh-cn.md) / [Privacy Policy](./PRIVACY.md)
+
+一个专为手柄体验设计的轻量 Windows 游戏启动器，使用 Rust 与 eframe（egui）构建，旨在为 Windows 玩家提供接近家用游戏主机式交互体验。
 
 ## 功能特性
 
@@ -25,15 +25,13 @@
 
 ## 截图
 
-![alt text](screenshots/zh-cn/big-screen-launcher_2026_04_24_18_46_55_124.png)
+![alt text](screenshots/zh-cn/big-screen-launcher_2026_04_28_17_49_59_371.png)
 
-![alt text](screenshots/zh-cn/big-screen-launcher_2026_04_24_18_46_58_108.png)
+![alt text](screenshots/zh-cn/big-screen-launcher_2026_04_28_17_50_34_966.png)
 
-![alt text](screenshots/zh-cn/big-screen-launcher_2026_04_24_18_47_02_234.png)
+![alt text](screenshots/zh-cn/big-screen-launcher_2026_04_28_17_50_31_472.png)
 
-![alt text](screenshots/zh-cn/big-screen-launcher_2026_04_24_18_47_06_689.png)
-
-![alt text](screenshots/zh-cn/big-screen-launcher_2026_04_24_18_47_10_348.png)
+![alt text](screenshots/zh-cn/big-screen-launcher_2026_04_28_17_50_39_106.png)
 
 ## 许可证
 
