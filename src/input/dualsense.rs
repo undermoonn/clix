@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 
 use super::{buttons::Buttons, InputAggregateState};
 #[cfg(target_os = "windows")]
+use crate::config::BackgroundHomeWakeMode;
+#[cfg(target_os = "windows")]
 use crc32fast::Hasher;
 #[cfg(target_os = "windows")]
 use eframe::egui;
@@ -99,6 +101,12 @@ pub fn snapshot() {}
 #[cfg(target_os = "windows")]
 pub fn take_wake_request() -> bool {
     WAKE_PENDING.swap(false, Ordering::AcqRel)
+}
+
+#[cfg(target_os = "windows")]
+fn request_wake(ctx: &egui::Context) {
+    WAKE_PENDING.store(true, Ordering::Release);
+    ctx.request_repaint();
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -279,6 +287,8 @@ fn store_snapshot(snapshot: DualSenseSnapshot) {
 fn run_dualsense_watcher(ctx: egui::Context) {
     let mut connection: Option<ConnectedDualSense> = None;
     let mut previous = DualSenseSnapshot::default();
+    let mut home_pressed_at = None;
+    let mut long_press_triggered = false;
 
     loop {
         if connection.is_none() {
@@ -302,18 +312,39 @@ fn run_dualsense_watcher(ctx: egui::Context) {
         match result {
             Ok(Some(snapshot)) => {
                 let app_is_background = crate::launch::current_app_window_is_background();
-                let pressed_now = snapshot.buttons.intersects(Buttons::HOME)
-                    && !previous.buttons.intersects(Buttons::HOME);
+                let wake_mode = super::background_home_wake_mode();
+                let home_held = snapshot.buttons.intersects(Buttons::HOME);
+                let pressed_now = home_held && !previous.buttons.intersects(Buttons::HOME);
+                let released_now = !home_held && previous.buttons.intersects(Buttons::HOME);
+                let now = Instant::now();
 
                 previous = snapshot;
                 store_snapshot(snapshot);
 
                 if pressed_now {
-                    if app_is_background && super::background_home_wake_enabled() {
-                        WAKE_PENDING.store(true, Ordering::Release);
+                    home_pressed_at = Some(now);
+                    long_press_triggered = false;
+                    if app_is_background && wake_mode == BackgroundHomeWakeMode::ShortPress {
+                        request_wake(&ctx);
                     }
 
                     ctx.request_repaint();
+                } else if released_now {
+                    home_pressed_at = None;
+                    long_press_triggered = false;
+                } else if home_held
+                    && app_is_background
+                    && wake_mode == BackgroundHomeWakeMode::LongPress
+                    && !long_press_triggered
+                    && home_pressed_at
+                        .map(|started_at| {
+                            now.duration_since(started_at).as_millis()
+                                >= super::HOME_WAKE_LONG_PRESS_DURATION_MS
+                        })
+                        .unwrap_or(false)
+                {
+                    request_wake(&ctx);
+                    long_press_triggered = true;
                 }
 
                 if snapshot.has_input_activity && !app_is_background {
@@ -323,6 +354,8 @@ fn run_dualsense_watcher(ctx: egui::Context) {
             Ok(None) => {}
             Err(_) => {
                 previous = DualSenseSnapshot::default();
+                home_pressed_at = None;
+                long_press_triggered = false;
                 store_snapshot(previous);
                 connection = None;
                 DEVICE_PRESENT.store(false, Ordering::Release);

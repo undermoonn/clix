@@ -147,7 +147,7 @@ impl LauncherApp {
                     ctx.request_repaint();
                 }
                 if result.toggle_background_home_wake {
-                    self.set_background_home_wake_enabled(!self.background_home_wake_enabled, ctx);
+                    self.set_background_home_wake_mode(self.background_home_wake_mode.next(), ctx);
                 }
                 if result.toggle_controller_vibration_feedback {
                     self.set_controller_vibration_enabled(!self.controller_vibration_enabled, ctx);

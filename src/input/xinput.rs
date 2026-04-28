@@ -23,6 +23,8 @@ use winapi::um::xinput::{
 };
 
 use super::{buttons::Buttons, InputAggregateState};
+#[cfg(target_os = "windows")]
+use crate::config::BackgroundHomeWakeMode;
 
 #[cfg(target_os = "windows")]
 const XINPUT_SELECTION_RUMBLE_DURATION_MS: u128 = 40;
@@ -51,6 +53,12 @@ pub(super) fn start(_ctx: eframe::egui::Context) {}
 #[cfg(target_os = "windows")]
 pub fn take_wake_request() -> bool {
     HOME_WAKE_PENDING.swap(false, Ordering::AcqRel)
+}
+
+#[cfg(target_os = "windows")]
+fn request_wake(ctx: &egui::Context) {
+    HOME_WAKE_PENDING.store(true, Ordering::Release);
+    ctx.request_repaint();
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -141,10 +149,14 @@ unsafe fn run_home_watcher(ctx: egui::Context) {
 
     let get_state_ex: XInputGetStateExFn = std::mem::transmute(func);
     let mut prev_guide = [false; 4];
+    let mut pressed_at = [None; 4];
+    let mut long_press_triggered = [false; 4];
 
     loop {
         let mut any_held = false;
         let app_is_background = crate::launch::current_app_window_is_background();
+        let wake_mode = super::background_home_wake_mode();
+        let now = Instant::now();
 
         for i in 0..4u32 {
             let mut state: XINPUT_STATE = std::mem::zeroed();
@@ -155,15 +167,35 @@ unsafe fn run_home_watcher(ctx: egui::Context) {
                     any_held = true;
                 }
                 if pressed && !prev_guide[i as usize] {
-                    if app_is_background && super::background_home_wake_enabled() {
-                        HOME_WAKE_PENDING.store(true, Ordering::Release);
+                    pressed_at[i as usize] = Some(now);
+                    long_press_triggered[i as usize] = false;
+                    if app_is_background && wake_mode == BackgroundHomeWakeMode::ShortPress {
+                        request_wake(&ctx);
                     }
 
                     ctx.request_repaint();
+                } else if pressed
+                    && app_is_background
+                    && wake_mode == BackgroundHomeWakeMode::LongPress
+                    && !long_press_triggered[i as usize]
+                    && pressed_at[i as usize]
+                        .map(|started_at| {
+                            now.duration_since(started_at).as_millis()
+                                >= super::HOME_WAKE_LONG_PRESS_DURATION_MS
+                        })
+                        .unwrap_or(false)
+                {
+                    request_wake(&ctx);
+                    long_press_triggered[i as usize] = true;
+                } else if !pressed {
+                    pressed_at[i as usize] = None;
+                    long_press_triggered[i as usize] = false;
                 }
                 prev_guide[i as usize] = pressed;
             } else {
                 prev_guide[i as usize] = false;
+                pressed_at[i as usize] = None;
+                long_press_triggered[i as usize] = false;
             }
         }
 

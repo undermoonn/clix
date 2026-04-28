@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 
 // Crate modules.
 use crate::animation;
-use crate::config::PromptIconTheme;
+use crate::config::{BackgroundHomeWakeMode, PromptIconTheme};
 use crate::game::{self, Game, GameSource};
 use crate::i18n::{AppLanguage, AppLanguageSetting};
 use crate::input::{self, InputController};
@@ -88,7 +88,7 @@ pub struct LauncherApp {
     display_mode_setting: DisplayModeSetting,
     game_scan_options: game::GameScanOptions,
     launch_on_startup_enabled: bool,
-    background_home_wake_enabled: bool,
+    background_home_wake_mode: BackgroundHomeWakeMode,
     controller_vibration_enabled: bool,
     resolution_options: ResolutionOptions,
     display_scale_options: DisplayScaleOptions,
@@ -143,10 +143,10 @@ pub struct LauncherApp {
 
 impl LauncherApp {
     pub fn new(language: AppLanguage, ctx: &egui::Context) -> Self {
-        let background_home_wake_enabled = crate::config::load_background_home_wake_enabled();
+        let background_home_wake_mode = crate::config::load_background_home_wake_mode();
         #[cfg(target_os = "windows")]
         {
-            input::set_background_home_wake_enabled(background_home_wake_enabled);
+            input::set_background_home_wake_mode(background_home_wake_mode);
             input::start_watchers(ctx.clone());
         }
         #[cfg(not(target_os = "windows"))]
@@ -214,7 +214,7 @@ impl LauncherApp {
             display_mode_setting,
             game_scan_options,
             launch_on_startup_enabled,
-            background_home_wake_enabled,
+            background_home_wake_mode,
             controller_vibration_enabled,
             resolution_options,
             display_scale_options,

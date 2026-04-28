@@ -4,10 +4,10 @@ mod xinput;
 
 use std::collections::HashMap;
 #[cfg(target_os = "windows")]
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Instant;
 
-use crate::config::PromptIconTheme;
+use crate::config::{BackgroundHomeWakeMode, PromptIconTheme};
 use buttons::Buttons;
 
 #[cfg(target_os = "windows")]
@@ -22,9 +22,12 @@ pub const NAV_REPEAT_ACCEL_STAGE2_AFTER_MS: u128 = 1300;
 pub const NAV_REPEAT_INTERVAL_STAGE1_MS: u128 = 80;
 pub const NAV_REPEAT_INTERVAL_STAGE2_MS: u128 = 45;
 pub const FOCUS_COOLDOWN_MS: u128 = 100;
+#[cfg(target_os = "windows")]
+pub(super) const HOME_WAKE_LONG_PRESS_DURATION_MS: u128 = 500;
 
 #[cfg(target_os = "windows")]
-static BACKGROUND_HOME_WAKE_ENABLED: AtomicBool = AtomicBool::new(true);
+static BACKGROUND_HOME_WAKE_MODE: AtomicU8 =
+    AtomicU8::new(BackgroundHomeWakeMode::ShortPress as u8);
 
 #[cfg(target_os = "windows")]
 pub fn start_watchers(ctx: egui::Context) {
@@ -36,21 +39,22 @@ pub fn start_watchers(ctx: egui::Context) {
 pub fn start_watchers(_ctx: eframe::egui::Context) {}
 
 #[cfg(target_os = "windows")]
-pub fn set_background_home_wake_enabled(enabled: bool) {
-    BACKGROUND_HOME_WAKE_ENABLED.store(enabled, Ordering::Release);
+pub fn set_background_home_wake_mode(mode: BackgroundHomeWakeMode) {
+    BACKGROUND_HOME_WAKE_MODE.store(mode as u8, Ordering::Release);
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn set_background_home_wake_enabled(_enabled: bool) {}
+pub fn set_background_home_wake_mode(_mode: BackgroundHomeWakeMode) {}
 
 #[cfg(target_os = "windows")]
-pub(super) fn background_home_wake_enabled() -> bool {
-    BACKGROUND_HOME_WAKE_ENABLED.load(Ordering::Acquire)
+pub(super) fn background_home_wake_mode() -> BackgroundHomeWakeMode {
+    BackgroundHomeWakeMode::from_atomic_u8(BACKGROUND_HOME_WAKE_MODE.load(Ordering::Acquire))
+        .unwrap_or_default()
 }
 
 #[cfg(not(target_os = "windows"))]
-pub(super) fn background_home_wake_enabled() -> bool {
-    false
+pub(super) fn background_home_wake_mode() -> BackgroundHomeWakeMode {
+    BackgroundHomeWakeMode::Off
 }
 
 #[cfg(target_os = "windows")]

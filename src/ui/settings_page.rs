@@ -1,5 +1,6 @@
 use eframe::egui;
 
+use crate::config::BackgroundHomeWakeMode;
 use crate::game::GameSource;
 use crate::i18n::{AppLanguage, AppLanguageSetting};
 use crate::system::display_mode::{DisplayModeSetting, DisplayScaleOptions, ResolutionOptions};
@@ -1082,7 +1083,7 @@ pub fn draw_settings_page(
     xbox_guide_icon: Option<&egui::TextureHandle>,
     playstation_home_icon: Option<&egui::TextureHandle>,
     launch_on_startup_enabled: bool,
-    background_home_wake_enabled: bool,
+    background_home_wake_mode: BackgroundHomeWakeMode,
     controller_vibration_enabled: bool,
     detect_steam_games_enabled: bool,
     detect_epic_games_enabled: bool,
@@ -1620,12 +1621,8 @@ pub fn draw_settings_page(
                     None,
                     "",
                     true,
-                    Some(if background_home_wake_enabled {
-                        language.enabled_text()
-                    } else {
-                        language.disabled_text()
-                    }),
-                    if background_home_wake_enabled {
+                    Some(background_home_wake_mode.display_text(language)),
+                    if background_home_wake_mode != BackgroundHomeWakeMode::Off {
                         Some(enabled_subtitle_color)
                     } else {
                         None

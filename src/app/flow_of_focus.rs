@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use eframe::egui;
 
+use crate::config::BackgroundHomeWakeMode;
 use crate::{input, launch};
 
 use super::LauncherApp;
@@ -66,7 +67,7 @@ impl LauncherApp {
         }
 
         let wake_requested = input::take_wake_request();
-        if wake_requested && self.background_home_wake_enabled {
+        if wake_requested && self.background_home_wake_mode != BackgroundHomeWakeMode::Off {
             if let Some(state) = self.running_games.get(&self.page.selected()) {
                 let _ = launch::minimize_running_game(state);
             }

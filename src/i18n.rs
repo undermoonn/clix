@@ -296,6 +296,20 @@ impl AppLanguage {
         }
     }
 
+    pub fn short_press_text(self) -> &'static str {
+        match self {
+            Self::English => "Short Press",
+            Self::SimplifiedChinese => "短按",
+        }
+    }
+
+    pub fn long_press_text(self) -> &'static str {
+        match self {
+            Self::English => "Long Press",
+            Self::SimplifiedChinese => "长按",
+        }
+    }
+
     pub fn fullscreen_text(self) -> &'static str {
         match self {
             Self::English => "Fullscreen",

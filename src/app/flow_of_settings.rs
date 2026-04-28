@@ -70,14 +70,18 @@ impl LauncherApp {
         ctx.request_repaint();
     }
 
-    pub(super) fn set_background_home_wake_enabled(&mut self, enabled: bool, ctx: &egui::Context) {
-        if self.background_home_wake_enabled == enabled {
+    pub(super) fn set_background_home_wake_mode(
+        &mut self,
+        mode: crate::config::BackgroundHomeWakeMode,
+        ctx: &egui::Context,
+    ) {
+        if self.background_home_wake_mode == mode {
             return;
         }
 
-        self.background_home_wake_enabled = enabled;
-        crate::input::set_background_home_wake_enabled(enabled);
-        crate::config::store_background_home_wake_enabled(enabled);
+        self.background_home_wake_mode = mode;
+        crate::input::set_background_home_wake_mode(mode);
+        crate::config::store_background_home_wake_mode(mode);
         ctx.request_repaint();
     }
 

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use crate::game::GameScanOptions;
-use crate::i18n::AppLanguageSetting;
+use crate::i18n::{AppLanguage, AppLanguageSetting};
 use crate::system::display_mode::DisplayModeSetting;
 
 const CONFIG_FILE_NAME: &str = "settings.ini";
@@ -12,12 +12,72 @@ const DEBUG_SECTION: &str = "debug";
 const HINT_ICON_THEME_KEY: &str = "hint_icon_theme";
 const LANGUAGE_KEY: &str = "language";
 const DISPLAY_MODE_KEY: &str = "display_mode";
-const BACKGROUND_HOME_WAKE_ENABLED_KEY: &str = "background_home_wake_enabled";
+const BACKGROUND_HOME_WAKE_MODE_KEY: &str = "background_home_wake_enabled";
 const CONTROLLER_VIBRATION_ENABLED_KEY: &str = "controller_vibration_enabled";
 const DETECT_STEAM_GAMES_KEY: &str = "detect_steam_games";
 const DETECT_EPIC_GAMES_KEY: &str = "detect_epic_games";
 const DETECT_XBOX_GAMES_KEY: &str = "detect_xbox_games";
 const STEAM_CLIENT_STATE_LOGGING_ENABLED_KEY: &str = "steam_client_state_logging_enabled";
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(u8)]
+pub enum BackgroundHomeWakeMode {
+    Off,
+    #[default]
+    ShortPress,
+    LongPress,
+}
+
+impl BackgroundHomeWakeMode {
+    const OFF_CONFIG_VALUE: &str = "off";
+    const SHORT_PRESS_CONFIG_VALUE: &str = "short_press";
+    const LONG_PRESS_CONFIG_VALUE: &str = "long_press";
+
+    pub fn as_config_value(self) -> &'static str {
+        match self {
+            Self::Off => Self::OFF_CONFIG_VALUE,
+            Self::ShortPress => Self::SHORT_PRESS_CONFIG_VALUE,
+            Self::LongPress => Self::LONG_PRESS_CONFIG_VALUE,
+        }
+    }
+
+    pub fn from_config_value(value: &str) -> Self {
+        if value.eq_ignore_ascii_case(Self::SHORT_PRESS_CONFIG_VALUE)
+            || value.eq_ignore_ascii_case("true")
+        {
+            Self::ShortPress
+        } else if value.eq_ignore_ascii_case(Self::LONG_PRESS_CONFIG_VALUE) {
+            Self::LongPress
+        } else {
+            Self::Off
+        }
+    }
+
+    pub fn from_atomic_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::Off),
+            1 => Some(Self::ShortPress),
+            2 => Some(Self::LongPress),
+            _ => None,
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::Off => Self::ShortPress,
+            Self::ShortPress => Self::LongPress,
+            Self::LongPress => Self::Off,
+        }
+    }
+
+    pub fn display_text(self, language: AppLanguage) -> &'static str {
+        match self {
+            Self::Off => language.disabled_text(),
+            Self::ShortPress => language.short_press_text(),
+            Self::LongPress => language.long_press_text(),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum PromptIconTheme {
@@ -50,7 +110,7 @@ struct AppConfig {
     hint_icon_theme: PromptIconTheme,
     language: AppLanguageSetting,
     display_mode_setting: DisplayModeSetting,
-    background_home_wake_enabled: bool,
+    background_home_wake_mode: BackgroundHomeWakeMode,
     controller_vibration_enabled: bool,
     game_scan_options: GameScanOptions,
     steam_client_state_logging_enabled: bool,
@@ -64,7 +124,7 @@ impl Default for AppConfig {
             hint_icon_theme: PromptIconTheme::Xbox,
             language: AppLanguageSetting::Auto,
             display_mode_setting: DisplayModeSetting::Fullscreen,
-            background_home_wake_enabled: true,
+            background_home_wake_mode: BackgroundHomeWakeMode::ShortPress,
             controller_vibration_enabled: false,
             game_scan_options: GameScanOptions::default(),
             steam_client_state_logging_enabled: false,
@@ -143,9 +203,8 @@ fn parse_config(contents: &str) -> AppConfig {
             } else if key.eq_ignore_ascii_case(DISPLAY_MODE_KEY) {
                 config.display_mode_setting = DisplayModeSetting::from_config_value(value)
                     .unwrap_or(DisplayModeSetting::Fullscreen);
-            } else if key.eq_ignore_ascii_case(BACKGROUND_HOME_WAKE_ENABLED_KEY) {
-                config.background_home_wake_enabled =
-                    parse_bool_config_value(value).unwrap_or(true);
+            } else if key.eq_ignore_ascii_case(BACKGROUND_HOME_WAKE_MODE_KEY) {
+                config.background_home_wake_mode = BackgroundHomeWakeMode::from_config_value(value);
             } else if key.eq_ignore_ascii_case(CONTROLLER_VIBRATION_ENABLED_KEY) {
                 config.controller_vibration_enabled =
                     parse_bool_config_value(value).unwrap_or(false);
@@ -182,8 +241,8 @@ fn serialize_config(config: AppConfig) -> String {
         config.language.as_config_value(),
         DISPLAY_MODE_KEY,
         config.display_mode_setting.as_config_value(),
-        BACKGROUND_HOME_WAKE_ENABLED_KEY,
-        config.background_home_wake_enabled,
+        BACKGROUND_HOME_WAKE_MODE_KEY,
+        config.background_home_wake_mode.as_config_value(),
         CONTROLLER_VIBRATION_ENABLED_KEY,
         config.controller_vibration_enabled,
         GAMES_SECTION,
@@ -254,13 +313,13 @@ pub fn load_controller_vibration_enabled() -> bool {
     load_config().controller_vibration_enabled
 }
 
-pub fn load_background_home_wake_enabled() -> bool {
-    load_config().background_home_wake_enabled
+pub fn load_background_home_wake_mode() -> BackgroundHomeWakeMode {
+    load_config().background_home_wake_mode
 }
 
-pub fn store_background_home_wake_enabled(enabled: bool) {
+pub fn store_background_home_wake_mode(mode: BackgroundHomeWakeMode) {
     let mut config = load_config();
-    config.background_home_wake_enabled = enabled;
+    config.background_home_wake_mode = mode;
     store_config(config);
 }
 
@@ -282,7 +341,7 @@ pub fn store_game_scan_options(options: GameScanOptions) {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_config, serialize_config, AppConfig};
+    use super::{parse_config, serialize_config, AppConfig, BackgroundHomeWakeMode};
     use crate::system::display_mode::DisplayModeSetting;
 
     #[test]
@@ -300,6 +359,26 @@ mod tests {
         let contents = serialize_config(config);
 
         assert!(contents.contains("display_mode=windowed"));
+    }
+
+    #[test]
+    fn parse_config_maps_legacy_true_home_wake_value_to_short_press() {
+        let config = parse_config("[ui]\nbackground_home_wake_enabled=true\n");
+
+        assert_eq!(
+            config.background_home_wake_mode,
+            BackgroundHomeWakeMode::ShortPress
+        );
+    }
+
+    #[test]
+    fn serialize_config_writes_home_wake_mode_value() {
+        let mut config = AppConfig::default();
+        config.background_home_wake_mode = BackgroundHomeWakeMode::LongPress;
+
+        let contents = serialize_config(config);
+
+        assert!(contents.contains("background_home_wake_enabled=long_press"));
     }
 }
 
