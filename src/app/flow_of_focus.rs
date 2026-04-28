@@ -75,6 +75,7 @@ impl LauncherApp {
             }
             self.page.prepare_wake_animation();
             self.wake_focus_pending = true;
+            let _ = launch::focus_current_app_window();
             self.runtime.suppress_home_hold_until_release();
             ctx.request_repaint();
         }

@@ -177,13 +177,6 @@ pub(super) fn minimize_running_game(state: &RunningGameState) -> bool {
         }
     }
 
-    if let Some((hwnd, _)) = find_best_window_for_pids(&matched, &state.game_name) {
-        unsafe {
-            ShowWindow(hwnd, SW_MINIMIZE);
-        }
-        return true;
-    }
-
     false
 }
 
