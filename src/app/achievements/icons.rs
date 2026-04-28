@@ -83,7 +83,8 @@ impl AchievementState {
 
             if let Some(texture) = cover::bytes_to_achievement_icon_texture(ctx, &bytes, label) {
                 self.icon_reveal.insert(url.clone(), 0.0);
-                self.icon_reveal_started_at.insert(url.clone(), std::time::Instant::now());
+                self.icon_reveal_started_at
+                    .insert(url.clone(), std::time::Instant::now());
                 self.icon_cache.insert(url, texture);
             } else {
                 cover::clear_cached_achievement_icon(&url);

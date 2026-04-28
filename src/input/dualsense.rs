@@ -7,13 +7,13 @@ use std::sync::{Mutex, Once, OnceLock};
 #[cfg(target_os = "windows")]
 use std::time::{Duration, Instant};
 
+use super::{buttons::Buttons, InputAggregateState};
 #[cfg(target_os = "windows")]
 use crc32fast::Hasher;
 #[cfg(target_os = "windows")]
 use eframe::egui;
 #[cfg(target_os = "windows")]
 use hidapi::{HidApi, HidDevice};
-use super::{buttons::Buttons, InputAggregateState};
 
 #[cfg(target_os = "windows")]
 const SONY_VENDOR_ID: u16 = 0x054c;
@@ -241,10 +241,8 @@ fn run_rumble_worker(rx: mpsc::Receiver<RumbleCommand>) {
                         deadline = None;
                         continue;
                     }
-                    deadline = Some(
-                        Instant::now()
-                            + Duration::from_millis(settings.duration_ms as u64),
-                    );
+                    deadline =
+                        Some(Instant::now() + Duration::from_millis(settings.duration_ms as u64));
                 } else {
                     deadline = None;
                 }
@@ -400,12 +398,8 @@ impl ConnectedDualSense {
             DualSenseTransport::Usb => build_usb_output_report(weak_motor, strong_motor).to_vec(),
             DualSenseTransport::Bluetooth => {
                 self.bluetooth_sequence = self.bluetooth_sequence.wrapping_add(1);
-                build_bluetooth_output_report(
-                    weak_motor,
-                    strong_motor,
-                    self.bluetooth_sequence,
-                )
-                .to_vec()
+                build_bluetooth_output_report(weak_motor, strong_motor, self.bluetooth_sequence)
+                    .to_vec()
             }
         };
 
@@ -438,15 +432,13 @@ fn parse_input_report(report: &[u8]) -> Option<(DualSenseSnapshot, DualSenseTran
     let report_id = *report.first()?;
 
     match report_id {
-        0x01 if report.len() >= 64 => parse_full_state(&report[1..64]).map(|snapshot| {
-            (snapshot, DualSenseTransport::Usb)
-        }),
-        0x31 if report.len() >= 65 => parse_full_state(&report[2..65]).map(|snapshot| {
-            (snapshot, DualSenseTransport::Bluetooth)
-        }),
-        0x01 if report.len() >= 10 => parse_simple_bluetooth_state(&report[1..10]).map(
-            |snapshot| (snapshot, DualSenseTransport::Bluetooth),
-        ),
+        0x01 if report.len() >= 64 => {
+            parse_full_state(&report[1..64]).map(|snapshot| (snapshot, DualSenseTransport::Usb))
+        }
+        0x31 if report.len() >= 65 => parse_full_state(&report[2..65])
+            .map(|snapshot| (snapshot, DualSenseTransport::Bluetooth)),
+        0x01 if report.len() >= 10 => parse_simple_bluetooth_state(&report[1..10])
+            .map(|snapshot| (snapshot, DualSenseTransport::Bluetooth)),
         _ => None,
     }
 }
@@ -478,7 +470,11 @@ fn build_bluetooth_output_report(
     report[0] = 0x31;
     report[1] = BLUETOOTH_OUTPUT_REPORT_TAG;
     report[2] = sequence << 4;
-    populate_effect_state(&mut report[BLUETOOTH_EFFECTS_OFFSET..], weak_motor, strong_motor);
+    populate_effect_state(
+        &mut report[BLUETOOTH_EFFECTS_OFFSET..],
+        weak_motor,
+        strong_motor,
+    );
 
     let crc = dualsense_bluetooth_crc(&report[..BLUETOOTH_OUTPUT_REPORT_SIZE - 4]);
     report[BLUETOOTH_OUTPUT_REPORT_SIZE - 4..].copy_from_slice(&crc.to_le_bytes());

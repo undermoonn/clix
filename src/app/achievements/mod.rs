@@ -110,7 +110,10 @@ fn preserve_missing_global_percents(
     let previous_percents: HashMap<&str, f32> = previous_summary
         .items
         .iter()
-        .filter_map(|item| item.global_percent.map(|percent| (item.api_name.as_str(), percent)))
+        .filter_map(|item| {
+            item.global_percent
+                .map(|percent| (item.api_name.as_str(), percent))
+        })
         .collect();
 
     for item in &mut summary.items {

@@ -10,12 +10,14 @@ use winapi::um::processthreadsapi::{GetCurrentProcessId, OpenProcess, TerminateP
 use winapi::um::psapi::{EnumProcesses, GetModuleFileNameExW};
 use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE, PROCESS_VM_READ};
 use winapi::um::winuser::{
-    EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
-    IsWindowVisible, PostMessageW, WM_CLOSE,
+    EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
+    PostMessageW, WM_CLOSE,
 };
 
 pub(crate) fn normalize_windows_path(path: &Path) -> String {
-    path.to_string_lossy().replace('/', "\\").to_ascii_lowercase()
+    path.to_string_lossy()
+        .replace('/', "\\")
+        .to_ascii_lowercase()
 }
 
 pub(crate) fn process_image_path(pid: u32) -> Option<PathBuf> {
@@ -90,7 +92,9 @@ fn collect_windows(visible_only: bool) -> Vec<(HWND, u32)> {
         TRUE
     }
 
-    let mut collector = WindowCollector { windows: Vec::new() };
+    let mut collector = WindowCollector {
+        windows: Vec::new(),
+    };
     unsafe {
         EnumWindows(
             Some(enum_windows_proc),

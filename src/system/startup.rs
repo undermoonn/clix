@@ -26,7 +26,8 @@ mod imp {
     pub fn is_enabled() -> bool {
         if is_packaged_process() {
             clear_legacy_run_values();
-            return packaged_startup_task_state().is_some_and(|state| state == StartupTaskState::Enabled);
+            return packaged_startup_task_state()
+                .is_some_and(|state| state == StartupTaskState::Enabled);
         }
 
         clear_legacy_run_values();
@@ -106,7 +107,9 @@ mod imp {
             }
         } else {
             match state {
-                StartupTaskState::Enabled => task.Disable().is_ok() && task.State().ok() != Some(StartupTaskState::Enabled),
+                StartupTaskState::Enabled => {
+                    task.Disable().is_ok() && task.State().ok() != Some(StartupTaskState::Enabled)
+                }
                 _ => true,
             }
         }
@@ -194,10 +197,7 @@ fn parse_command_path(command: &str) -> Option<PathBuf> {
         return Some(PathBuf::from(&rest[..end]));
     }
 
-    trimmed
-        .split_whitespace()
-        .next()
-        .map(PathBuf::from)
+    trimmed.split_whitespace().next().map(PathBuf::from)
 }
 
 #[cfg(test)]
@@ -239,7 +239,9 @@ mod tests {
 
         assert_eq!(
             path,
-            Some(PathBuf::from(r"C:\BigScreenLauncher\big-screen-launcher.exe"))
+            Some(PathBuf::from(
+                r"C:\BigScreenLauncher\big-screen-launcher.exe"
+            ))
         );
     }
 }

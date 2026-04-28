@@ -330,12 +330,12 @@ impl PageState {
         self.settings_screen_resolution_count = resolution_count.max(1);
         self.settings_screen_refresh_count = refresh_count.max(1);
         self.settings_screen_scale_count = scale_count.max(1);
-        self.settings_screen_current_resolution = selected_resolution_index
-            .min(self.settings_screen_resolution_count.saturating_sub(1));
-        self.settings_screen_current_refresh = selected_refresh_index
-            .min(self.settings_screen_refresh_count.saturating_sub(1));
-        self.settings_screen_current_scale = selected_scale_index
-            .min(self.settings_screen_scale_count.saturating_sub(1));
+        self.settings_screen_current_resolution =
+            selected_resolution_index.min(self.settings_screen_resolution_count.saturating_sub(1));
+        self.settings_screen_current_refresh =
+            selected_refresh_index.min(self.settings_screen_refresh_count.saturating_sub(1));
+        self.settings_screen_current_scale =
+            selected_scale_index.min(self.settings_screen_scale_count.saturating_sub(1));
 
         match self.settings_screen_dropdown {
             Some(ScreenDropdown::Resolution) => {
@@ -533,68 +533,61 @@ impl PageState {
                 ControllerAction::Launch => {
                     if self.settings_in_submenu {
                         match self.settings_section {
-                            SettingsSection::System => {
-                                match self.settings_system_selected {
-                                    0 => result.toggle_detect_steam_games = true,
-                                    1 => result.toggle_detect_epic_games = true,
-                                    2 => result.toggle_detect_xbox_games = true,
-                                    3 => result.toggle_background_home_wake = true,
-                                    4 => result.toggle_controller_vibration_feedback = true,
-                                    5 => result.cycle_display_mode_setting = true,
-                                    6 => result.cycle_language_setting = true,
-                                    _ => result.toggle_launch_on_startup = true,
+                            SettingsSection::System => match self.settings_system_selected {
+                                0 => result.toggle_detect_steam_games = true,
+                                1 => result.toggle_detect_epic_games = true,
+                                2 => result.toggle_detect_xbox_games = true,
+                                3 => result.toggle_background_home_wake = true,
+                                4 => result.toggle_controller_vibration_feedback = true,
+                                5 => result.cycle_display_mode_setting = true,
+                                6 => result.cycle_language_setting = true,
+                                _ => result.toggle_launch_on_startup = true,
+                            },
+                            SettingsSection::Screen => match self.settings_screen_dropdown {
+                                Some(ScreenDropdown::Resolution) => {
+                                    result.screen_settings_action =
+                                        Some(ScreenSettingsAction::SelectResolution(
+                                            self.settings_screen_dropdown_selected,
+                                        ));
+                                    self.settings_screen_dropdown = None;
                                 }
-                            }
-                            SettingsSection::Screen => {
-                                match self.settings_screen_dropdown {
-                                    Some(ScreenDropdown::Resolution) => {
-                                        result.screen_settings_action = Some(
-                                            ScreenSettingsAction::SelectResolution(
-                                                self.settings_screen_dropdown_selected,
-                                            ),
-                                        );
-                                        self.settings_screen_dropdown = None;
-                                    }
-                                    Some(ScreenDropdown::RefreshRate) => {
-                                        result.screen_settings_action = Some(
-                                            ScreenSettingsAction::SelectRefreshRate(
-                                                self.settings_screen_dropdown_selected,
-                                            ),
-                                        );
-                                        self.settings_screen_dropdown = None;
-                                    }
-                                    Some(ScreenDropdown::Scale) => {
-                                        result.screen_settings_action = Some(
-                                            ScreenSettingsAction::SelectScale(
-                                                self.settings_screen_dropdown_selected,
-                                            ),
-                                        );
-                                        self.settings_screen_dropdown = None;
-                                    }
-                                    None => {
-                                        self.settings_screen_dropdown = Some(
-                                            if self.settings_screen_selected == 0 {
-                                                self.settings_screen_dropdown_selected = self
-                                                    .settings_screen_current_resolution;
-                                                ScreenDropdown::Resolution
-                                            } else if self.settings_screen_selected == 1 {
-                                                self.settings_screen_dropdown_selected = self
-                                                    .settings_screen_current_refresh;
-                                                ScreenDropdown::RefreshRate
-                                            } else {
-                                                self.settings_screen_dropdown_selected = self
-                                                    .settings_screen_current_scale;
-                                                ScreenDropdown::Scale
-                                            },
-                                        );
-                                    }
+                                Some(ScreenDropdown::RefreshRate) => {
+                                    result.screen_settings_action =
+                                        Some(ScreenSettingsAction::SelectRefreshRate(
+                                            self.settings_screen_dropdown_selected,
+                                        ));
+                                    self.settings_screen_dropdown = None;
                                 }
-                            }
+                                Some(ScreenDropdown::Scale) => {
+                                    result.screen_settings_action =
+                                        Some(ScreenSettingsAction::SelectScale(
+                                            self.settings_screen_dropdown_selected,
+                                        ));
+                                    self.settings_screen_dropdown = None;
+                                }
+                                None => {
+                                    self.settings_screen_dropdown =
+                                        Some(if self.settings_screen_selected == 0 {
+                                            self.settings_screen_dropdown_selected =
+                                                self.settings_screen_current_resolution;
+                                            ScreenDropdown::Resolution
+                                        } else if self.settings_screen_selected == 1 {
+                                            self.settings_screen_dropdown_selected =
+                                                self.settings_screen_current_refresh;
+                                            ScreenDropdown::RefreshRate
+                                        } else {
+                                            self.settings_screen_dropdown_selected =
+                                                self.settings_screen_current_scale;
+                                            ScreenDropdown::Scale
+                                        });
+                                }
+                            },
                             SettingsSection::Apps => {
-                                result.launch_external_app = Some(match self.settings_apps_selected {
-                                    0 => ExternalAppKind::DlssSwapper,
-                                    _ => ExternalAppKind::NvidiaApp,
-                                });
+                                result.launch_external_app =
+                                    Some(match self.settings_apps_selected {
+                                        0 => ExternalAppKind::DlssSwapper,
+                                        _ => ExternalAppKind::NvidiaApp,
+                                    });
                             }
                             SettingsSection::CloseApp => {}
                         }
@@ -675,8 +668,7 @@ impl PageState {
                 ControllerAction::Quit => {
                     self.clear_home_top_button_selection();
                 }
-                ControllerAction::Refresh
-                | ControllerAction::Up => {}
+                ControllerAction::Refresh | ControllerAction::Up => {}
             }
             return result;
         }
@@ -756,16 +748,28 @@ impl PageState {
             ctx.request_repaint();
         }
 
-        let panel_target = if self.show_achievement_panel { 1.0 } else { 0.0 };
+        let panel_target = if self.show_achievement_panel {
+            1.0
+        } else {
+            0.0
+        };
         self.achievement_panel_anim
             .animate_to(panel_target, 5.4, now, ANIMATION_EPSILON);
         if self.achievement_panel_anim.update(now, ANIMATION_EPSILON) {
             ctx.request_repaint();
         }
 
-        let home_settings_target = if self.home_settings_selected { 1.0 } else { 0.0 };
-        self.home_settings_focus_anim
-            .animate_to(home_settings_target, 11.0, now, ANIMATION_EPSILON);
+        let home_settings_target = if self.home_settings_selected {
+            1.0
+        } else {
+            0.0
+        };
+        self.home_settings_focus_anim.animate_to(
+            home_settings_target,
+            11.0,
+            now,
+            ANIMATION_EPSILON,
+        );
         if self.home_settings_focus_anim.update(now, ANIMATION_EPSILON) {
             ctx.request_repaint();
         }
@@ -814,8 +818,12 @@ impl PageState {
         } else {
             SETTINGS_PAGE_ENTER_ANIM_SPEED
         };
-        self.settings_page_anim
-            .animate_to(settings_target, settings_anim_speed, now, ANIMATION_EPSILON);
+        self.settings_page_anim.animate_to(
+            settings_target,
+            settings_anim_speed,
+            now,
+            ANIMATION_EPSILON,
+        );
         if self.settings_page_anim.update(now, ANIMATION_EPSILON) {
             ctx.request_repaint();
         }
@@ -831,8 +839,12 @@ impl PageState {
         } else {
             SETTINGS_SUBMENU_ENTER_ANIM_SPEED
         };
-        self.settings_submenu_anim
-            .animate_to(submenu_target, submenu_anim_speed, now, ANIMATION_EPSILON);
+        self.settings_submenu_anim.animate_to(
+            submenu_target,
+            submenu_anim_speed,
+            now,
+            ANIMATION_EPSILON,
+        );
         if self.settings_submenu_anim.update(now, ANIMATION_EPSILON) {
             ctx.request_repaint();
         }
@@ -868,8 +880,12 @@ impl PageState {
         let summary_cards_target = if self.is_fast_scrolling() { 0.0 } else { 1.0 };
         let summary_cards_diff = summary_cards_target - self.summary_cards_visibility.value_at(now);
         let fade_speed = if summary_cards_diff < 0.0 { 18.0 } else { 10.0 };
-        self.summary_cards_visibility
-            .animate_to(summary_cards_target, fade_speed, now, ANIMATION_EPSILON);
+        self.summary_cards_visibility.animate_to(
+            summary_cards_target,
+            fade_speed,
+            now,
+            ANIMATION_EPSILON,
+        );
         if self.summary_cards_visibility.update(now, ANIMATION_EPSILON) {
             ctx.request_repaint();
         }
@@ -885,7 +901,10 @@ impl PageState {
         let ach_target = self.achievement_selected.saturating_sub(2) as f32;
         self.achievement_scroll_offset
             .animate_to(ach_target, 14.0, now, ANIMATION_EPSILON);
-        if self.achievement_scroll_offset.update(now, ANIMATION_EPSILON) {
+        if self
+            .achievement_scroll_offset
+            .update(now, ANIMATION_EPSILON)
+        {
             ctx.request_repaint();
         }
     }
@@ -959,7 +978,9 @@ impl PageState {
                     Some(ScreenDropdown::RefreshRate) => {
                         300 + self.settings_screen_dropdown_selected as u16
                     }
-                    Some(ScreenDropdown::Scale) => 500 + self.settings_screen_dropdown_selected as u16,
+                    Some(ScreenDropdown::Scale) => {
+                        500 + self.settings_screen_dropdown_selected as u16
+                    }
                     None => 20 + self.settings_screen_selected as u16,
                 },
                 SettingsSection::Apps => 700 + self.settings_apps_selected as u16,
@@ -1003,7 +1024,9 @@ impl PageState {
             Some(ScreenDropdown::Resolution) => {
                 self.settings_screen_resolution_count.saturating_sub(1)
             }
-            Some(ScreenDropdown::RefreshRate) => self.settings_screen_refresh_count.saturating_sub(1),
+            Some(ScreenDropdown::RefreshRate) => {
+                self.settings_screen_refresh_count.saturating_sub(1)
+            }
             Some(ScreenDropdown::Scale) => self.settings_screen_scale_count.saturating_sub(1),
             None => return,
         };
@@ -1022,6 +1045,7 @@ impl PageState {
 mod tests {
     use std::time::{Duration, Instant};
 
+    use super::super::power::PowerMenuLayout;
     use super::{
         PageState, PowerAction, ScreenSettingsAction, SETTINGS_PAGE_ENTER_ANIM_SPEED,
         SETTINGS_PAGE_ENTER_INITIAL_PROGRESS, SETTINGS_SUBMENU_ENTER_ANIM_SPEED,
@@ -1029,7 +1053,6 @@ mod tests {
     use crate::animation::scale_seconds;
     use crate::input::ControllerAction;
     use crate::system::external_apps::ExternalAppKind;
-    use super::super::power::PowerMenuLayout;
 
     fn open_settings_page(page: &mut PageState) {
         let _ = page.handle_action(&ControllerAction::Settings, 3, true, 4);
@@ -1594,7 +1617,10 @@ mod tests {
 
         open_settings_page(&mut page);
 
-        assert_eq!(page.settings_page_anim(), SETTINGS_PAGE_ENTER_INITIAL_PROGRESS);
+        assert_eq!(
+            page.settings_page_anim(),
+            SETTINGS_PAGE_ENTER_INITIAL_PROGRESS
+        );
     }
 
     #[test]
@@ -1608,7 +1634,8 @@ mod tests {
         tick_animation_frame(&mut page, &ctx, &mut now);
         tick_animation_frame(&mut page, &ctx, &mut now);
 
-        let expected = 1.0 - (-(SETTINGS_SUBMENU_ENTER_ANIM_SPEED * scale_seconds(1.0 / 60.0))).exp();
+        let expected =
+            1.0 - (-(SETTINGS_SUBMENU_ENTER_ANIM_SPEED * scale_seconds(1.0 / 60.0))).exp();
         assert!((page.settings_submenu_anim() - expected).abs() < 1e-6);
     }
 
@@ -1808,7 +1835,10 @@ mod tests {
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
 
-        assert_eq!(result.screen_settings_action, Some(ScreenSettingsAction::SelectScale(2)));
+        assert_eq!(
+            result.screen_settings_action,
+            Some(ScreenSettingsAction::SelectScale(2))
+        );
     }
 
     #[test]
@@ -1955,5 +1985,4 @@ mod tests {
         assert!(result.reveal_hidden_achievement);
         assert!(!result.launch_selected);
     }
-
 }

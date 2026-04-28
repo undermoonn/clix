@@ -118,7 +118,10 @@ fn parse_config(contents: &str) -> AppConfig {
             continue;
         }
 
-        if let Some(section_name) = line.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+        if let Some(section_name) = line
+            .strip_prefix('[')
+            .and_then(|value| value.strip_suffix(']'))
+        {
             current_section = section_name.trim();
             continue;
         }
@@ -132,11 +135,11 @@ fn parse_config(contents: &str) -> AppConfig {
 
         if current_section.eq_ignore_ascii_case(UI_SECTION) {
             if key.eq_ignore_ascii_case(HINT_ICON_THEME_KEY) {
-                config.hint_icon_theme = PromptIconTheme::from_config_value(value)
-                    .unwrap_or(PromptIconTheme::Xbox);
+                config.hint_icon_theme =
+                    PromptIconTheme::from_config_value(value).unwrap_or(PromptIconTheme::Xbox);
             } else if key.eq_ignore_ascii_case(LANGUAGE_KEY) {
-                config.language =
-                    AppLanguageSetting::from_config_value(value).unwrap_or(AppLanguageSetting::Auto);
+                config.language = AppLanguageSetting::from_config_value(value)
+                    .unwrap_or(AppLanguageSetting::Auto);
             } else if key.eq_ignore_ascii_case(DISPLAY_MODE_KEY) {
                 config.display_mode_setting = DisplayModeSetting::from_config_value(value)
                     .unwrap_or(DisplayModeSetting::Fullscreen);
@@ -149,14 +152,14 @@ fn parse_config(contents: &str) -> AppConfig {
             }
         } else if current_section.eq_ignore_ascii_case(GAMES_SECTION) {
             if key.eq_ignore_ascii_case(DETECT_STEAM_GAMES_KEY) {
-                config.game_scan_options.detect_steam_games =
-                    parse_bool_config_value(value).unwrap_or(GameScanOptions::default().detect_steam_games);
+                config.game_scan_options.detect_steam_games = parse_bool_config_value(value)
+                    .unwrap_or(GameScanOptions::default().detect_steam_games);
             } else if key.eq_ignore_ascii_case(DETECT_EPIC_GAMES_KEY) {
-                config.game_scan_options.detect_epic_games =
-                    parse_bool_config_value(value).unwrap_or(GameScanOptions::default().detect_epic_games);
+                config.game_scan_options.detect_epic_games = parse_bool_config_value(value)
+                    .unwrap_or(GameScanOptions::default().detect_epic_games);
             } else if key.eq_ignore_ascii_case(DETECT_XBOX_GAMES_KEY) {
-                config.game_scan_options.detect_xbox_games =
-                    parse_bool_config_value(value).unwrap_or(GameScanOptions::default().detect_xbox_games);
+                config.game_scan_options.detect_xbox_games = parse_bool_config_value(value)
+                    .unwrap_or(GameScanOptions::default().detect_xbox_games);
             }
         } else if current_section.eq_ignore_ascii_case(DEBUG_SECTION) {
             if key.eq_ignore_ascii_case(STEAM_CLIENT_STATE_LOGGING_ENABLED_KEY) {

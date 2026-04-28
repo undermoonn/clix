@@ -78,7 +78,8 @@ impl AchievementState {
         self.overview_cache.insert(steam_app_id, summary);
         if animate_reveal && !had_summary {
             self.text_reveal.insert(steam_app_id, 0.0);
-            self.text_reveal_started_at.insert(steam_app_id, Instant::now());
+            self.text_reveal_started_at
+                .insert(steam_app_id, Instant::now());
         } else {
             self.text_reveal.insert(steam_app_id, 1.0);
             self.text_reveal_started_at.remove(&steam_app_id);
@@ -99,7 +100,10 @@ impl AchievementState {
                 detail
                     .items
                     .iter()
-                    .filter_map(|item| item.global_percent.map(|percent| (item.api_name.clone(), percent)))
+                    .filter_map(|item| {
+                        item.global_percent
+                            .map(|percent| (item.api_name.clone(), percent))
+                    })
                     .collect()
             })
             .unwrap_or_default();

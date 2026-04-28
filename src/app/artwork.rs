@@ -137,12 +137,10 @@ impl ArtworkState {
                         &bytes,
                         format!("cover_{}", assets.steam_app_id),
                     )
-                    .map(
-                        |texture| {
-                            loaded_any = true;
-                            (assets.steam_app_id, texture)
-                        },
-                    )
+                    .map(|texture| {
+                        loaded_any = true;
+                        (assets.steam_app_id, texture)
+                    })
                 });
 
                 self.logo = assets.logo_bytes.and_then(|bytes| {
@@ -151,12 +149,10 @@ impl ArtworkState {
                         &bytes,
                         format!("logo_{}", assets.steam_app_id),
                     )
-                    .map(
-                        |texture| {
-                            loaded_any = true;
-                            (assets.steam_app_id, texture)
-                        },
-                    )
+                    .map(|texture| {
+                        loaded_any = true;
+                        (assets.steam_app_id, texture)
+                    })
                 });
 
                 if loaded_any || self.cover_prev.is_some() || self.logo_prev.is_some() {

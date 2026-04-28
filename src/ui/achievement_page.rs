@@ -6,19 +6,18 @@ use crate::game::Game;
 use crate::i18n::AppLanguage;
 use crate::steam::AchievementSummary;
 
-use super::hint_icons::HintIcons;
-use super::{design_units, lerp_f32, smoothstep01, viewport_layout_scale};
 use super::header::{
     build_selected_game_header, dlss_tag_text, draw_selected_game_summary,
     draw_selected_game_text_badge, draw_selected_game_text_badge_with_style,
     draw_selected_game_title, game_source_badge_text, installed_size_tag_text,
-    measure_selected_game_text_badge,
-    SelectedGameBadgeStyle, SelectedGameSummaryStyle,
+    measure_selected_game_text_badge, SelectedGameBadgeStyle, SelectedGameSummaryStyle,
 };
+use super::hint_icons::HintIcons;
 use super::text::{
     build_wrapped_galley, color_with_scaled_alpha, corner_radius, format_achievement_status,
     PANEL_CORNER_RADIUS,
 };
+use super::{design_units, lerp_f32, smoothstep01, viewport_layout_scale};
 
 fn draw_achievement_icon(
     painter: &egui::Painter,
@@ -53,8 +52,12 @@ fn draw_achievement_icon(
     let alpha = ((tint.a() as f32) * reveal).round() as u8;
     let fade_tint = egui::Color32::from_rgba_unmultiplied(tint.r(), tint.g(), tint.b(), alpha);
     painter.add(egui::Shape::Rect(
-        egui::epaint::RectShape::filled(draw_rect, corner_radius(ACHIEVEMENT_ICON_ROUNDING), fade_tint)
-            .with_texture(texture.id(), uv),
+        egui::epaint::RectShape::filled(
+            draw_rect,
+            corner_radius(ACHIEVEMENT_ICON_ROUNDING),
+            fade_tint,
+        )
+        .with_texture(texture.id(), uv),
     ));
 }
 
@@ -100,18 +103,14 @@ fn draw_centered_achievement_empty(
 }
 
 fn format_achievement_percent(global_percent: Option<f32>) -> Option<f32> {
-    global_percent
-        .filter(|value| value.is_finite())
+    global_percent.filter(|value| value.is_finite())
 }
 
 fn achievement_content_split_x(content_rect: egui::Rect) -> f32 {
     lerp_f32(content_rect.min.x, content_rect.max.x, 0.618)
 }
 
-fn achievement_row_background_color(
-    unlocked: Option<bool>,
-    is_selected: bool,
-) -> egui::Color32 {
+fn achievement_row_background_color(unlocked: Option<bool>, is_selected: bool) -> egui::Color32 {
     if unlocked == Some(true) {
         if is_selected {
             egui::Color32::from_rgba_unmultiplied(148, 212, 176, 132)
@@ -182,7 +181,12 @@ fn draw_hidden_achievement_overlay(
     let title_size = title.size();
     let icon_size = design_units(39.0, layout_scale);
     let icon_gap = design_units(12.0, layout_scale);
-    let group_width = title_size.x + if icons.is_some() { icon_gap + icon_size } else { 0.0 };
+    let group_width = title_size.x
+        + if icons.is_some() {
+            icon_gap + icon_size
+        } else {
+            0.0
+        };
     let title_pos = egui::pos2(
         overlay_rect.center().x - group_width * 0.5,
         overlay_rect.center().y - title_size.y * 0.5,
@@ -319,11 +323,13 @@ pub fn draw_achievement_page(
         content_top + design_units(4.0, layout_scale),
     );
     let achievement_x = summary_base_pos.x;
-    let header_bottom = (title_base_y + header.total_height()).max(
-        summary_base_pos.y + detail_summary_style.card_height,
-    );
+    let header_bottom = (title_base_y + header.total_height())
+        .max(summary_base_pos.y + detail_summary_style.card_height);
     let header_base_rect = egui::Rect::from_min_max(
-        egui::pos2(padded_rect.min.x + design_units(8.0, layout_scale), content_top),
+        egui::pos2(
+            padded_rect.min.x + design_units(8.0, layout_scale),
+            content_top,
+        ),
         egui::pos2(
             padded_rect.max.x - design_units(8.0, layout_scale),
             header_bottom + design_units(14.0, layout_scale),
@@ -364,10 +370,7 @@ pub fn draw_achievement_page(
     );
     if let Some(game_icon) = game_icon {
         let game_icon_rect = egui::Rect::from_min_size(
-            egui::pos2(
-                header_stack_x - game_icon_total_width,
-                summary_pos.y,
-            ),
+            egui::pos2(header_stack_x - game_icon_total_width, summary_pos.y),
             egui::vec2(game_icon_size, game_icon_size),
         );
         draw_achievement_icon(
@@ -504,7 +507,13 @@ pub fn draw_achievement_page(
         let hidden_revealing = hidden_state
             && revealed_hidden.is_some_and(|revealed_api_name| revealed_api_name == item.api_name);
         let hidden_masked = hidden_state && !hidden_revealing;
-        draw_achievement_row_focus_frame(&list_painter, row_rect, selection_t, wake_t, layout_scale);
+        draw_achievement_row_focus_frame(
+            &list_painter,
+            row_rect,
+            selection_t,
+            wake_t,
+            layout_scale,
+        );
         list_painter.rect_filled(
             row_rect,
             corner_radius(design_units(9.0, layout_scale)),
@@ -519,7 +528,10 @@ pub fn draw_achievement_page(
         let text_x = row_rect.min.x + left_content_inset + icon_column_width + icon_gap;
         let content_rect = egui::Rect::from_min_max(
             egui::pos2(text_x, row_rect.min.y + content_padding_y),
-            egui::pos2(row_rect.max.x - right_padding, row_rect.max.y - content_padding_y),
+            egui::pos2(
+                row_rect.max.x - right_padding,
+                row_rect.max.y - content_padding_y,
+            ),
         );
         let split_x = achievement_content_split_x(content_rect);
         let split_gap = design_units(24.0, layout_scale);
@@ -635,12 +647,16 @@ pub fn draw_achievement_page(
                 },
                 wake_t,
             ),
-            right_column_rect.width().max(design_units(180.0, layout_scale)),
+            right_column_rect
+                .width()
+                .max(design_units(180.0, layout_scale)),
         );
-        let first_row_height = title_galley
-            .size()
-            .y
-            .max(unlock_time_galley.as_ref().map(|galley| galley.size().y).unwrap_or(0.0));
+        let first_row_height = title_galley.size().y.max(
+            unlock_time_galley
+                .as_ref()
+                .map(|galley| galley.size().y)
+                .unwrap_or(0.0),
+        );
         let unlock_rate_gap = design_units(10.0, layout_scale);
         let left_block_height = first_row_height
             + unlock_rate_gap
@@ -652,7 +668,8 @@ pub fn draw_achievement_page(
         let icon_size = content_block_height
             .min(row_rect.height() - content_padding_y * 2.0)
             .clamp(design_units(66.0, layout_scale), icon_column_width);
-        let content_top = row_rect.min.y + (row_rect.height() - content_block_height.max(icon_size)) * 0.5;
+        let content_top =
+            row_rect.min.y + (row_rect.height() - content_block_height.max(icon_size)) * 0.5;
         let icon_rect = egui::Rect::from_min_size(
             egui::pos2(
                 row_rect.min.x + left_content_inset + (icon_column_width - icon_size) * 0.5,
@@ -734,13 +751,20 @@ pub fn draw_achievement_page(
         }
         if let Some(unlock_rate_galley) = unlock_rate_galley.as_ref() {
             list_painter.galley(
-                egui::pos2(left_column_rect.min.x, text_top + first_row_height + unlock_rate_gap),
+                egui::pos2(
+                    left_column_rect.min.x,
+                    text_top + first_row_height + unlock_rate_gap,
+                ),
                 unlock_rate_galley.clone(),
                 egui::Color32::WHITE,
             );
         }
         let description_pos = egui::pos2(right_column_rect.min.x, text_top);
-        list_painter.galley(description_pos, description_galley.clone(), egui::Color32::WHITE);
+        list_painter.galley(
+            description_pos,
+            description_galley.clone(),
+            egui::Color32::WHITE,
+        );
 
         if hidden_state {
             let reveal_progress = if hidden_revealing {

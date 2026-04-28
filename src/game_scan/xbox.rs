@@ -54,7 +54,10 @@ mod imp {
             &format!("{} packages", packages.len()),
         );
 
-        if !packages.iter().any(|package| package.name == "Microsoft.GamingApp") {
+        if !packages
+            .iter()
+            .any(|package| package.name == "Microsoft.GamingApp")
+        {
             return Vec::new();
         }
 
@@ -81,11 +84,7 @@ mod imp {
                 continue;
             };
 
-            let Some(application) = load_application_entry(
-                &manifest_contents,
-                &install_dir,
-            )
-            else {
+            let Some(application) = load_application_entry(&manifest_contents, &install_dir) else {
                 continue;
             };
 
@@ -120,7 +119,11 @@ mod imp {
         log_xbox_scan_phase(
             "Manifest match",
             manifest_match_started_at.elapsed(),
-            &format!("{} candidate packages, {} games", manifest_candidate_count, games.len()),
+            &format!(
+                "{} candidate packages, {} games",
+                manifest_candidate_count,
+                games.len()
+            ),
         );
 
         games
@@ -204,7 +207,11 @@ mod imp {
 
         identity_name_regex()
             .captures(&contents)
-            .and_then(|captures| captures.get(1).map(|value| value.as_str().trim().to_owned()))
+            .and_then(|captures| {
+                captures
+                    .get(1)
+                    .map(|value| value.as_str().trim().to_owned())
+            })
             .filter(|value| !value.is_empty())
     }
 
@@ -236,14 +243,22 @@ mod imp {
         {
             let Some(id) = application_id_regex()
                 .captures(application_tag)
-                .and_then(|captures| captures.get(1).map(|value| value.as_str().trim().to_owned()))
+                .and_then(|captures| {
+                    captures
+                        .get(1)
+                        .map(|value| value.as_str().trim().to_owned())
+                })
             else {
                 continue;
             };
 
             let executable = application_executable_regex()
                 .captures(application_tag)
-                .and_then(|captures| captures.get(1).map(|value| value.as_str().trim().to_owned()));
+                .and_then(|captures| {
+                    captures
+                        .get(1)
+                        .map(|value| value.as_str().trim().to_owned())
+                });
             let fallback_display_name = install_dir
                 .file_name()
                 .and_then(|value| value.to_str())

@@ -1,10 +1,10 @@
 use eframe::egui;
 
-use super::{design_units, lerp_f32, smoothstep01, viewport_layout_scale};
 use super::text::{
     color_with_scaled_alpha, corner_radius, draw_main_clock, layout_main_clock, main_clock_color,
     main_clock_right_edge, scale_alpha,
 };
+use super::{design_units, lerp_f32, smoothstep01, viewport_layout_scale};
 
 fn draw_top_right_vignette(
     painter: &egui::Painter,
@@ -20,12 +20,7 @@ fn draw_top_right_vignette(
     };
 
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-    let tint = egui::Color32::from_rgba_unmultiplied(
-        255,
-        255,
-        255,
-        scale_alpha(255, alpha_scale),
-    );
+    let tint = egui::Color32::from_rgba_unmultiplied(255, 255, 255, scale_alpha(255, alpha_scale));
     let vignette_rect = egui::Rect::from_min_max(
         egui::pos2(hero_rect.min.x - hero_rect.width() * 0.12, hero_rect.min.y),
         hero_rect.max,
@@ -67,7 +62,11 @@ pub fn draw_background(
     let wake_shift_y = -16.0 * wake_inv;
     let wake_alpha_scale = lerp_f32(0.72, 1.0, wake_t);
 
-    bg_painter.rect_filled(screen, egui::CornerRadius::ZERO, egui::Color32::from_rgb(18, 18, 18));
+    bg_painter.rect_filled(
+        screen,
+        egui::CornerRadius::ZERO,
+        egui::Color32::from_rgb(18, 18, 18),
+    );
 
     let top_rect = |tex: &egui::TextureHandle, dx: f32| -> egui::Rect {
         let tex_size = tex.size_vec2();
@@ -154,7 +153,8 @@ pub fn draw_background(
                     clock_pos.x - icon_size - icon_offset_x,
                     clock_pos.y + (clock_galley.size().y - icon_size) * 0.5,
                 );
-                let icon_rect = egui::Rect::from_min_size(icon_pos, egui::vec2(icon_size, icon_size));
+                let icon_rect =
+                    egui::Rect::from_min_size(icon_pos, egui::vec2(icon_size, icon_size));
                 let power_gap = design_units(54.0, layout_scale);
 
                 if power_t > 0.001 {
@@ -229,10 +229,8 @@ pub fn draw_background(
                         highlight_center,
                         egui::vec2(highlight_radius * 2.0, highlight_radius * 2.0),
                     );
-                    let fill_clip_top = egui::lerp(
-                        highlight_rect.bottom()..=highlight_rect.top(),
-                        focus_t,
-                    );
+                    let fill_clip_top =
+                        egui::lerp(highlight_rect.bottom()..=highlight_rect.top(), focus_t);
                     let fill_clip_rect = egui::Rect::from_min_max(
                         egui::pos2(highlight_rect.left(), fill_clip_top),
                         egui::pos2(highlight_rect.right(), highlight_rect.bottom()),
@@ -263,12 +261,7 @@ pub fn draw_background(
                     );
                 }
 
-                bg_painter.image(
-                    texture.id(),
-                    icon_rect,
-                    uv,
-                    main_clock_color(wake_t),
-                );
+                bg_painter.image(texture.id(), icon_rect, uv, main_clock_color(wake_t));
             }
         }
 
@@ -293,7 +286,12 @@ pub fn draw_background(
         draw_top_right_vignette(&bg_painter, hero_rect, vignette, 1.0 - cover_fade);
     }
 
-    draw_top_right_vignette(&bg_painter, current_hero_rect, vignette, current_vignette_alpha);
+    draw_top_right_vignette(
+        &bg_painter,
+        current_hero_rect,
+        vignette,
+        current_vignette_alpha,
+    );
 
     if cover_fade < 1.0 {
         if let Some((_id, tex)) = logo_prev {
@@ -316,5 +314,4 @@ pub fn draw_background(
             egui::Color32::from_rgba_unmultiplied(8, 10, 14, wake_overlay_alpha),
         );
     }
-
 }

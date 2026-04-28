@@ -4,19 +4,19 @@ use std::time::{Duration, Instant};
 
 use crate::animation;
 
+use super::super::{LaunchState, LaunchTickResult, RunningGameState};
 use super::process::{
     collect_matching_process_ids, collect_process_ids, collect_visible_windows,
     detect_launched_window, matched_running_game_pids, window_title,
 };
-use super::super::{LaunchState, LaunchTickResult, RunningGameState};
 
 use winapi::shared::minwindef::TRUE;
 use winapi::shared::windef::HWND;
 use winapi::um::processthreadsapi::GetCurrentThreadId;
 use winapi::um::winuser::{
-    AttachThreadInput, BringWindowToTop, GetForegroundWindow, GetWindowLongW, SetActiveWindow,
-    SetFocus, SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongW,
-    ShowWindow, GetWindowThreadProcessId, IsIconic, GWL_EXSTYLE, LWA_ALPHA, SW_MINIMIZE,
+    AttachThreadInput, BringWindowToTop, GetForegroundWindow, GetWindowLongW,
+    GetWindowThreadProcessId, IsIconic, SetActiveWindow, SetFocus, SetForegroundWindow,
+    SetLayeredWindowAttributes, SetWindowLongW, ShowWindow, GWL_EXSTYLE, LWA_ALPHA, SW_MINIMIZE,
     SW_RESTORE, WS_EX_LAYERED,
 };
 
@@ -58,10 +58,7 @@ pub(super) fn begin_refocus_transition(game_index: usize, state: &RunningGameSta
     }
 }
 
-pub(super) fn tick_launch_progress(
-    state: &mut LaunchState,
-    launch_held: bool,
-) -> LaunchTickResult {
+pub(super) fn tick_launch_progress(state: &mut LaunchState, launch_held: bool) -> LaunchTickResult {
     let now = Instant::now();
 
     if state.awaiting_launch_release {

@@ -149,7 +149,8 @@ unsafe fn run_home_watcher(ctx: egui::Context) {
         for i in 0..4u32 {
             let mut state: XINPUT_STATE = std::mem::zeroed();
             if get_state_ex(i, &mut state) == 0 {
-                let pressed = normalize_buttons(state.Gamepad.wButtons as u16).intersects(Buttons::HOME);
+                let pressed =
+                    normalize_buttons(state.Gamepad.wButtons as u16).intersects(Buttons::HOME);
                 if pressed {
                     any_held = true;
                 }
@@ -273,19 +274,28 @@ impl XInput {
         };
 
         match state {
-            RumbleState::XInput { controller_index, .. } => {
+            RumbleState::XInput {
+                controller_index, ..
+            } => {
                 let _ = self.set_state(controller_index, 0, 0);
             }
         }
     }
 
     fn first_connected_index(&mut self) -> Option<DWORD> {
-        self.get_states().into_iter().map(|(index, _, _, _)| index).next()
+        self.get_states()
+            .into_iter()
+            .map(|(index, _, _, _)| index)
+            .next()
     }
 
     fn start_rumble(&mut self, controller_index: DWORD, settings: RumbleSettings) -> bool {
         if self
-            .set_state(controller_index, settings.left_strength, settings.right_strength)
+            .set_state(
+                controller_index,
+                settings.left_strength,
+                settings.right_strength,
+            )
             .is_err()
         {
             return false;
@@ -330,13 +340,16 @@ pub(super) fn aggregate_state(xinput: &mut XInput) -> Option<InputAggregateState
 
 #[cfg(target_os = "windows")]
 pub(super) fn remap_state(xinput: &mut XInput) -> Option<(Buttons, i32)> {
-    xinput.get_states().into_iter().find_map(|(_, buttons, ly, _)| {
-        if !buttons.is_empty() || ly < -16000 || ly > 16000 {
-            Some((buttons, ly))
-        } else {
-            None
-        }
-    })
+    xinput
+        .get_states()
+        .into_iter()
+        .find_map(|(_, buttons, ly, _)| {
+            if !buttons.is_empty() || ly < -16000 || ly > 16000 {
+                Some((buttons, ly))
+            } else {
+                None
+            }
+        })
 }
 
 #[cfg(target_os = "windows")]

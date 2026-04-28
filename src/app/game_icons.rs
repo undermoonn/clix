@@ -41,11 +41,9 @@ impl GameIconState {
             let icon_bytes = cover::load_game_icon_bytes(steam_paths, game);
 
             if let Some(bytes) = icon_bytes {
-                if let Some(texture) = cover::bytes_to_game_icon_texture(
-                    ctx,
-                    &bytes,
-                    format!("icon_{:?}", icon_key),
-                ) {
+                if let Some(texture) =
+                    cover::bytes_to_game_icon_texture(ctx, &bytes, format!("icon_{:?}", icon_key))
+                {
                     self.textures.insert(icon_key, texture);
                 } else {
                     // Decoding failed; remember so we don't retry every frame.

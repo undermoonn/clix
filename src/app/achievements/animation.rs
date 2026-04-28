@@ -87,7 +87,8 @@ impl AchievementState {
                 continue;
             };
 
-            *progress = animation::linear_progress(started_at, now, ACHIEVEMENT_ICON_FADE_IN_SECONDS);
+            *progress =
+                animation::linear_progress(started_at, now, ACHIEVEMENT_ICON_FADE_IN_SECONDS);
             if *progress < 0.999 {
                 ctx.request_repaint();
             } else {
@@ -120,7 +121,8 @@ impl AchievementState {
         }
 
         for state in self.revealed_hidden.values_mut() {
-            state.progress = animation::linear_progress(state.started_at, now, HIDDEN_REVEAL_SECONDS);
+            state.progress =
+                animation::linear_progress(state.started_at, now, HIDDEN_REVEAL_SECONDS);
             if state.progress < 0.999 {
                 ctx.request_repaint();
             }
@@ -132,7 +134,8 @@ impl AchievementState {
                 continue;
             };
 
-            *progress = animation::linear_progress(started_at, now, ACHIEVEMENT_TEXT_FADE_IN_SECONDS);
+            *progress =
+                animation::linear_progress(started_at, now, ACHIEVEMENT_TEXT_FADE_IN_SECONDS);
             if *progress < 0.999 {
                 ctx.request_repaint();
             } else {
@@ -145,9 +148,9 @@ impl AchievementState {
         }
 
         if let Some(started_at) = self.previous_overview_reveal_started_at {
-            self.previous_overview_reveal =
-                (1.0 - animation::linear_progress(started_at, now, ACHIEVEMENT_TEXT_FADE_OUT_SECONDS))
-                    .max(0.0);
+            self.previous_overview_reveal = (1.0
+                - animation::linear_progress(started_at, now, ACHIEVEMENT_TEXT_FADE_OUT_SECONDS))
+            .max(0.0);
             if self.previous_overview_reveal > 0.001 {
                 ctx.request_repaint();
             } else {

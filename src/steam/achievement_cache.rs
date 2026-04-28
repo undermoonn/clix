@@ -116,7 +116,10 @@ fn store_cached_global_achievement_percentages(
     };
 
     if let Ok(bytes) = serde_json::to_vec(&payload) {
-        let _ = std::fs::write(global_achievement_percentages_cache_path(steam_app_id), bytes);
+        let _ = std::fs::write(
+            global_achievement_percentages_cache_path(steam_app_id),
+            bytes,
+        );
     }
 }
 

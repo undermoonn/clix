@@ -97,7 +97,9 @@ fn normalize_identifier_key(value: &str) -> String {
 }
 
 fn normalize_path_key(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/").to_ascii_lowercase()
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase()
 }
 
 pub fn sort_games_by_last_played(games: &mut [Game]) {

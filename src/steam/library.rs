@@ -44,7 +44,6 @@ impl SteamUpdateProgress {
             || self.has_pending_download()
             || self.has_pending_stage()
     }
-
 }
 pub(crate) fn load_appinfo_bytes(steam_paths: &[PathBuf]) -> Option<Vec<u8>> {
     for steam_root in steam_paths {
@@ -517,7 +516,11 @@ mod tests {
         appinfo.extend_from_slice(&steam_app_id.to_le_bytes());
         appinfo.extend_from_slice(b"Spacewar\0Game\0windows\0");
 
-        assert!(is_game_steam_app_id(Some(&appinfo), steam_app_id, "Spacewar"));
+        assert!(is_game_steam_app_id(
+            Some(&appinfo),
+            steam_app_id,
+            "Spacewar"
+        ));
         assert!(!is_game_steam_app_id(
             Some(&appinfo),
             steam_app_id,

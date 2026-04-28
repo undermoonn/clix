@@ -3,12 +3,12 @@ mod dualsense;
 mod xinput;
 
 use std::collections::HashMap;
-use std::time::Instant;
 #[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
-use buttons::Buttons;
 use crate::config::PromptIconTheme;
+use buttons::Buttons;
 
 #[cfg(target_os = "windows")]
 use eframe::egui;
@@ -601,12 +601,7 @@ impl InputController {
     }
 
     #[cfg(target_os = "windows")]
-    fn apply_mapping(
-        &self,
-        raw_held: &mut RawHeldState,
-        aggregate: &InputAggregateState,
-    ) {
-
+    fn apply_mapping(&self, raw_held: &mut RawHeldState, aggregate: &InputAggregateState) {
         for (key, token) in &self.mapping.map {
             if !token.is_active(aggregate) {
                 continue;
@@ -623,10 +618,7 @@ impl InputController {
         }
     }
 
-    fn insert_mapped_action(
-        raw_held: &mut RawHeldState,
-        key: &str,
-    ) {
+    fn insert_mapped_action(raw_held: &mut RawHeldState, key: &str) {
         if let Some(action) = InputAction::from_mapping_key(key) {
             raw_held.insert(action);
         }
@@ -709,8 +701,14 @@ mod tests {
         let mut input = InputController::new();
         let now = Instant::now();
 
-        let frame =
-            input.poll_with_raw_held(raw_held(&[InputAction::Down]), true, false, false, None, now);
+        let frame = input.poll_with_raw_held(
+            raw_held(&[InputAction::Down]),
+            true,
+            false,
+            false,
+            None,
+            now,
+        );
 
         assert!(matches!(frame.actions.as_slice(), [ControllerAction::Down]));
     }
@@ -720,8 +718,14 @@ mod tests {
         let mut input = InputController::new();
         let now = Instant::now();
 
-        let first =
-            input.poll_with_raw_held(raw_held(&[InputAction::Right]), true, false, false, None, now);
+        let first = input.poll_with_raw_held(
+            raw_held(&[InputAction::Right]),
+            true,
+            false,
+            false,
+            None,
+            now,
+        );
         let before_delay = input.poll_with_raw_held(
             raw_held(&[InputAction::Right]),
             true,
@@ -755,18 +759,28 @@ mod tests {
             now + Duration::from_millis((NAV_INITIAL_DELAY_MS + NAV_REPEAT_INTERVAL_MS + 1) as u64),
         );
 
-        assert!(matches!(first.actions.as_slice(), [ControllerAction::Right]));
+        assert!(matches!(
+            first.actions.as_slice(),
+            [ControllerAction::Right]
+        ));
         assert!(before_delay.actions.is_empty());
-        assert!(matches!(after_delay.actions.as_slice(), [ControllerAction::Right]));
+        assert!(matches!(
+            after_delay.actions.as_slice(),
+            [ControllerAction::Right]
+        ));
         assert!(before_repeat.actions.is_empty());
-        assert!(matches!(after_repeat.actions.as_slice(), [ControllerAction::Right]));
+        assert!(matches!(
+            after_repeat.actions.as_slice(),
+            [ControllerAction::Right]
+        ));
     }
 
     #[test]
     fn refresh_does_not_repeat_while_held() {
         let mut input = InputController::new();
         let now = Instant::now();
-        let held_until = now + Duration::from_millis((NAV_REPEAT_ACCEL_STAGE1_AFTER_MS + 250) as u64);
+        let held_until =
+            now + Duration::from_millis((NAV_REPEAT_ACCEL_STAGE1_AFTER_MS + 250) as u64);
 
         let first = input.poll_with_raw_held(
             raw_held(&[InputAction::Refresh]),
@@ -785,7 +799,10 @@ mod tests {
             held_until,
         );
 
-        assert!(matches!(first.actions.as_slice(), [ControllerAction::Refresh]));
+        assert!(matches!(
+            first.actions.as_slice(),
+            [ControllerAction::Refresh]
+        ));
         assert!(held.actions.is_empty());
     }
 
@@ -793,7 +810,8 @@ mod tests {
     fn settings_does_not_repeat_while_held() {
         let mut input = InputController::new();
         let now = Instant::now();
-        let held_until = now + Duration::from_millis((NAV_REPEAT_ACCEL_STAGE1_AFTER_MS + 250) as u64);
+        let held_until =
+            now + Duration::from_millis((NAV_REPEAT_ACCEL_STAGE1_AFTER_MS + 250) as u64);
 
         let first = input.poll_with_raw_held(
             raw_held(&[InputAction::Settings]),
@@ -812,7 +830,10 @@ mod tests {
             held_until,
         );
 
-        assert!(matches!(first.actions.as_slice(), [ControllerAction::Settings]));
+        assert!(matches!(
+            first.actions.as_slice(),
+            [ControllerAction::Settings]
+        ));
         assert!(held.actions.is_empty());
     }
 
@@ -839,7 +860,10 @@ mod tests {
         );
 
         assert!(blocked.actions.is_empty());
-        assert!(matches!(allowed.actions.as_slice(), [ControllerAction::Quit]));
+        assert!(matches!(
+            allowed.actions.as_slice(),
+            [ControllerAction::Quit]
+        ));
     }
 
     #[test]
@@ -847,7 +871,8 @@ mod tests {
         let mut input = InputController::new();
         let now = Instant::now();
 
-        let _ = input.poll_with_raw_held(raw_held(&[InputAction::Up]), true, false, false, None, now);
+        let _ =
+            input.poll_with_raw_held(raw_held(&[InputAction::Up]), true, false, false, None, now);
         input.clear_held();
         let frame = input.poll_with_raw_held(
             raw_held(&[InputAction::Up]),
@@ -861,4 +886,3 @@ mod tests {
         assert!(matches!(frame.actions.as_slice(), [ControllerAction::Up]));
     }
 }
-

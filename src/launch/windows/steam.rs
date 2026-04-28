@@ -3,8 +3,10 @@ use std::process::Command;
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::time::Instant;
 
-use super::process::{collect_process_ids, collect_titled_windows, process_image_path, window_title};
 use super::super::{append_steam_client_state_log, LaunchBlockedReason, SteamClientState};
+use super::process::{
+    collect_process_ids, collect_titled_windows, process_image_path, window_title,
+};
 
 use winapi::shared::windef::HWND;
 

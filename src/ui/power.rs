@@ -6,8 +6,7 @@ use crate::app::{PowerMenuLayout, PowerMenuOption};
 use crate::i18n::AppLanguage;
 use crate::ui::{
     color_with_scaled_alpha, corner_radius, design_units, layout_main_clock, lerp_f32,
-    main_clock_right_edge, smoothstep01, viewport_layout_scale, HintIcons,
-    PANEL_CORNER_RADIUS,
+    main_clock_right_edge, smoothstep01, viewport_layout_scale, HintIcons, PANEL_CORNER_RADIUS,
 };
 
 const POWER_MENU_SELECTION_CORNER_RADIUS: f32 = 12.0;
@@ -102,11 +101,10 @@ pub fn draw_power_menu(
             + option_count * option_height
             + (option_count - 1.0).max(0.0) * option_gap,
     );
-    let dropdown_origin_x = (power_anchor_rect.center().x - dropdown_size.x * 0.5)
-        .clamp(
-            panel_rect.min.x + design_units(40.0, layout_scale),
-            panel_rect.max.x - dropdown_size.x - design_units(40.0, layout_scale),
-        );
+    let dropdown_origin_x = (power_anchor_rect.center().x - dropdown_size.x * 0.5).clamp(
+        panel_rect.min.x + design_units(40.0, layout_scale),
+        panel_rect.max.x - dropdown_size.x - design_units(40.0, layout_scale),
+    );
     let dropdown_rect = egui::Rect::from_min_size(
         egui::pos2(
             dropdown_origin_x,
@@ -157,11 +155,12 @@ pub fn draw_power_menu(
             let rect = egui::Rect::from_min_size(
                 egui::pos2(
                     dropdown_rect.min.x + dropdown_padding.x,
-                    dropdown_rect.min.y
-                        + dropdown_padding.y
-                        + row * (option_height + option_gap),
+                    dropdown_rect.min.y + dropdown_padding.y + row * (option_height + option_gap),
                 ),
-                egui::vec2(dropdown_rect.width() - dropdown_padding.x * 2.0, option_height),
+                egui::vec2(
+                    dropdown_rect.width() - dropdown_padding.x * 2.0,
+                    option_height,
+                ),
             )
             .translate(option_offset);
             (index, option, rect, option_t)
@@ -187,7 +186,10 @@ pub fn draw_power_menu(
         let focus_rect = selected_rect.expand(design_units(5.0, layout_scale));
         painter.rect_filled(
             focus_rect,
-            corner_radius(design_units(POWER_MENU_SELECTION_CORNER_RADIUS, layout_scale)),
+            corner_radius(design_units(
+                POWER_MENU_SELECTION_CORNER_RADIUS,
+                layout_scale,
+            )),
             color_with_scaled_alpha(
                 egui::Color32::from_rgba_unmultiplied(248, 250, 255, 54),
                 focus_t,
@@ -195,7 +197,10 @@ pub fn draw_power_menu(
         );
         painter.rect_stroke(
             focus_rect,
-            corner_radius(design_units(POWER_MENU_SELECTION_CORNER_RADIUS, layout_scale)),
+            corner_radius(design_units(
+                POWER_MENU_SELECTION_CORNER_RADIUS,
+                layout_scale,
+            )),
             egui::Stroke::new(
                 lerp_f32(
                     design_units(1.2, layout_scale),

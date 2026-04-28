@@ -1,7 +1,9 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use super::{LaunchBlockedReason, LaunchState, LaunchTickResult, RunningGameState, SteamClientState};
+use super::{
+    LaunchBlockedReason, LaunchState, LaunchTickResult, RunningGameState, SteamClientState,
+};
 
 #[path = "windows/focus.rs"]
 mod focus;
@@ -27,10 +29,7 @@ pub(super) fn begin_refocus_transition(game_index: usize, state: &RunningGameSta
     focus::begin_refocus_transition(game_index, state)
 }
 
-pub(super) fn tick_launch_progress(
-    state: &mut LaunchState,
-    launch_held: bool,
-) -> LaunchTickResult {
+pub(super) fn tick_launch_progress(state: &mut LaunchState, launch_held: bool) -> LaunchTickResult {
     focus::tick_launch_progress(state, launch_held)
 }
 

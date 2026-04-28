@@ -410,7 +410,13 @@ fn collect_schema_achievement_metadata(
             let api_name = inner
                 .iter()
                 .find(|(k, _)| k.eq_ignore_ascii_case("name"))
-                .and_then(|(_, v)| if let BvdfVal::Str(s) = v { Some(s.clone()) } else { None });
+                .and_then(|(_, v)| {
+                    if let BvdfVal::Str(s) = v {
+                        Some(s.clone())
+                    } else {
+                        None
+                    }
+                });
 
             if let Some(api_name) = api_name {
                 let display_name = extract_display_name(inner, language);
@@ -423,14 +429,16 @@ fn collect_schema_achievement_metadata(
                     || icon_url.is_some()
                     || icon_gray_url.is_some()
                 {
-                    let entry = out.entry(api_name.clone()).or_insert_with(|| SchemaAchInfo {
-                        api_name: api_name.clone(),
-                        display_name: None,
-                        description: None,
-                        is_hidden: false,
-                        icon_url: None,
-                        icon_gray_url: None,
-                    });
+                    let entry = out
+                        .entry(api_name.clone())
+                        .or_insert_with(|| SchemaAchInfo {
+                            api_name: api_name.clone(),
+                            display_name: None,
+                            description: None,
+                            is_hidden: false,
+                            icon_url: None,
+                            icon_gray_url: None,
+                        });
                     if entry.display_name.is_none() {
                         entry.display_name = display_name;
                     }
@@ -473,7 +481,8 @@ fn collect_achievement_bits(
             {
                 let mut entries: Vec<(u32, SchemaAchInfo)> = Vec::new();
                 for (bit_key, bit_val) in bits {
-                    if let (Ok(bit_idx), BvdfVal::Nested(fields)) = (bit_key.parse::<u32>(), bit_val)
+                    if let (Ok(bit_idx), BvdfVal::Nested(fields)) =
+                        (bit_key.parse::<u32>(), bit_val)
                     {
                         if let Some(BvdfVal::Str(api_name)) = fields
                             .iter()
@@ -542,15 +551,30 @@ fn extract_localized_nested_string(
     None
 }
 
-fn extract_display_name(fields: &HashMap<String, BvdfVal>, language: AppLanguage) -> Option<String> {
+fn extract_display_name(
+    fields: &HashMap<String, BvdfVal>,
+    language: AppLanguage,
+) -> Option<String> {
     let display = fields
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("display"))
-        .and_then(|(_, v)| if let BvdfVal::Nested(d) = v { Some(d) } else { None })?;
+        .and_then(|(_, v)| {
+            if let BvdfVal::Nested(d) = v {
+                Some(d)
+            } else {
+                None
+            }
+        })?;
     let name_node = display
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("name"))
-        .and_then(|(_, v)| if let BvdfVal::Nested(n) = v { Some(n) } else { None })?;
+        .and_then(|(_, v)| {
+            if let BvdfVal::Nested(n) = v {
+                Some(n)
+            } else {
+                None
+            }
+        })?;
 
     extract_localized_nested_string(name_node, language)
 }
@@ -559,12 +583,24 @@ fn extract_description(fields: &HashMap<String, BvdfVal>, language: AppLanguage)
     let display = fields
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("display"))
-        .and_then(|(_, v)| if let BvdfVal::Nested(d) = v { Some(d) } else { None })?;
+        .and_then(|(_, v)| {
+            if let BvdfVal::Nested(d) = v {
+                Some(d)
+            } else {
+                None
+            }
+        })?;
 
     let desc_node = display
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("desc") || k.eq_ignore_ascii_case("description"))
-        .and_then(|(_, v)| if let BvdfVal::Nested(n) = v { Some(n) } else { None })?;
+        .and_then(|(_, v)| {
+            if let BvdfVal::Nested(n) = v {
+                Some(n)
+            } else {
+                None
+            }
+        })?;
 
     extract_localized_nested_string(desc_node, language)
 }
@@ -614,14 +650,12 @@ fn normalize_schema_icon_value(steam_app_id: u32, raw: &str) -> Option<String> {
     if value.ends_with(".jpg") || value.ends_with(".png") {
         return Some(format!(
             "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/{}/{}",
-            steam_app_id,
-            value
+            steam_app_id, value
         ));
     }
     Some(format!(
         "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/{}/{}.jpg",
-        steam_app_id,
-        value
+        steam_app_id, value
     ))
 }
 
@@ -629,12 +663,24 @@ fn extract_icon_urls(fields: &HashMap<String, BvdfVal>) -> (Option<String>, Opti
     let mut icon = fields
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("icon"))
-        .and_then(|(_, v)| if let BvdfVal::Str(s) = v { Some(s.clone()) } else { None });
+        .and_then(|(_, v)| {
+            if let BvdfVal::Str(s) = v {
+                Some(s.clone())
+            } else {
+                None
+            }
+        });
 
     let mut icon_gray = fields
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("icon_gray") || k.eq_ignore_ascii_case("icongray"))
-        .and_then(|(_, v)| if let BvdfVal::Str(s) = v { Some(s.clone()) } else { None });
+        .and_then(|(_, v)| {
+            if let BvdfVal::Str(s) = v {
+                Some(s.clone())
+            } else {
+                None
+            }
+        });
 
     if icon.is_none() || icon_gray.is_none() {
         if let Some(BvdfVal::Nested(display)) = fields
@@ -646,13 +692,27 @@ fn extract_icon_urls(fields: &HashMap<String, BvdfVal>) -> (Option<String>, Opti
                 icon = display
                     .iter()
                     .find(|(k, _)| k.eq_ignore_ascii_case("icon"))
-                    .and_then(|(_, v)| if let BvdfVal::Str(s) = v { Some(s.clone()) } else { None });
+                    .and_then(|(_, v)| {
+                        if let BvdfVal::Str(s) = v {
+                            Some(s.clone())
+                        } else {
+                            None
+                        }
+                    });
             }
             if icon_gray.is_none() {
                 icon_gray = display
                     .iter()
-                    .find(|(k, _)| k.eq_ignore_ascii_case("icon_gray") || k.eq_ignore_ascii_case("icongray"))
-                    .and_then(|(_, v)| if let BvdfVal::Str(s) = v { Some(s.clone()) } else { None });
+                    .find(|(k, _)| {
+                        k.eq_ignore_ascii_case("icon_gray") || k.eq_ignore_ascii_case("icongray")
+                    })
+                    .and_then(|(_, v)| {
+                        if let BvdfVal::Str(s) = v {
+                            Some(s.clone())
+                        } else {
+                            None
+                        }
+                    });
             }
         }
     }
@@ -665,8 +725,8 @@ mod tests {
     use std::collections::HashMap;
 
     use super::{
-        collect_achievement_bits, extract_description, extract_display_name,
-        extract_hidden_flag, extract_icon_urls, normalize_schema_icon_value, BvdfVal,
+        collect_achievement_bits, extract_description, extract_display_name, extract_hidden_flag,
+        extract_icon_urls, normalize_schema_icon_value, BvdfVal,
     };
     use crate::i18n::AppLanguage;
 
@@ -807,7 +867,7 @@ mod tests {
                             ]),
                         ),
                     ]),
-                )])
+                )]),
             )]),
         );
 

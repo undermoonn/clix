@@ -501,7 +501,13 @@ pub fn load_logo_bytes(steam_paths: &[PathBuf], steam_app_id: u32) -> Option<Vec
 fn normalize_name_for_match(value: &str) -> String {
     value
         .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() { ch.to_ascii_lowercase() } else { ' ' })
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -522,7 +528,8 @@ fn exe_candidate_score(path: &Path, game_name: &str, root: &Path) -> i64 {
     if !normalized_game.is_empty() && normalized_stem == normalized_game {
         score += 10_000;
     } else if !normalized_game.is_empty()
-        && (normalized_stem.contains(&normalized_game) || normalized_game.contains(&normalized_stem))
+        && (normalized_stem.contains(&normalized_game)
+            || normalized_game.contains(&normalized_stem))
     {
         score += 6_000;
     }
@@ -801,7 +808,13 @@ fn extract_icon_bytes_from_file(icon_path: &Path) -> Option<Vec<u8>> {
 
     unsafe {
         let mut large_icon: HICON = std::ptr::null_mut();
-        if ExtractIconExW(wide_path.as_ptr(), 0, &mut large_icon, std::ptr::null_mut(), 1) == 0
+        if ExtractIconExW(
+            wide_path.as_ptr(),
+            0,
+            &mut large_icon,
+            std::ptr::null_mut(),
+            1,
+        ) == 0
             || large_icon.is_null()
         {
             return None;
@@ -876,7 +889,10 @@ fn extract_associated_default_icon_bytes(icon_path: &Path) -> Option<Vec<u8>> {
             return None;
         }
 
-        let value_len = buffer.iter().position(|ch| *ch == 0).unwrap_or(buffer.len());
+        let value_len = buffer
+            .iter()
+            .position(|ch| *ch == 0)
+            .unwrap_or(buffer.len());
         let descriptor = String::from_utf16_lossy(&buffer[..value_len]);
         let (icon_file, icon_index) = parse_icon_location(&descriptor)?;
         extract_private_icon_bytes(&icon_file, 256)
@@ -895,7 +911,10 @@ fn parse_icon_location(value: &str) -> Option<(PathBuf, i32)> {
         let end = stripped.find('"')?;
         let path = PathBuf::from(&stripped[..end]);
         let rest = stripped[end + 1..].trim();
-        let index = rest.strip_prefix(',').and_then(|raw| raw.trim().parse::<i32>().ok()).unwrap_or(0);
+        let index = rest
+            .strip_prefix(',')
+            .and_then(|raw| raw.trim().parse::<i32>().ok())
+            .unwrap_or(0);
         return Some((path, index));
     }
 
@@ -984,14 +1003,22 @@ fn application_block_regex() -> &'static Regex {
 
 #[cfg(target_os = "windows")]
 fn manifest_attribute_regex(attribute_name: &str) -> Regex {
-    Regex::new(&format!(r#"\b{}=\"([^\"]+)\""#, regex::escape(attribute_name))).unwrap()
+    Regex::new(&format!(
+        r#"\b{}=\"([^\"]+)\""#,
+        regex::escape(attribute_name)
+    ))
+    .unwrap()
 }
 
 #[cfg(target_os = "windows")]
 fn find_manifest_attribute(contents: &str, attribute_name: &str) -> Option<String> {
     manifest_attribute_regex(attribute_name)
         .captures(contents)
-        .and_then(|captures| captures.get(1).map(|value| value.as_str().trim().to_owned()))
+        .and_then(|captures| {
+            captures
+                .get(1)
+                .map(|value| value.as_str().trim().to_owned())
+        })
         .filter(|value| !value.is_empty())
 }
 
@@ -1029,11 +1056,11 @@ fn preferred_msix_logo_relative_path(application_block: &str, manifest: &str) ->
         "Logo",
         "SmallLogo",
     ]
-        .iter()
-        .find_map(|attribute| {
-            find_manifest_attribute(application_block, attribute)
-                .or_else(|| find_manifest_attribute(manifest, attribute))
-        })
+    .iter()
+    .find_map(|attribute| {
+        find_manifest_attribute(application_block, attribute)
+            .or_else(|| find_manifest_attribute(manifest, attribute))
+    })
 }
 
 #[cfg(target_os = "windows")]

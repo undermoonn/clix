@@ -36,7 +36,9 @@ impl LauncherApp {
         let summary_cards_visibility = self.page.summary_cards_visibility();
         let can_open_achievement_panel = self.can_open_achievement_panel_for_selected();
         let achievement_loading = self.achievements.loading_for_selected(selected_game);
-        let achievement_refresh_loading = self.achievements.refresh_loading_for_selected(selected_game);
+        let achievement_refresh_loading = self
+            .achievements
+            .refresh_loading_for_selected(selected_game);
         let achievement_has_no_data = self.achievements.has_no_data_for_selected(selected_game);
         let mut visible_achievement_icon_urls = Vec::new();
 
@@ -108,8 +110,10 @@ impl LauncherApp {
                             self.page.achievement_scroll_offset(),
                             game_icon,
                             self.hint_icons.as_ref(),
-                            self.achievements.revealed_hidden_for_selected(selected_game),
-                            self.achievements.hidden_reveal_progress_for_selected(selected_game),
+                            self.achievements
+                                .revealed_hidden_for_selected(selected_game),
+                            self.achievements
+                                .hidden_reveal_progress_for_selected(selected_game),
                             self.achievements.icon_cache(),
                             self.achievements.icon_reveal(),
                             self.achievements.percent_reveal(),
@@ -234,8 +238,11 @@ impl LauncherApp {
         self.schedule_input_repaint(ctx, has_focus, has_controller_activity);
 
         if !visible_achievement_icon_urls.is_empty() {
-            self.achievements
-                .ensure_icons_for_urls(achievement_icon_scope, ctx, &visible_achievement_icon_urls);
+            self.achievements.ensure_icons_for_urls(
+                achievement_icon_scope,
+                ctx,
+                &visible_achievement_icon_urls,
+            );
         }
     }
 }

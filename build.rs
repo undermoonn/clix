@@ -165,8 +165,20 @@ fn build_icon_assets() -> Result<(), Box<dyn Error>> {
 
     write_png(&png_path, &svg, 256)?;
     write_ico(&ico_path, &svg)?;
-    write_store_png(&store_logo_1080_path, &svg, 1080, 1080, STORE_LOGO_INSET_SCALE)?;
-    write_store_png(&store_logo_2160_path, &svg, 2160, 2160, STORE_LOGO_INSET_SCALE)?;
+    write_store_png(
+        &store_logo_1080_path,
+        &svg,
+        1080,
+        1080,
+        STORE_LOGO_INSET_SCALE,
+    )?;
+    write_store_png(
+        &store_logo_2160_path,
+        &svg,
+        2160,
+        2160,
+        STORE_LOGO_INSET_SCALE,
+    )?;
     write_store_png(
         &store_poster_720_path,
         &svg,
@@ -241,13 +253,7 @@ fn write_store_png(
     height: u32,
     inset_scale: f32,
 ) -> Result<(), Box<dyn Error>> {
-    let rgba = render_svg(
-        svg,
-        width,
-        height,
-        inset_scale,
-        Some(STORE_BACKGROUND_RGBA),
-    )?;
+    let rgba = render_svg(svg, width, height, inset_scale, Some(STORE_BACKGROUND_RGBA))?;
     let png = encode_png(&rgba, width, height)?;
     write_if_changed(path, &png)?;
     Ok(())
@@ -303,8 +309,10 @@ fn render_svg(
     let options = usvg::Options::default();
     let tree = usvg::Tree::from_str(svg, &options)?;
     let svg_size = tree.size();
-    let scale = f32::min(width as f32 / svg_size.width(), height as f32 / svg_size.height())
-        * inset_scale;
+    let scale = f32::min(
+        width as f32 / svg_size.width(),
+        height as f32 / svg_size.height(),
+    ) * inset_scale;
     let render_width = svg_size.width() * scale;
     let render_height = svg_size.height() * scale;
     let translate_x = (width as f32 - render_width) * 0.5;

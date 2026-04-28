@@ -52,7 +52,8 @@ impl LauncherApp {
         self.runtime
             .update_home_button(process_input, self.page.show_power_menu(), guide_held);
 
-        let can_force_close = !self.page.show_achievement_panel() && !self.page.show_settings_page();
+        let can_force_close =
+            !self.page.show_achievement_panel() && !self.page.show_settings_page();
         let force_close_hold = self.runtime.update_force_close_hold(
             process_input && can_force_close,
             selected_running && can_force_close,

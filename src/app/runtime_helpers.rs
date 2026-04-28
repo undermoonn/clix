@@ -4,7 +4,7 @@ use eframe::egui;
 
 use crate::game::GameSource;
 
-use super::{LauncherApp, PASSIVE_REPAINT_INTERVAL, CONTROLLER_IDLE_TIMEOUT};
+use super::{LauncherApp, CONTROLLER_IDLE_TIMEOUT, PASSIVE_REPAINT_INTERVAL};
 
 impl LauncherApp {
     pub(super) fn can_open_achievement_panel_for_selected(&self) -> bool {

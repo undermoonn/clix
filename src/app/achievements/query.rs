@@ -8,7 +8,10 @@ use crate::steam::AchievementSummary;
 use super::AchievementState;
 
 impl AchievementState {
-    pub fn summary_for_selected(&self, selected_game: Option<&Game>) -> Option<&AchievementSummary> {
+    pub fn summary_for_selected(
+        &self,
+        selected_game: Option<&Game>,
+    ) -> Option<&AchievementSummary> {
         selected_game
             .and_then(|game| game.steam_app_id)
             .and_then(|steam_app_id| self.overview_cache.get(&steam_app_id))
@@ -18,7 +21,9 @@ impl AchievementState {
         let steam_app_id = selected_game.and_then(|game| game.steam_app_id)?;
         self.detail_cache
             .as_ref()
-            .and_then(|(detail_app_id, summary)| (*detail_app_id == steam_app_id).then_some(summary))
+            .and_then(|(detail_app_id, summary)| {
+                (*detail_app_id == steam_app_id).then_some(summary)
+            })
     }
 
     pub fn detail_len_for_selected(&self, selected_game: Option<&Game>) -> usize {

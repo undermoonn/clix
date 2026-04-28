@@ -48,9 +48,7 @@ pub(super) fn load_xbox_guide_icon(ctx: &egui::Context) -> Option<egui::TextureH
     )
 }
 
-pub(super) fn load_playstation_home_icon(
-    ctx: &egui::Context,
-) -> Option<egui::TextureHandle> {
+pub(super) fn load_playstation_home_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
     load_embedded_png_texture(
         ctx,
         include_bytes!("../icons/PlayStation Series/playstation_home.png"),
@@ -128,12 +126,21 @@ mod tests {
 
     #[test]
     fn clears_achievement_scope_after_close_animation_finishes() {
-        assert_eq!(achievement_panel_scope_steam_app_id(Some(42), false, 0.001), None);
-        assert_eq!(achievement_panel_scope_steam_app_id(Some(42), false, 0.0), None);
+        assert_eq!(
+            achievement_panel_scope_steam_app_id(Some(42), false, 0.001),
+            None
+        );
+        assert_eq!(
+            achievement_panel_scope_steam_app_id(Some(42), false, 0.0),
+            None
+        );
     }
 
     #[test]
     fn keeps_achievement_scope_while_panel_is_open() {
-        assert_eq!(achievement_panel_scope_steam_app_id(Some(42), true, 0.0), Some(42));
+        assert_eq!(
+            achievement_panel_scope_steam_app_id(Some(42), true, 0.0),
+            Some(42)
+        );
     }
 }

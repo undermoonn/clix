@@ -8,7 +8,7 @@ use crate::steam;
 
 use super::flow_of_launch::LaunchNoticeKind;
 use super::ui_assets::achievement_panel_scope_steam_app_id;
-use super::{LauncherApp, LAUNCH_PRESS_FEEDBACK_DURATION, IDLE_DIM_ANIMATION_SPEED};
+use super::{LauncherApp, IDLE_DIM_ANIMATION_SPEED, LAUNCH_PRESS_FEEDBACK_DURATION};
 
 pub(super) struct ViewRenderState {
     pub achievement_icon_scope: Option<u32>,
@@ -86,13 +86,12 @@ impl LauncherApp {
         let steam_update_notice =
             self.current_steam_update_notice(selected_steam_app_id, launch_notice.is_some());
         let launching_index = self.launch_state.as_ref().map(|state| state.game_index);
-        let render_wake_anim = if (has_focus || steam_launch_flow_active)
-            && !self.send_to_background_after_frame
-        {
-            self.page.wake_anim()
-        } else {
-            0.0
-        };
+        let render_wake_anim =
+            if (has_focus || steam_launch_flow_active) && !self.send_to_background_after_frame {
+                self.page.wake_anim()
+            } else {
+                0.0
+            };
 
         ViewRenderState {
             achievement_icon_scope,
@@ -108,7 +107,8 @@ impl LauncherApp {
 
     fn current_launch_feedback(&mut self, now: Instant) -> Option<(usize, f32)> {
         let press_feedback = self.launch_press_feedback.as_ref().and_then(|feedback| {
-            let elapsed = animation::scale_seconds(now.duration_since(feedback.started_at).as_secs_f32());
+            let elapsed =
+                animation::scale_seconds(now.duration_since(feedback.started_at).as_secs_f32());
             (elapsed <= LAUNCH_PRESS_FEEDBACK_DURATION.as_secs_f32())
                 .then_some((feedback.game_index, elapsed))
         });

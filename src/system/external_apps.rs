@@ -70,11 +70,17 @@ mod imp {
         let mut apps = Vec::new();
 
         if let Some(launch_target) = find_dlss_swapper() {
-            apps.push(build_external_app(ExternalAppKind::DlssSwapper, launch_target));
+            apps.push(build_external_app(
+                ExternalAppKind::DlssSwapper,
+                launch_target,
+            ));
         }
 
         if let Some(launch_target) = find_nvidia_app() {
-            apps.push(build_external_app(ExternalAppKind::NvidiaApp, launch_target));
+            apps.push(build_external_app(
+                ExternalAppKind::NvidiaApp,
+                launch_target,
+            ));
         }
 
         apps
@@ -126,7 +132,9 @@ mod imp {
     }
 
     fn normalize_windows_path(path: &Path) -> String {
-        path.to_string_lossy().replace('/', "\\").to_ascii_lowercase()
+        path.to_string_lossy()
+            .replace('/', "\\")
+            .to_ascii_lowercase()
     }
 
     fn process_image_path(pid: u32) -> Option<PathBuf> {
@@ -176,7 +184,9 @@ mod imp {
             TRUE
         }
 
-        let mut collector = WindowCollector { windows: Vec::new() };
+        let mut collector = WindowCollector {
+            windows: Vec::new(),
+        };
         unsafe {
             EnumWindows(
                 Some(enum_windows_proc),

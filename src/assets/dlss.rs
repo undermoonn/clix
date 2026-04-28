@@ -22,7 +22,10 @@ fn load_cached_path(steam_app_id: u32) -> Option<PathBuf> {
 }
 
 fn store_cached_path(steam_app_id: u32, dll_path: &Path) {
-    let _ = std::fs::write(cache_path(steam_app_id), dll_path.to_string_lossy().as_bytes());
+    let _ = std::fs::write(
+        cache_path(steam_app_id),
+        dll_path.to_string_lossy().as_bytes(),
+    );
 }
 
 #[cfg(target_os = "windows")]
@@ -75,10 +78,7 @@ fn read_windows_file_version(path: &Path) -> Option<String> {
         .encode_wide()
         .chain(std::iter::once(0))
         .collect();
-    let root_block: Vec<u16> = "\\"
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect();
+    let root_block: Vec<u16> = "\\".encode_utf16().chain(std::iter::once(0)).collect();
 
     unsafe {
         let mut handle: DWORD = 0;

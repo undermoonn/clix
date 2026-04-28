@@ -114,7 +114,10 @@ mod tests {
         let started_at = Instant::now();
         let now = started_at + Duration::from_millis(150);
 
-        assert_eq!(linear_progress(started_at, now, 0.3), 0.5 * scale_seconds(1.0));
+        assert_eq!(
+            linear_progress(started_at, now, 0.3),
+            0.5 * scale_seconds(1.0)
+        );
     }
 
     #[test]

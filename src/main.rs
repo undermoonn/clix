@@ -1,26 +1,29 @@
-#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
 
 mod animation;
 mod app;
 mod assets;
 mod config;
 mod game;
-mod game_scan;
 mod game_last_played;
+mod game_scan;
 mod i18n;
 mod input;
 mod launch;
-mod system;
 mod steam;
+mod system;
 mod ui;
 
 use eframe::egui;
 use std::sync::Arc;
 
 #[cfg(target_os = "windows")]
-use std::path::PathBuf;
-#[cfg(target_os = "windows")]
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+#[cfg(target_os = "windows")]
+use std::path::PathBuf;
 
 fn load_app_icon() -> Option<egui::IconData> {
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/app-icon-256.png"));
@@ -47,20 +50,16 @@ fn load_windows_font(file_name: &str) -> Option<egui::FontData> {
 
 #[cfg(target_os = "windows")]
 fn load_first_available_font(file_names: &[&str]) -> Option<egui::FontData> {
-    file_names.iter().find_map(|file_name| load_windows_font(file_name))
+    file_names
+        .iter()
+        .find_map(|file_name| load_windows_font(file_name))
 }
 
 #[cfg(target_os = "windows")]
 pub(crate) fn configure_fonts(ctx: &egui::Context, language: i18n::AppLanguage) {
     let (regular_candidates, bold_candidates): (&[&str], &[&str]) = match language {
-        i18n::AppLanguage::English => (
-            &["segoeui.ttf"],
-            &["segoeuib.ttf"],
-        ),
-        i18n::AppLanguage::SimplifiedChinese => (
-            &["msyh.ttc"],
-            &["msyhbd.ttc"],
-        ),
+        i18n::AppLanguage::English => (&["segoeui.ttf"], &["segoeuib.ttf"]),
+        i18n::AppLanguage::SimplifiedChinese => (&["msyh.ttc"], &["msyhbd.ttc"]),
     };
 
     let Some(regular_font) = load_first_available_font(regular_candidates)

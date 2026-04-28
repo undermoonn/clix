@@ -107,8 +107,8 @@ mod imp {
             .filter(|value| !value.is_empty())
             .map(str::to_owned);
 
-        let launch_target = resolve_launch_target(&install_dir, launch_executable)
-            .filter(|path| path.is_file())?;
+        let launch_target =
+            resolve_launch_target(&install_dir, launch_executable).filter(|path| path.is_file())?;
         let last_played = manifest_last_played(&manifest, last_played).unwrap_or(0);
 
         Some(Game {
@@ -163,10 +163,18 @@ mod imp {
             };
 
             let mut parts = game_id.rsplit(':');
-            let Some(app_name) = parts.next().map(str::trim).filter(|value| !value.is_empty()) else {
+            let Some(app_name) = parts
+                .next()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            else {
                 continue;
             };
-            let Some(catalog_item_id) = parts.next().map(str::trim).filter(|value| !value.is_empty()) else {
+            let Some(catalog_item_id) = parts
+                .next()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            else {
                 continue;
             };
             let Some(timestamp) = parse_last_played_timestamp(timestamp) else {
@@ -220,6 +228,8 @@ mod imp {
     }
 
     fn normalize_windows_path(path: &Path) -> String {
-        path.to_string_lossy().replace('/', "\\").to_ascii_lowercase()
+        path.to_string_lossy()
+            .replace('/', "\\")
+            .to_ascii_lowercase()
     }
 }

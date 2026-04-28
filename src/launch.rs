@@ -147,7 +147,11 @@ pub fn begin_launch(
         #[cfg(target_os = "windows")]
         baseline_hwnds,
         #[cfg(target_os = "windows")]
-        target_path: if target_path.exists() { Some(target_path) } else { None },
+        target_path: if target_path.exists() {
+            Some(target_path)
+        } else {
+            None
+        },
         #[cfg(target_os = "windows")]
         refocus_pids: None,
         #[cfg(target_os = "windows")]
@@ -246,7 +250,10 @@ fn launch_xbox_app(_family_name: &str, _application_id: &str) -> bool {
     false
 }
 
-pub fn begin_refocus_transition(game_index: usize, state: &RunningGameState) -> Option<LaunchState> {
+pub fn begin_refocus_transition(
+    game_index: usize,
+    state: &RunningGameState,
+) -> Option<LaunchState> {
     #[cfg(target_os = "windows")]
     {
         Some(windows::begin_refocus_transition(game_index, state))
@@ -418,4 +425,3 @@ pub fn minimize_running_game(state: &RunningGameState) -> bool {
         false
     }
 }
-

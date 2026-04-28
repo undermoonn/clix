@@ -9,8 +9,8 @@ use crate::{game_last_played, launch};
 
 use super::{
     LauncherApp, LAUNCH_PRESS_FEEDBACK_DURATION, PASSIVE_REPAINT_INTERVAL,
-    STEAM_NOTICE_ANIMATION_DURATION, STEAM_PROMPT_VISIBLE_DURATION,
-    STEAM_READY_VISIBLE_DURATION, STEAM_STATUS_POLL_INTERVAL,
+    STEAM_NOTICE_ANIMATION_DURATION, STEAM_PROMPT_VISIBLE_DURATION, STEAM_READY_VISIBLE_DURATION,
+    STEAM_STATUS_POLL_INTERVAL,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -273,11 +273,19 @@ impl LauncherApp {
         let launch_state_steam_app_id = self.launch_state_steam_app_id();
         let requested_update_steam_app_id = self.steam_update_launch_requested_app_id;
 
-        self.steam_update
-            .refresh_for_steam_app_id(selected_steam_app_id, &self.steam_paths, now, ctx);
+        self.steam_update.refresh_for_steam_app_id(
+            selected_steam_app_id,
+            &self.steam_paths,
+            now,
+            ctx,
+        );
         if launch_state_steam_app_id != selected_steam_app_id {
-            self.steam_update
-                .refresh_for_steam_app_id(launch_state_steam_app_id, &self.steam_paths, now, ctx);
+            self.steam_update.refresh_for_steam_app_id(
+                launch_state_steam_app_id,
+                &self.steam_paths,
+                now,
+                ctx,
+            );
         }
         if requested_update_steam_app_id != selected_steam_app_id
             && requested_update_steam_app_id != launch_state_steam_app_id
@@ -306,8 +314,7 @@ impl LauncherApp {
                 .is_some_and(|progress| progress.needs_update());
 
             if !update_still_pending {
-                let should_restart_launch_timeout =
-                    launch_state_steam_app_id == Some(steam_app_id);
+                let should_restart_launch_timeout = launch_state_steam_app_id == Some(steam_app_id);
                 self.steam_update_launch_requested_app_id = None;
                 if should_restart_launch_timeout {
                     if let Some(state) = self.launch_state.as_mut() {
@@ -335,7 +342,10 @@ impl LauncherApp {
     }
 
     fn mark_steam_update_launch_requested(&mut self, game_index: usize) {
-        let Some(steam_app_id) = self.games.get(game_index).and_then(|game| game.steam_app_id)
+        let Some(steam_app_id) = self
+            .games
+            .get(game_index)
+            .and_then(|game| game.steam_app_id)
         else {
             return;
         };
@@ -350,9 +360,10 @@ impl LauncherApp {
     }
 
     fn launch_state_is_steam_update_pending(&self) -> bool {
-        self.launch_state_steam_app_id().is_some_and(|steam_app_id| {
-            Some(steam_app_id) == self.steam_update_launch_requested_app_id
-        })
+        self.launch_state_steam_app_id()
+            .is_some_and(|steam_app_id| {
+                Some(steam_app_id) == self.steam_update_launch_requested_app_id
+            })
     }
 
     fn start_selected_game_launch(&mut self, selected: usize, ctx: &egui::Context) {
@@ -369,7 +380,11 @@ impl LauncherApp {
                     self.launch_state = None;
                     match reason {
                         launch::LaunchBlockedReason::SteamClientNotRunning => {
-                            self.show_launch_notice(selected, LaunchNoticeKind::PromptStartSteam, ctx);
+                            self.show_launch_notice(
+                                selected,
+                                LaunchNoticeKind::PromptStartSteam,
+                                ctx,
+                            );
                         }
                         launch::LaunchBlockedReason::SteamClientLoading => {
                             self.show_launch_notice(selected, LaunchNoticeKind::SteamStarting, ctx);
@@ -428,8 +443,11 @@ impl LauncherApp {
             if notice.kind == LaunchNoticeKind::SteamStarting
                 && notice.stage != LaunchNoticeStage::Exiting
             {
-                self.steam_client_state_monitor
-                    .poll_if_due(now, &mut notice.last_state_check_at, ctx);
+                self.steam_client_state_monitor.poll_if_due(
+                    now,
+                    &mut notice.last_state_check_at,
+                    ctx,
+                );
                 if self.steam_client_state_monitor.cached() == launch::SteamClientState::Ready {
                     notice.stage = LaunchNoticeStage::Exiting;
                     notice.stage_started_at = now;
@@ -546,7 +564,8 @@ impl LauncherApp {
             match launch::tick_launch_progress(state, launch_held) {
                 launch::LaunchTickResult::Pending => {}
                 launch::LaunchTickResult::Ready(running_game) => {
-                    self.running_games.insert(running_game.game_index, running_game);
+                    self.running_games
+                        .insert(running_game.game_index, running_game);
                     self.launch_state = None;
                 }
                 launch::LaunchTickResult::TimedOut => {

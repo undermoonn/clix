@@ -5,8 +5,8 @@ use eframe::egui;
 use crate::i18n::AppLanguage;
 
 use super::hint_icons::HintIcons;
-use super::{design_units, lerp_f32, smoothstep01, viewport_layout_scale};
 use super::text::{color_with_scaled_alpha, main_clock_right_edge};
+use super::{design_units, lerp_f32, smoothstep01, viewport_layout_scale};
 
 pub fn draw_hint_bar(
     ui: &mut egui::Ui,
@@ -37,8 +37,7 @@ pub fn draw_hint_bar(
     let action_icon_h = design_units(40.0, layout_scale);
     let group_gap = design_units(30.0, layout_scale);
     let row_h = action_icon_h;
-    let hint_y = padded_rect.max.y
-        - design_units(10.0, layout_scale)
+    let hint_y = padded_rect.max.y - design_units(10.0, layout_scale)
         + lerp_f32(design_units(24.0, layout_scale), 0.0, wake_t);
     let clock_anchor_rect = egui::Rect::from_min_size(
         panel_rect.min,
@@ -61,41 +60,39 @@ pub fn draw_hint_bar(
     let label_y = |galley: &Arc<egui::Galley>| {
         hint_y + (row_h - galley.size().y) * 0.5 - design_units(2.0, layout_scale)
     };
-    let draw_progress_ring = |painter: &egui::Painter,
-                              center: egui::Pos2,
-                              radius: f32,
-                              progress: f32| {
-        if progress <= 0.0 {
-            return;
-        }
+    let draw_progress_ring =
+        |painter: &egui::Painter, center: egui::Pos2, radius: f32, progress: f32| {
+            if progress <= 0.0 {
+                return;
+            }
 
-        let clamped = progress.clamp(0.0, 1.0);
-        let bg_stroke = egui::Stroke::new(
-            design_units(2.0, layout_scale),
-            color_with_scaled_alpha(
-                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 40),
-                wake_t,
-            ),
-        );
-        let fg_stroke = egui::Stroke::new(
-            design_units(2.5, layout_scale),
-            color_with_scaled_alpha(egui::Color32::from_rgb(255, 255, 255), wake_t),
-        );
-        painter.circle_stroke(center, radius, bg_stroke);
+            let clamped = progress.clamp(0.0, 1.0);
+            let bg_stroke = egui::Stroke::new(
+                design_units(2.0, layout_scale),
+                color_with_scaled_alpha(
+                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 40),
+                    wake_t,
+                ),
+            );
+            let fg_stroke = egui::Stroke::new(
+                design_units(2.5, layout_scale),
+                color_with_scaled_alpha(egui::Color32::from_rgb(255, 255, 255), wake_t),
+            );
+            painter.circle_stroke(center, radius, bg_stroke);
 
-        let start_angle = -std::f32::consts::FRAC_PI_2;
-        let sweep = std::f32::consts::TAU * clamped;
-        let segments = ((64.0 * clamped).ceil() as usize).max(8);
-        let mut points = Vec::with_capacity(segments + 1);
+            let start_angle = -std::f32::consts::FRAC_PI_2;
+            let sweep = std::f32::consts::TAU * clamped;
+            let segments = ((64.0 * clamped).ceil() as usize).max(8);
+            let mut points = Vec::with_capacity(segments + 1);
 
-        for index in 0..=segments {
-            let t = index as f32 / segments as f32;
-            let angle = start_angle + sweep * t;
-            points.push(center + egui::vec2(angle.cos() * radius, angle.sin() * radius));
-        }
+            for index in 0..=segments {
+                let t = index as f32 / segments as f32;
+                let angle = start_angle + sweep * t;
+                points.push(center + egui::vec2(angle.cos() * radius, angle.sin() * radius));
+            }
 
-        painter.add(egui::Shape::line(points, fg_stroke));
-    };
+            painter.add(egui::Shape::line(points, fg_stroke));
+        };
     let draw_loading_ring = |painter: &egui::Painter, center: egui::Pos2, radius: f32| {
         let time = painter.ctx().input(|input| input.time) as f32;
         let sweep = std::f32::consts::TAU * 0.26;
@@ -134,7 +131,10 @@ pub fn draw_hint_bar(
     let draw_labeled_icon_group = |tex: &egui::TextureHandle, x: f32, label: &Arc<egui::Galley>| {
         draw_icon(painter, tex, x, action_icon_h);
         painter.galley(
-            egui::pos2(x + action_icon_h + design_units(6.0, layout_scale), label_y(label)),
+            egui::pos2(
+                x + action_icon_h + design_units(6.0, layout_scale),
+                label_y(label),
+            ),
             label.clone(),
             egui::Color32::WHITE,
         );
@@ -149,7 +149,11 @@ pub fn draw_hint_bar(
         x
     };
 
-    let g_back = painter.layout_no_wrap(language.back_text().to_string(), hint_font.clone(), hint_color);
+    let g_back = painter.layout_no_wrap(
+        language.back_text().to_string(),
+        hint_font.clone(),
+        hint_color,
+    );
     let g_force_close = painter.layout_no_wrap(
         language.hold_close_game_text().to_string(),
         hint_font.clone(),
@@ -157,11 +161,8 @@ pub fn draw_hint_bar(
     );
     if settings_active {
         if let Some(action_label) = settings_action_label {
-            let g_action = painter.layout_no_wrap(
-                action_label.to_string(),
-                hint_font.clone(),
-                hint_color,
-            );
+            let g_action =
+                painter.layout_no_wrap(action_label.to_string(), hint_font.clone(), hint_color);
             let action_x = reserve_group(&g_action);
             draw_labeled_icon_group(&icons.btn_a, action_x, &g_action);
         }
@@ -189,8 +190,11 @@ pub fn draw_hint_bar(
     }
 
     if achievement_panel_active {
-        let g_refresh =
-            painter.layout_no_wrap(language.refresh_text().to_string(), hint_font.clone(), hint_color);
+        let g_refresh = painter.layout_no_wrap(
+            language.refresh_text().to_string(),
+            hint_font.clone(),
+            hint_color,
+        );
 
         let refresh_x = reserve_group(&g_refresh);
         draw_icon(painter, &icons.btn_x, refresh_x, action_icon_h);
@@ -218,11 +222,8 @@ pub fn draw_hint_bar(
 
     if home_top_button_selected {
         let top_action_label = home_top_action_label.unwrap_or_else(|| language.settings_text());
-        let g_top_action = painter.layout_no_wrap(
-            top_action_label.to_string(),
-            hint_font.clone(),
-            hint_color,
-        );
+        let g_top_action =
+            painter.layout_no_wrap(top_action_label.to_string(), hint_font.clone(), hint_color);
         let settings_x = reserve_group(&g_top_action);
         draw_labeled_icon_group(&icons.btn_a, settings_x, &g_top_action);
 
@@ -251,7 +252,11 @@ pub fn draw_hint_bar(
         return;
     }
 
-    let g_launch = painter.layout_no_wrap(language.start_text().to_string(), hint_font.clone(), hint_color);
+    let g_launch = painter.layout_no_wrap(
+        language.start_text().to_string(),
+        hint_font.clone(),
+        hint_color,
+    );
 
     let launch_x = reserve_group(&g_launch);
     draw_labeled_icon_group(&icons.btn_a, launch_x, &g_launch);

@@ -15,10 +15,7 @@ pub(super) struct FocusFlowOutcome {
 }
 
 impl LauncherApp {
-    pub(super) fn handle_focus_flow(
-        &mut self,
-        ctx: &egui::Context,
-    ) -> Option<FocusFlowOutcome> {
+    pub(super) fn handle_focus_flow(&mut self, ctx: &egui::Context) -> Option<FocusFlowOutcome> {
         let has_focus = ctx.input(|input| input.focused);
 
         if self.send_to_background_commit_pending {

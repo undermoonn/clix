@@ -52,7 +52,12 @@ fn bvdf_node(data: &[u8], pos: &mut usize) -> HashMap<String, BvdfVal> {
                 if *pos + 4 > data.len() {
                     break;
                 }
-                let v = i32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]]);
+                let v = i32::from_le_bytes([
+                    data[*pos],
+                    data[*pos + 1],
+                    data[*pos + 2],
+                    data[*pos + 3],
+                ]);
                 *pos += 4;
                 map.insert(key, BvdfVal::Int32(v));
             }
@@ -122,7 +127,9 @@ fn extract_ach_unlocks(m: &HashMap<String, BvdfVal>) -> HashMap<String, (bool, O
     out
 }
 
-fn ach_map_unlocks(root: &HashMap<String, BvdfVal>) -> Option<HashMap<String, (bool, Option<u64>)>> {
+fn ach_map_unlocks(
+    root: &HashMap<String, BvdfVal>,
+) -> Option<HashMap<String, (bool, Option<u64>)>> {
     if let Some(BvdfVal::Nested(m)) = root
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("achievements"))
@@ -159,7 +166,8 @@ pub(super) fn load_local_unlock_status(
 ) -> HashMap<String, (bool, Option<u64>)> {
     let Some(account_id) = find_most_recent_steam_id(steam_paths)
         .as_deref()
-        .and_then(steamid64_to_accountid) else {
+        .and_then(steamid64_to_accountid)
+    else {
         return HashMap::new();
     };
 
@@ -345,10 +353,7 @@ mod tests {
 
         let mut stat_fields = HashMap::new();
         stat_fields.insert("data".to_string(), BvdfVal::Int32(0b101));
-        stat_fields.insert(
-            "AchievementTimes".to_string(),
-            BvdfVal::Nested(timestamps),
-        );
+        stat_fields.insert("AchievementTimes".to_string(), BvdfVal::Nested(timestamps));
 
         let mut root = HashMap::new();
         root.insert("STAT_BITS".to_string(), BvdfVal::Nested(stat_fields));

@@ -6,12 +6,12 @@ use crate::game::{Game, GameIconKey, GameSource};
 use crate::i18n::AppLanguage;
 use crate::steam::AchievementSummary;
 
-use super::{design_units, lerp_f32, smoothstep01, viewport_layout_scale};
 use super::header::{
     build_selected_game_header, draw_selected_game_badge, draw_selected_game_summary,
     draw_selected_game_title, SelectedGameSummaryStyle,
 };
 use super::text::{build_wrapped_galley, color_with_scaled_alpha, corner_radius};
+use super::{design_units, lerp_f32, smoothstep01, viewport_layout_scale};
 
 fn launch_press_t(elapsed_seconds: f32) -> f32 {
     let press_in_duration = 0.06;
@@ -49,7 +49,8 @@ fn item_left_for_offset(
     selected_icon_extra: f32,
     offset_f: f32,
 ) -> f32 {
-    anchor_x + offset_f * column_spacing
+    anchor_x
+        + offset_f * column_spacing
         + scroll_compensation_for_offset(offset_f, selected_icon_extra)
 }
 
@@ -108,7 +109,10 @@ enum GameStatusDot {
 fn draw_status_dot(painter: &egui::Painter, icon_rect: egui::Rect, status: GameStatusDot) {
     let radius = (icon_rect.width().min(icon_rect.height()) * 0.055).clamp(4.0, 7.0);
     let inset = (radius * 0.9).clamp(6.0, 10.0);
-    let center = egui::pos2(icon_rect.max.x - inset - radius, icon_rect.min.y + inset + radius);
+    let center = egui::pos2(
+        icon_rect.max.x - inset - radius,
+        icon_rect.min.y + inset + radius,
+    );
     let halo_alpha = 84;
     let halo_radius = radius + 3.4;
     let dot_color = match status {
@@ -163,8 +167,13 @@ fn draw_game_icon_overlay(
         egui::Color32::from_rgba_unmultiplied(252, 253, 255, 248),
         alpha_scale,
     );
-    let text_galley =
-        build_wrapped_galley(ui, notice_text.to_string(), text_font, text_color, max_text_width);
+    let text_galley = build_wrapped_galley(
+        ui,
+        notice_text.to_string(),
+        text_font,
+        text_color,
+        max_text_width,
+    );
     let content_height = if use_action_icon && action_icon.is_some() {
         text_galley.size().y.max(icon_size)
     } else {
@@ -198,7 +207,10 @@ fn draw_game_icon_overlay(
         if let Some(action_icon) = action_icon {
             let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
             let icon_rect = egui::Rect::from_min_size(
-                egui::pos2(content_left, overlay_rect.center().y - icon_size * 0.5 + text_offset_y),
+                egui::pos2(
+                    content_left,
+                    overlay_rect.center().y - icon_size * 0.5 + text_offset_y,
+                ),
                 egui::vec2(icon_size, icon_size),
             );
             overlay_painter.image(
@@ -286,7 +298,8 @@ pub fn draw_game_list(
         // Cheap horizontal culling: skip items whose icon slot lies entirely
         // outside the panel. Selected always renders (header/title extend
         // beyond the icon and must be present for the meta animation).
-        if !is_selected && (x_pos + selected_icon_size < panel_rect.min.x || x_pos > panel_rect.max.x)
+        if !is_selected
+            && (x_pos + selected_icon_size < panel_rect.min.x || x_pos > panel_rect.max.x)
         {
             continue;
         }
@@ -320,7 +333,9 @@ pub fn draw_game_list(
         let icon_slot_size = base_icon_size + selected_icon_extra * icon_focus_t;
         let icon_scale = launch_elapsed_seconds.map(launch_icon_scale).unwrap_or(1.0);
         let icon_size = icon_slot_size * icon_scale;
-        let icon_offset_y = launch_elapsed_seconds.map(launch_icon_offset_y).unwrap_or(0.0);
+        let icon_offset_y = launch_elapsed_seconds
+            .map(launch_icon_offset_y)
+            .unwrap_or(0.0);
 
         let font_id = egui::FontId::proportional(font_size);
         let icon_slot_rect = egui::Rect::from_min_size(
@@ -352,7 +367,14 @@ pub fn draw_game_list(
             }
 
             let mut overlay_drawn = false;
-            if let Some((notice_index, notice_text, notice_overlay_t, notice_color, use_action_icon)) = &launch_notice {
+            if let Some((
+                notice_index,
+                notice_text,
+                notice_overlay_t,
+                notice_color,
+                use_action_icon,
+            )) = &launch_notice
+            {
                 if *notice_index == i {
                     draw_game_icon_overlay(
                         ui,
@@ -401,9 +423,8 @@ pub fn draw_game_list(
             } else {
                 icon_slot_rect.max.x + design_units(18.0, home_layout_scale)
             };
-            let header_width =
-                (icon_slot_size * 2.0 + design_units(28.0, home_layout_scale))
-                    .max(design_units(320.0, home_layout_scale));
+            let header_width = (icon_slot_size * 2.0 + design_units(28.0, home_layout_scale))
+                .max(design_units(320.0, home_layout_scale));
             let header = build_selected_game_header(
                 ui,
                 &painter,
@@ -427,10 +448,9 @@ pub fn draw_game_list(
             );
             let playtime_width = icon_slot_rect.width();
             let achievement_x = badge_pos.x;
-            let achievement_width = ((padded_rect.max.x
-                - achievement_x
-                - design_units(24.0, home_layout_scale))
-                .min(design_units(292.0, home_layout_scale)))
+            let achievement_width =
+                ((padded_rect.max.x - achievement_x - design_units(24.0, home_layout_scale))
+                    .min(design_units(292.0, home_layout_scale)))
                 .max(design_units(220.0, home_layout_scale));
             let summary_style = SelectedGameSummaryStyle {
                 card_height: design_units(106.0, home_layout_scale),

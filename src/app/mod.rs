@@ -54,10 +54,9 @@ use self::playtime::PlaytimeState;
 use self::state::{PageState, RuntimeState};
 use self::steam_update::SteamUpdateState;
 use self::ui_assets::{
-    load_playstation_home_icon, load_power_off_icon, load_power_reboot_icon,
-    load_power_sleep_icon, load_settings_apps_icon, load_settings_exit_icon,
-    load_settings_icon, load_settings_screen_icon, load_settings_system_icon,
-    load_xbox_guide_icon,
+    load_playstation_home_icon, load_power_off_icon, load_power_reboot_icon, load_power_sleep_icon,
+    load_settings_apps_icon, load_settings_exit_icon, load_settings_icon,
+    load_settings_screen_icon, load_settings_system_icon, load_xbox_guide_icon,
 };
 use self::view_helpers::ViewRenderState;
 
@@ -263,7 +262,6 @@ impl LauncherApp {
         app.refresh_selected_install_size(ctx);
         app
     }
-
 }
 
 impl eframe::App for LauncherApp {
@@ -276,7 +274,8 @@ impl eframe::App for LauncherApp {
             steam_launch_flow_active,
             idle_dim_target,
             process_input,
-        }) = self.handle_focus_flow(&ctx) else {
+        }) = self.handle_focus_flow(&ctx)
+        else {
             return;
         };
 
@@ -342,4 +341,3 @@ impl eframe::App for LauncherApp {
         );
     }
 }
-

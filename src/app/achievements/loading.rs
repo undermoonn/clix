@@ -167,7 +167,8 @@ impl AchievementState {
         self.checked_detail_for = Some(steam_app_id);
 
         if !force_refresh {
-            if let Some(mut summary) = steam::load_cached_achievement_summary(steam_app_id, language)
+            if let Some(mut summary) =
+                steam::load_cached_achievement_summary(steam_app_id, language)
             {
                 steam::sort_achievement_items(&mut summary.items);
                 self.no_data.remove(&steam_app_id);

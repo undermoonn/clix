@@ -33,9 +33,7 @@ impl DisplayModeSetting {
             || value.eq_ignore_ascii_case("full-screen")
         {
             Some(Self::Fullscreen)
-        } else if value.eq_ignore_ascii_case("windowed")
-            || value.eq_ignore_ascii_case("window")
-        {
+        } else if value.eq_ignore_ascii_case("windowed") || value.eq_ignore_ascii_case("window") {
             Some(Self::Windowed)
         } else {
             None
@@ -165,7 +163,9 @@ impl ResolutionOptions {
 
         let mut resolutions: Vec<_> = grouped_modes
             .into_iter()
-            .map(|((width, height), refresh_rates)| ResolutionEntry::new(width, height, refresh_rates))
+            .map(|((width, height), refresh_rates)| {
+                ResolutionEntry::new(width, height, refresh_rates)
+            })
             .filter(|entry| !entry.refresh_rates.is_empty())
             .collect();
 
@@ -200,7 +200,9 @@ impl ResolutionOptions {
     pub fn current_resolution_index(&self) -> usize {
         self.resolutions
             .iter()
-            .position(|entry| entry.width == self.current.width && entry.height == self.current.height)
+            .position(|entry| {
+                entry.width == self.current.width && entry.height == self.current.height
+            })
             .unwrap_or(0)
     }
 
@@ -275,9 +277,8 @@ impl DisplayScaleOptions {
         let max_index = (recommended_index as i32 + max_scale_rel)
             .clamp(0, (DISPLAY_SCALE_PERCENTAGES.len() - 1) as i32)
             as usize;
-        let current_index = (recommended_index as i32 + cur_scale_rel)
-            .clamp(0, max_index as i32)
-            as usize;
+        let current_index =
+            (recommended_index as i32 + cur_scale_rel).clamp(0, max_index as i32) as usize;
         let scales = DISPLAY_SCALE_PERCENTAGES[..=max_index]
             .iter()
             .copied()
@@ -323,7 +324,8 @@ pub fn detect_resolution_options() -> ResolutionOptions {
 
     let mut current_mode: DEVMODEW = unsafe { zeroed() };
     current_mode.dmSize = size_of::<DEVMODEW>() as u16;
-    let current_ok = unsafe { EnumDisplaySettingsW(null(), ENUM_CURRENT_SETTINGS, &mut current_mode) };
+    let current_ok =
+        unsafe { EnumDisplaySettingsW(null(), ENUM_CURRENT_SETTINGS, &mut current_mode) };
     if current_ok != 0 {
         current_width = current_mode.dmPelsWidth;
         current_height = current_mode.dmPelsHeight;
@@ -373,7 +375,7 @@ mod windows_scale {
         QDC_ONLY_ACTIVE_PATHS, QDC_VIRTUAL_MODE_AWARE,
     };
     use winapi::um::winuser::{
-        GetMonitorInfoW, MonitorFromPoint, MONITOR_DEFAULTTOPRIMARY, MONITORINFOEXW,
+        GetMonitorInfoW, MonitorFromPoint, MONITORINFOEXW, MONITOR_DEFAULTTOPRIMARY,
     };
 
     use super::DisplayScaleOptions;
@@ -418,12 +420,17 @@ mod windows_scale {
             mode_info_array: *mut DISPLAYCONFIG_MODE_INFO,
             current_topology_id: *mut u32,
         ) -> LONG;
-        fn DisplayConfigGetDeviceInfo(request_packet: *mut DISPLAYCONFIG_DEVICE_INFO_HEADER) -> LONG;
+        fn DisplayConfigGetDeviceInfo(
+            request_packet: *mut DISPLAYCONFIG_DEVICE_INFO_HEADER,
+        ) -> LONG;
         fn DisplayConfigSetDeviceInfo(set_packet: *mut DISPLAYCONFIG_DEVICE_INFO_HEADER) -> LONG;
     }
 
     fn wide_slice_len(value: &[u16]) -> usize {
-        value.iter().position(|code| *code == 0).unwrap_or(value.len())
+        value
+            .iter()
+            .position(|code| *code == 0)
+            .unwrap_or(value.len())
     }
 
     fn wide_slices_equal(left: &[u16], right: &[u16]) -> bool {
@@ -433,7 +440,8 @@ mod windows_scale {
     }
 
     fn primary_source() -> Option<(LUID, u32)> {
-        let primary_monitor = unsafe { MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY) };
+        let primary_monitor =
+            unsafe { MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY) };
         if primary_monitor.is_null() {
             return None;
         }
@@ -563,7 +571,9 @@ mod windows_scale {
         };
 
         (unsafe {
-            DisplayConfigSetDeviceInfo(&mut request as *mut _ as *mut DISPLAYCONFIG_DEVICE_INFO_HEADER)
+            DisplayConfigSetDeviceInfo(
+                &mut request as *mut _ as *mut DISPLAYCONFIG_DEVICE_INFO_HEADER,
+            )
         }) == 0
     }
 }
@@ -603,15 +613,8 @@ pub fn apply_resolution_choice(choice: &ResolutionChoice) -> bool {
     dev_mode.dmDisplayFrequency = choice.refresh_hz;
     dev_mode.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
 
-    let result = unsafe {
-        ChangeDisplaySettingsExW(
-            null(),
-            &mut dev_mode,
-            null_mut(),
-            0,
-            null_mut(),
-        )
-    };
+    let result =
+        unsafe { ChangeDisplaySettingsExW(null(), &mut dev_mode, null_mut(), 0, null_mut()) };
 
     result == DISP_CHANGE_SUCCESSFUL
 }

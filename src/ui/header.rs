@@ -202,7 +202,11 @@ impl SelectedGameHeaderContent {
             .as_ref()
             .map(|galley| galley.size().y)
             .into_iter()
-            .chain(self.achievement_galley.as_ref().map(|galley| galley.size().y))
+            .chain(
+                self.achievement_galley
+                    .as_ref()
+                    .map(|galley| galley.size().y),
+            )
             .chain(
                 self.achievement_prev_galley
                     .as_ref()
@@ -261,15 +265,10 @@ pub(crate) fn build_selected_game_header(
     let achievement_meta_reveal = achievement_summary_reveal.clamp(0.0, 1.0);
     let previous_achievement_meta_reveal = previous_summary_reveal.clamp(0.0, 1.0);
     let meta_font = egui::FontId::proportional(meta_font_size);
-    let playtime_color = egui::Color32::from_rgba_unmultiplied(
-        180,
-        180,
-        190,
-        meta_alpha.clamp(0.0, 255.0) as u8,
-    );
-    let primary_meta_galley = has_primary_meta.then(|| {
-        painter.layout_no_wrap(primary_meta_text, meta_font.clone(), playtime_color)
-    });
+    let playtime_color =
+        egui::Color32::from_rgba_unmultiplied(180, 180, 190, meta_alpha.clamp(0.0, 255.0) as u8);
+    let primary_meta_galley = has_primary_meta
+        .then(|| painter.layout_no_wrap(primary_meta_text, meta_font.clone(), playtime_color));
     let achievement_color = egui::Color32::from_rgba_unmultiplied(
         180,
         180,
@@ -349,10 +348,18 @@ pub(crate) fn draw_selected_game_title(
         egui::vec2(d, -d),
         egui::vec2(-d, -d),
     ] {
-        painter.galley(title_pos + off, outline_galley.clone(), egui::Color32::WHITE);
+        painter.galley(
+            title_pos + off,
+            outline_galley.clone(),
+            egui::Color32::WHITE,
+        );
     }
 
-    painter.galley(title_pos, content.title_galley.clone(), egui::Color32::WHITE);
+    painter.galley(
+        title_pos,
+        content.title_galley.clone(),
+        egui::Color32::WHITE,
+    );
 }
 
 pub(crate) fn draw_selected_game_badge(
@@ -460,7 +467,11 @@ pub(crate) fn draw_selected_game_summary(
     };
 
     if style.show_playtime {
-        painter.rect_filled(playtime_rect, corner_radius(14.0 * layout_scale), playtime_fill);
+        painter.rect_filled(
+            playtime_rect,
+            corner_radius(14.0 * layout_scale),
+            playtime_fill,
+        );
         painter.rect_stroke(
             playtime_rect,
             corner_radius(14.0 * layout_scale),
@@ -516,10 +527,26 @@ pub(crate) fn draw_selected_game_summary(
             egui::StrokeKind::Middle,
         );
 
-        let title_top = if style.show_achievement_title { 10.0 } else { 0.0 } * layout_scale;
-        let count_top = if style.show_achievement_title { 42.0 } else { 20.0 } * layout_scale;
-        let track_bottom = if style.show_achievement_title { 19.0 } else { 14.0 } * layout_scale;
-        let track_top = if style.show_achievement_title { 14.0 } else { 9.0 } * layout_scale;
+        let title_top = if style.show_achievement_title {
+            10.0
+        } else {
+            0.0
+        } * layout_scale;
+        let count_top = if style.show_achievement_title {
+            42.0
+        } else {
+            20.0
+        } * layout_scale;
+        let track_bottom = if style.show_achievement_title {
+            19.0
+        } else {
+            14.0
+        } * layout_scale;
+        let track_top = if style.show_achievement_title {
+            14.0
+        } else {
+            9.0
+        } * layout_scale;
 
         if style.show_achievement_title {
             let achievement_label = painter.layout_no_wrap(
@@ -537,7 +564,9 @@ pub(crate) fn draw_selected_game_summary(
             );
         }
 
-        let unlocked = display_summary.and_then(|summary| summary.unlocked).unwrap_or(0);
+        let unlocked = display_summary
+            .and_then(|summary| summary.unlocked)
+            .unwrap_or(0);
         let total = display_summary.map(|summary| summary.total).unwrap_or(0);
         let progress = if total > 0 {
             unlocked as f32 / total as f32

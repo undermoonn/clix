@@ -30,7 +30,11 @@ impl LauncherApp {
         ctx.request_repaint();
     }
 
-    fn set_display_mode_setting(&mut self, setting: display_mode::DisplayModeSetting, ctx: &egui::Context) {
+    fn set_display_mode_setting(
+        &mut self,
+        setting: display_mode::DisplayModeSetting,
+        ctx: &egui::Context,
+    ) {
         if self.display_mode_setting == setting {
             return;
         }
@@ -77,7 +81,11 @@ impl LauncherApp {
         ctx.request_repaint();
     }
 
-    pub(super) fn set_game_scan_options(&mut self, options: crate::game::GameScanOptions, ctx: &egui::Context) {
+    pub(super) fn set_game_scan_options(
+        &mut self,
+        options: crate::game::GameScanOptions,
+        ctx: &egui::Context,
+    ) {
         if self.game_scan_options == options {
             return;
         }
@@ -90,7 +98,10 @@ impl LauncherApp {
 
     fn refresh_game_list(&mut self, ctx: &egui::Context) {
         let previous_selected = self.page.selected();
-        let selected_key = self.games.get(previous_selected).map(crate::game::Game::persistent_key);
+        let selected_key = self
+            .games
+            .get(previous_selected)
+            .map(crate::game::Game::persistent_key);
 
         self.games = crate::game::scan_installed_games(&self.steam_paths, &self.game_scan_options);
         self.running_games.clear();
@@ -99,10 +110,11 @@ impl LauncherApp {
         self.pending_launch_request = None;
         self.pending_promotion = None;
 
-        if let Some(index) = selected_key
-            .as_ref()
-            .and_then(|key| self.games.iter().position(|game| game.persistent_key() == *key))
-        {
+        if let Some(index) = selected_key.as_ref().and_then(|key| {
+            self.games
+                .iter()
+                .position(|game| game.persistent_key() == *key)
+        }) {
             self.page.relocate_selection(index);
         } else if !self.games.is_empty() {
             self.page
@@ -180,7 +192,8 @@ impl LauncherApp {
                 self.apply_resolution_indices(current_resolution_index, refresh_index);
             }
             ScreenSettingsAction::SelectScale(scale_index) => {
-                let Some(choice) = self.display_scale_options.choice_at(scale_index).cloned() else {
+                let Some(choice) = self.display_scale_options.choice_at(scale_index).cloned()
+                else {
                     return;
                 };
 

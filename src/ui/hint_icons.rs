@@ -22,19 +22,22 @@ fn png_bytes_to_texture(
 
 pub fn load_hint_icons(ctx: &egui::Context, theme: PromptIconTheme) -> Option<HintIcons> {
     let (btn_a_bytes, btn_b_bytes, btn_x_bytes, label_prefix) = match theme {
-            PromptIconTheme::Xbox => (
-                include_bytes!("../icons/Xbox Series/xbox_button_a_outline.png") as &[u8],
-                include_bytes!("../icons/Xbox Series/xbox_button_b_outline.png") as &[u8],
-                include_bytes!("../icons/Xbox Series/xbox_button_x_outline.png") as &[u8],
-                "xbox_series",
-            ),
-            PromptIconTheme::PlayStation => (
-                include_bytes!("../icons/PlayStation Series/playstation_button_cross_outline.png") as &[u8],
-                include_bytes!("../icons/PlayStation Series/playstation_button_circle_outline.png") as &[u8],
-                include_bytes!("../icons/PlayStation Series/playstation_button_square_outline.png") as &[u8],
-                "playstation_series",
-            ),
-        };
+        PromptIconTheme::Xbox => (
+            include_bytes!("../icons/Xbox Series/xbox_button_a_outline.png") as &[u8],
+            include_bytes!("../icons/Xbox Series/xbox_button_b_outline.png") as &[u8],
+            include_bytes!("../icons/Xbox Series/xbox_button_x_outline.png") as &[u8],
+            "xbox_series",
+        ),
+        PromptIconTheme::PlayStation => (
+            include_bytes!("../icons/PlayStation Series/playstation_button_cross_outline.png")
+                as &[u8],
+            include_bytes!("../icons/PlayStation Series/playstation_button_circle_outline.png")
+                as &[u8],
+            include_bytes!("../icons/PlayStation Series/playstation_button_square_outline.png")
+                as &[u8],
+            "playstation_series",
+        ),
+    };
 
     let btn_a = png_bytes_to_texture(ctx, btn_a_bytes, &format!("{}_icon_btn_a", label_prefix))?;
     let btn_b = png_bytes_to_texture(ctx, btn_b_bytes, &format!("{}_icon_btn_b", label_prefix))?;

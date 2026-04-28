@@ -116,7 +116,8 @@ impl RuntimeState {
 
             let started_at = self.force_close_hold_started_at.get_or_insert(now);
             let held_ms = now.duration_since(*started_at).as_secs_f32() * 1000.0;
-            self.force_close_hold_progress = (held_ms / HOLD_TO_FORCE_CLOSE_GAME_MS).clamp(0.0, 1.0);
+            self.force_close_hold_progress =
+                (held_ms / HOLD_TO_FORCE_CLOSE_GAME_MS).clamp(0.0, 1.0);
 
             if self.force_close_hold_progress >= 1.0 {
                 self.force_close_hold_consumed = true;
@@ -184,5 +185,4 @@ mod tests {
         assert!(!still_unfocused.did_lose_focus);
         assert!(still_unfocused.should_clear_input);
     }
-
 }

@@ -1,5 +1,5 @@
-mod power;
 mod page_state;
+mod power;
 mod runtime_state;
 
 pub(super) use page_state::{PageState, PowerAction, ScreenSettingsAction};
