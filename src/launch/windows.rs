@@ -23,8 +23,8 @@ pub(super) fn launch_steam_game(
     steam::launch_steam_game(steam_app_id, steam_paths)
 }
 
-pub(super) fn begin_focus_transition(game_index: usize, state: &RunningGameState) -> LaunchState {
-    focus::begin_focus_transition(game_index, state)
+pub(super) fn begin_refocus_transition(game_index: usize, state: &RunningGameState) -> LaunchState {
+    focus::begin_refocus_transition(game_index, state)
 }
 
 pub(super) fn tick_launch_progress(
@@ -76,8 +76,8 @@ pub(super) fn send_current_app_to_background() -> bool {
     focus::send_current_app_to_background()
 }
 
-pub(super) fn focus_running_game(state: &RunningGameState) -> bool {
-    focus::focus_running_game(state)
+pub(super) fn refocus_running_game(state: &RunningGameState) -> bool {
+    focus::refocus_running_game(state)
 }
 
 pub(super) fn minimize_running_game(state: &RunningGameState) -> bool {

@@ -499,11 +499,11 @@ impl LauncherApp {
         }
 
         if let Some(state) = self.running_games.get(&selected) {
-            if let Some(focus_state) = launch::begin_focus_transition(selected, state) {
-                self.launch_state = Some(focus_state);
+            if let Some(refocus_state) = launch::begin_refocus_transition(selected, state) {
+                self.launch_state = Some(refocus_state);
                 self.launch_notice = None;
                 self.schedule_promotion(selected);
-            } else if launch::focus_running_game(state) {
+            } else if launch::refocus_running_game(state) {
                 self.launch_notice = None;
                 let _ = self.promote_game_to_front(selected);
             }

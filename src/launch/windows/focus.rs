@@ -16,11 +16,10 @@ use winapi::um::processthreadsapi::GetCurrentThreadId;
 use winapi::um::winuser::{
     AttachThreadInput, BringWindowToTop, GetForegroundWindow, GetWindowLongW, SetActiveWindow,
     SetFocus, SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongW,
-    SetWindowPos, ShowWindow, GetWindowThreadProcessId, IsIconic, GWL_EXSTYLE, LWA_ALPHA,
-    SW_MINIMIZE, SW_RESTORE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_LAYERED,
+    ShowWindow, GetWindowThreadProcessId, IsIconic, GWL_EXSTYLE, LWA_ALPHA, SW_MINIMIZE,
+    SW_RESTORE, WS_EX_LAYERED,
 };
 
-const ALIGN_TOP_LEFT_STEAM_APP_ID: u32 = 601150;
 const WINDOW_TRANSITION_MS: u64 = 100;
 
 static CURRENT_APP_HWND: AtomicIsize = AtomicIsize::new(0);
@@ -43,7 +42,7 @@ pub(super) fn capture_launch_baseline() -> (HashSet<u32>, HashSet<isize>, Option
     (baseline_pids, baseline_hwnds, current_app_hwnd)
 }
 
-pub(super) fn begin_focus_transition(game_index: usize, state: &RunningGameState) -> LaunchState {
+pub(super) fn begin_refocus_transition(game_index: usize, state: &RunningGameState) -> LaunchState {
     LaunchState {
         game_index,
         game_name: state.game_name.clone(),
@@ -53,7 +52,7 @@ pub(super) fn begin_focus_transition(game_index: usize, state: &RunningGameState
         baseline_pids: HashSet::new(),
         baseline_hwnds: HashSet::new(),
         target_path: state.target_path.clone(),
-        focus_pids: Some(state.tracked_pids.clone()),
+        refocus_pids: Some(state.tracked_pids.clone()),
         current_app_hwnd: find_current_app_window().map(|hwnd| hwnd as isize),
         transition: None,
     }
@@ -80,9 +79,8 @@ pub(super) fn tick_launch_progress(
         return LaunchTickResult::Pending;
     }
 
-    if let Some(focus_pids) = &state.focus_pids {
-        if let Some((hwnd, pid)) = find_best_window_for_pids(focus_pids, &state.game_name) {
-            maybe_align_window_top_left(hwnd, state.launch_steam_app_id);
+    if let Some(refocus_pids) = &state.refocus_pids {
+        if let Some((hwnd, pid)) = find_best_window_for_pids(refocus_pids, &state.game_name) {
             bring_window_to_foreground(hwnd);
             return LaunchTickResult::Ready(build_running_game_state(state, pid));
         }
@@ -100,7 +98,6 @@ pub(super) fn tick_launch_progress(
         state.target_path.as_deref(),
         &state.game_name,
     ) {
-        maybe_align_window_top_left(hwnd, state.launch_steam_app_id);
         if let Some(current_hwnd) = state.current_app_hwnd.map(|hwnd| hwnd as HWND) {
             if current_hwnd != hwnd {
                 if let Some(transition) = start_window_transition(current_hwnd, hwnd, pid) {
@@ -154,9 +151,9 @@ pub(super) fn send_current_app_to_background() -> bool {
     }
 }
 
-pub(super) fn focus_running_game(state: &RunningGameState) -> bool {
+pub(super) fn refocus_running_game(state: &RunningGameState) -> bool {
     let matched = matched_running_game_pids(state);
-    focus_best_window_for_pids(&matched, &state.game_name)
+    refocus_best_window_for_pids(&matched, &state.game_name)
 }
 
 pub(super) fn minimize_running_game(state: &RunningGameState) -> bool {
@@ -226,14 +223,14 @@ fn bring_window_to_foreground(hwnd: HWND) {
 }
 
 fn build_running_game_state(state: &LaunchState, fallback_pid: u32) -> RunningGameState {
-    let tracked_pids = if let Some(tracked_pids) = &state.focus_pids {
+    let tracked_pids = if let Some(refocus_pids) = &state.refocus_pids {
         let matched = collect_matching_process_ids(
             state.target_path.as_deref(),
             &state.game_name,
-            tracked_pids,
+            refocus_pids,
         );
         if matched.is_empty() {
-            tracked_pids.clone()
+            refocus_pids.clone()
         } else {
             matched
         }
@@ -321,17 +318,7 @@ fn tick_window_transition(transition: &mut WindowTransition) -> bool {
     }
 }
 
-fn maybe_align_window_top_left(hwnd: HWND, steam_app_id: Option<u32>) {
-    if steam_app_id != Some(ALIGN_TOP_LEFT_STEAM_APP_ID) {
-        return;
-    }
-
-    unsafe {
-        SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-    }
-}
-
-fn focus_best_window_for_pids(pids: &HashSet<u32>, game_name: &str) -> bool {
+fn refocus_best_window_for_pids(pids: &HashSet<u32>, game_name: &str) -> bool {
     if let Some((hwnd, _)) = find_best_window_for_pids(pids, game_name) {
         bring_window_to_foreground(hwnd);
         return true;

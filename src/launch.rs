@@ -38,7 +38,7 @@ pub struct LaunchState {
     #[cfg(target_os = "windows")]
     target_path: Option<PathBuf>,
     #[cfg(target_os = "windows")]
-    focus_pids: Option<HashSet<u32>>,
+    refocus_pids: Option<HashSet<u32>>,
     #[cfg(target_os = "windows")]
     current_app_hwnd: Option<isize>,
     #[cfg(target_os = "windows")]
@@ -149,7 +149,7 @@ pub fn begin_launch(
         #[cfg(target_os = "windows")]
         target_path: if target_path.exists() { Some(target_path) } else { None },
         #[cfg(target_os = "windows")]
-        focus_pids: None,
+        refocus_pids: None,
         #[cfg(target_os = "windows")]
         current_app_hwnd,
         #[cfg(target_os = "windows")]
@@ -246,10 +246,10 @@ fn launch_xbox_app(_family_name: &str, _application_id: &str) -> bool {
     false
 }
 
-pub fn begin_focus_transition(game_index: usize, state: &RunningGameState) -> Option<LaunchState> {
+pub fn begin_refocus_transition(game_index: usize, state: &RunningGameState) -> Option<LaunchState> {
     #[cfg(target_os = "windows")]
     {
-        Some(windows::begin_focus_transition(game_index, state))
+        Some(windows::begin_refocus_transition(game_index, state))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -393,10 +393,10 @@ pub fn send_current_app_to_background() -> bool {
     false
 }
 
-pub fn focus_running_game(state: &RunningGameState) -> bool {
+pub fn refocus_running_game(state: &RunningGameState) -> bool {
     #[cfg(target_os = "windows")]
     {
-        windows::focus_running_game(state)
+        windows::refocus_running_game(state)
     }
 
     #[cfg(not(target_os = "windows"))]
