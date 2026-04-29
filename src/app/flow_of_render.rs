@@ -13,7 +13,7 @@ impl LauncherApp {
         ctx: &egui::Context,
         has_focus: bool,
         has_controller_activity: bool,
-        selected_running: bool,
+        _selected_running: bool,
         view_state: ViewRenderState,
     ) {
         let ViewRenderState {
@@ -27,7 +27,9 @@ impl LauncherApp {
             running_indices,
         } = view_state;
 
-        let selected_game = self.games.get(self.page.selected());
+        let selected_game_index = self.selected_game_index();
+        let selected_game = selected_game_index.and_then(|index| self.games.get(index));
+        let home_game_indices = self.home_game_indices();
         let selected_achievement_summary = self.achievements.summary_for_selected(selected_game);
         let selected_achievement_detail = self.achievements.detail_for_selected(selected_game);
         let selected_achievement_reveal = self.achievements.text_reveal_for_selected(selected_game);
@@ -51,7 +53,9 @@ impl LauncherApp {
                     !self.page.show_achievement_panel(),
                     self.settings_icon.as_ref(),
                     self.power_off_icon.as_ref(),
-                    !self.page.show_achievement_panel() && !self.page.show_settings_page(),
+                    !self.page.show_achievement_panel()
+                        && !self.page.show_settings_page()
+                        && !self.page.show_game_library_page(),
                     self.page.home_settings_focus_anim(),
                     1.0,
                     self.page.home_power_focus_anim(),
@@ -70,16 +74,18 @@ impl LauncherApp {
                     ui,
                     self.language,
                     &self.games,
+                    &home_game_indices,
                     self.page.selected(),
                     self.page.select_anim(),
                     self.page.home_top_focus_anim(),
                     self.page.achievement_panel_anim(),
                     self.page.scroll_offset(),
                     self.game_icons.textures(),
+                    self.shelf_icon.as_ref(),
                     self.hint_icons.as_ref().map(|icons| &icons.btn_a),
                     launch_feedback,
-                    launch_notice,
-                    steam_update_notice,
+                    launch_notice.clone(),
+                    steam_update_notice.clone(),
                     launching_index,
                     &running_indices,
                     summary_cards_visibility,
@@ -89,39 +95,6 @@ impl LauncherApp {
                     previous_achievement_reveal,
                     render_wake_anim,
                 );
-
-                if self.page.achievement_panel_anim() > 0.001 && can_open_achievement_panel {
-                    if let Some(game) = self.games.get(self.page.selected()) {
-                        let game_icon = self.game_icons.get(&game.icon_key());
-                        ui::draw_achievement_page(
-                            ui,
-                            self.language,
-                            game,
-                            selected_achievement_detail,
-                            achievement_loading,
-                            achievement_has_no_data,
-                            selected_achievement_reveal,
-                            self.page.achievement_selected(),
-                            self.page.achievement_select_anim(),
-                            self.page.achievement_panel_anim(),
-                            self.page.selected(),
-                            self.page.select_anim(),
-                            self.page.scroll_offset(),
-                            self.page.achievement_scroll_offset(),
-                            game_icon,
-                            self.hint_icons.as_ref(),
-                            self.achievements
-                                .revealed_hidden_for_selected(selected_game),
-                            self.achievements
-                                .hidden_reveal_progress_for_selected(selected_game),
-                            self.achievements.icon_cache(),
-                            self.achievements.icon_reveal(),
-                            self.achievements.percent_reveal(),
-                        )
-                        .into_iter()
-                        .for_each(|url| visible_achievement_icon_urls.push(url));
-                    }
-                }
 
                 ui::draw_settings_page(
                     ui,
@@ -135,6 +108,7 @@ impl LauncherApp {
                     self.xbox_guide_icon.as_ref(),
                     self.playstation_home_icon.as_ref(),
                     self.launch_on_startup_enabled,
+                    self.home_game_limit,
                     self.background_home_wake_mode,
                     self.controller_vibration_enabled,
                     self.idle_frame_rate_reduction_enabled,
@@ -151,7 +125,9 @@ impl LauncherApp {
                     self.page.settings_screen_resolution_dropdown_open(),
                     self.page.settings_screen_refresh_dropdown_open(),
                     self.page.settings_screen_scale_dropdown_open(),
+                    self.page.settings_home_game_limit_dropdown_open(),
                     self.page.settings_screen_dropdown_selected_index(),
+                    self.page.settings_home_game_limit_dropdown_selected_index(),
                     self.page.settings_section_index(),
                     self.page.settings_selected_item_index(),
                     self.page.show_settings_page(),
@@ -161,6 +137,103 @@ impl LauncherApp {
                     self.page.settings_select_anim(),
                     self.page.settings_focus_key(),
                 );
+
+                ui::draw_game_library_page(
+                    ui,
+                    self.language,
+                    &self.games,
+                    self.page.game_library_selected(),
+                    self.page.game_library_page_anim(),
+                    self.page.game_library_select_anim(),
+                    self.page.game_library_scroll_offset(),
+                    self.game_library_background.as_ref(),
+                    self.game_icons.textures(),
+                    self.hint_icons.as_ref().map(|icons| &icons.btn_a),
+                    launch_feedback,
+                    launch_notice,
+                    steam_update_notice,
+                    launching_index,
+                    &running_indices,
+                    &self.hidden_home_game_keys,
+                    self.hide_icon.as_ref(),
+                    render_wake_anim,
+                );
+
+                if self.page.achievement_panel_anim() > 0.001 && can_open_achievement_panel {
+                    if let Some((game_index, game)) = selected_game_index
+                        .and_then(|index| self.games.get(index).map(|game| (index, game)))
+                    {
+                        let game_icon = self.game_icons.get(&game.icon_key());
+                        ui::draw_achievement_page(
+                            ui,
+                            self.language,
+                            game,
+                            selected_achievement_detail,
+                            achievement_loading,
+                            achievement_has_no_data,
+                            selected_achievement_reveal,
+                            self.page.achievement_selected(),
+                            self.page.achievement_select_anim(),
+                            self.page.achievement_panel_anim(),
+                            game_index,
+                            self.page.select_anim(),
+                            self.page.scroll_offset(),
+                            self.page.achievement_scroll_offset(),
+                            self.page.achievement_from_game_library(),
+                            self.page.show_achievement_panel(),
+                            game_icon,
+                            self.hint_icons.as_ref(),
+                            self.achievements
+                                .revealed_hidden_for_selected(selected_game),
+                            self.achievements
+                                .hidden_reveal_progress_for_selected(selected_game),
+                            self.achievements.icon_cache(),
+                            self.achievements.icon_reveal(),
+                            self.achievements.percent_reveal(),
+                        )
+                        .into_iter()
+                        .for_each(|url| visible_achievement_icon_urls.push(url));
+                    }
+                }
+
+                ui::draw_power_menu(
+                    ui,
+                    self.language,
+                    self.page.power_menu_layout(),
+                    self.power_sleep_icon.as_ref(),
+                    self.power_reboot_icon.as_ref(),
+                    self.power_off_icon.as_ref(),
+                    self.hint_icons.as_ref(),
+                    &self.resolution_options.current.label,
+                    "",
+                    "",
+                    power::supported(),
+                    self.page.power_menu_anim(),
+                    self.page.power_menu_select_anim(),
+                    self.page.power_menu_scroll_offset(),
+                    self.page.home_power_focus_anim(),
+                    render_wake_anim,
+                );
+
+                if let Some(game_index) = self.page.game_menu_game_index() {
+                    if let Some(game) = self.games.get(game_index) {
+                        ui::draw_game_menu(
+                            ui,
+                            self.language,
+                            self.page.game_menu_layout(),
+                            &game.name,
+                            self.close_icon.as_ref(),
+                            self.detail_icon.as_ref(),
+                            self.hide_icon.as_ref(),
+                            self.show_icon.as_ref(),
+                            self.page.game_menu_home_hidden(),
+                            self.page.game_menu_anim(),
+                            self.page.game_menu_select_anim(),
+                            self.page.game_menu_scroll_offset(),
+                            render_wake_anim,
+                        );
+                    }
+                }
 
                 if let Some(icons) = &self.hint_icons {
                     let settings_action_label = if self.page.show_settings_page() {
@@ -182,36 +255,18 @@ impl LauncherApp {
                         icons,
                         self.page.show_achievement_panel(),
                         self.page.show_power_menu(),
+                        self.page.show_game_menu(),
+                        self.page.show_game_library_page(),
                         self.page.show_settings_page(),
                         self.page.home_top_button_selected(),
                         home_top_action_label,
                         settings_action_label,
                         can_open_achievement_panel,
+                        selected_game.is_some(),
                         achievement_refresh_loading,
-                        selected_running,
-                        self.runtime.force_close_hold_progress(),
                         render_wake_anim,
                     );
                 }
-
-                ui::draw_power_menu(
-                    ui,
-                    self.language,
-                    self.page.power_menu_layout(),
-                    self.power_sleep_icon.as_ref(),
-                    self.power_reboot_icon.as_ref(),
-                    self.power_off_icon.as_ref(),
-                    self.hint_icons.as_ref(),
-                    &self.resolution_options.current.label,
-                    "",
-                    "",
-                    power::supported(),
-                    self.page.power_menu_anim(),
-                    self.page.power_menu_select_anim(),
-                    self.page.power_menu_scroll_offset(),
-                    self.page.home_power_focus_anim(),
-                    render_wake_anim,
-                );
 
                 if idle_dim_t > 0.001 {
                     ui.painter().rect_filled(

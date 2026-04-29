@@ -120,7 +120,7 @@ impl LauncherApp {
     pub(super) fn selected_launch_pending(&self) -> bool {
         self.launch_state
             .as_ref()
-            .map(|state| state.game_index == self.page.selected())
+            .map(|state| Some(state.game_index) == self.selected_game_index())
             .unwrap_or(false)
     }
 
@@ -157,7 +157,9 @@ impl LauncherApp {
     }
 
     pub(super) fn queue_launch_selected(&mut self, ctx: &egui::Context) {
-        let game_index = self.page.selected();
+        let Some(game_index) = self.selected_game_index() else {
+            return;
+        };
         self.pending_launch_request = Some(PendingLaunchRequest { game_index });
         self.set_launch_press_feedback(game_index);
         ctx.request_repaint();
@@ -600,12 +602,27 @@ impl LauncherApp {
             .games
             .iter()
             .position(|game| game.persistent_key() == game_key)?;
-        if game_index == self.page.selected() {
-            self.page.relocate_selection(new_index);
-        } else {
-            self.page.force_select(new_index);
-        }
+        self.relocate_selection_after_reorder(&game_key, new_index);
         Some(new_index)
+    }
+
+    fn relocate_selection_after_reorder(&mut self, promoted_key: &str, promoted_index: usize) {
+        if self.page.show_game_library_page() {
+            self.page.relocate_library_selection(promoted_index);
+            return;
+        }
+
+        let home_indices = self.home_game_indices();
+        if let Some(home_index) = home_indices.iter().position(|index| {
+            self.games
+                .get(*index)
+                .map(|game| game.persistent_key() == promoted_key)
+                .unwrap_or(false)
+        }) {
+            self.page.relocate_selection(home_index);
+        } else {
+            self.page.clamp_home_selection(home_indices.len() + 1);
+        }
     }
 
     fn remap_runtime_indices(&mut self, old_order: &[String]) {

@@ -12,6 +12,7 @@ const DEBUG_SECTION: &str = "debug";
 const HINT_ICON_THEME_KEY: &str = "hint_icon_theme";
 const LANGUAGE_KEY: &str = "language";
 const DISPLAY_MODE_KEY: &str = "display_mode";
+const HOME_GAME_LIMIT_KEY: &str = "home_game_limit";
 const IDLE_FRAME_RATE_REDUCTION_ENABLED_KEY: &str = "idle_frame_rate_reduction_enabled";
 const BACKGROUND_HOME_WAKE_MODE_KEY: &str = "background_home_wake_enabled";
 const CONTROLLER_VIBRATION_ENABLED_KEY: &str = "controller_vibration_enabled";
@@ -87,6 +88,68 @@ pub enum PromptIconTheme {
     PlayStation,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HomeGameLimit {
+    Limited(usize),
+    Unlimited,
+}
+
+impl Default for HomeGameLimit {
+    fn default() -> Self {
+        Self::Limited(9)
+    }
+}
+
+impl HomeGameLimit {
+    pub const MIN_LIMIT: usize = 5;
+    pub const MAX_LIMIT: usize = 20;
+    pub const OPTION_COUNT: usize = Self::MAX_LIMIT - Self::MIN_LIMIT + 2;
+
+    pub fn from_option_index(index: usize) -> Self {
+        if index < Self::MAX_LIMIT - Self::MIN_LIMIT + 1 {
+            Self::Limited(Self::MIN_LIMIT + index)
+        } else {
+            Self::Unlimited
+        }
+    }
+
+    pub fn option_index(self) -> usize {
+        match self {
+            Self::Limited(limit) => limit.clamp(Self::MIN_LIMIT, Self::MAX_LIMIT) - Self::MIN_LIMIT,
+            Self::Unlimited => Self::MAX_LIMIT - Self::MIN_LIMIT + 1,
+        }
+    }
+
+    pub fn as_config_value(self) -> String {
+        match self {
+            Self::Limited(limit) => limit.clamp(Self::MIN_LIMIT, Self::MAX_LIMIT).to_string(),
+            Self::Unlimited => "unlimited".to_string(),
+        }
+    }
+
+    pub fn from_config_value(value: &str) -> Option<Self> {
+        if value.eq_ignore_ascii_case("unlimited")
+            || value.eq_ignore_ascii_case("none")
+            || value.eq_ignore_ascii_case("no_limit")
+            || value == "0"
+        {
+            return Some(Self::Unlimited);
+        }
+
+        let limit = value.parse::<usize>().ok()?;
+        (Self::MIN_LIMIT..=Self::MAX_LIMIT)
+            .contains(&limit)
+            .then_some(Self::Limited(limit))
+    }
+
+    pub fn display_text(self, language: AppLanguage) -> String {
+        match self {
+            Self::Limited(limit) => limit.clamp(Self::MIN_LIMIT, Self::MAX_LIMIT).to_string(),
+            Self::Unlimited => language.unlimited_text().to_string(),
+        }
+    }
+}
+
 impl PromptIconTheme {
     pub fn as_config_value(self) -> &'static str {
         match self {
@@ -111,6 +174,7 @@ struct AppConfig {
     hint_icon_theme: PromptIconTheme,
     language: AppLanguageSetting,
     display_mode_setting: DisplayModeSetting,
+    home_game_limit: HomeGameLimit,
     idle_frame_rate_reduction_enabled: bool,
     background_home_wake_mode: BackgroundHomeWakeMode,
     controller_vibration_enabled: bool,
@@ -126,6 +190,7 @@ impl Default for AppConfig {
             hint_icon_theme: PromptIconTheme::Xbox,
             language: AppLanguageSetting::Auto,
             display_mode_setting: DisplayModeSetting::Fullscreen,
+            home_game_limit: HomeGameLimit::default(),
             idle_frame_rate_reduction_enabled: true,
             background_home_wake_mode: BackgroundHomeWakeMode::ShortPress,
             controller_vibration_enabled: false,
@@ -206,6 +271,9 @@ fn parse_config(contents: &str) -> AppConfig {
             } else if key.eq_ignore_ascii_case(DISPLAY_MODE_KEY) {
                 config.display_mode_setting = DisplayModeSetting::from_config_value(value)
                     .unwrap_or(DisplayModeSetting::Fullscreen);
+            } else if key.eq_ignore_ascii_case(HOME_GAME_LIMIT_KEY) {
+                config.home_game_limit =
+                    HomeGameLimit::from_config_value(value).unwrap_or_default();
             } else if key.eq_ignore_ascii_case(IDLE_FRAME_RATE_REDUCTION_ENABLED_KEY) {
                 config.idle_frame_rate_reduction_enabled =
                     parse_bool_config_value(value).unwrap_or(true);
@@ -239,7 +307,7 @@ fn parse_config(contents: &str) -> AppConfig {
 
 fn serialize_config(config: AppConfig) -> String {
     format!(
-        "[{}]\n{}={}\n{}={}\n{}={}\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n",
+        "[{}]\n{}={}\n{}={}\n{}={}\n{}={}\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n",
         UI_SECTION,
         HINT_ICON_THEME_KEY,
         config.hint_icon_theme.as_config_value(),
@@ -247,6 +315,8 @@ fn serialize_config(config: AppConfig) -> String {
         config.language.as_config_value(),
         DISPLAY_MODE_KEY,
         config.display_mode_setting.as_config_value(),
+        HOME_GAME_LIMIT_KEY,
+        config.home_game_limit.as_config_value(),
         IDLE_FRAME_RATE_REDUCTION_ENABLED_KEY,
         config.idle_frame_rate_reduction_enabled,
         BACKGROUND_HOME_WAKE_MODE_KEY,
@@ -299,6 +369,10 @@ pub fn load_display_mode_setting() -> DisplayModeSetting {
     load_config().display_mode_setting
 }
 
+pub fn load_home_game_limit() -> HomeGameLimit {
+    load_config().home_game_limit
+}
+
 pub fn load_idle_frame_rate_reduction_enabled() -> bool {
     load_config().idle_frame_rate_reduction_enabled
 }
@@ -318,6 +392,12 @@ pub fn store_app_language_setting(language: AppLanguageSetting) {
 pub fn store_display_mode_setting(display_mode_setting: DisplayModeSetting) {
     let mut config = load_config();
     config.display_mode_setting = display_mode_setting;
+    store_config(config);
+}
+
+pub fn store_home_game_limit(home_game_limit: HomeGameLimit) {
+    let mut config = load_config();
+    config.home_game_limit = home_game_limit;
     store_config(config);
 }
 

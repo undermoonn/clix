@@ -40,6 +40,54 @@ pub(super) fn load_settings_exit_icon(ctx: &egui::Context) -> Option<egui::Textu
     )
 }
 
+pub(super) fn load_close_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_generated_icon(
+        ctx,
+        include_bytes!(concat!(env!("OUT_DIR"), "/close-icon-ui.png")),
+        "game_menu_close_icon",
+    )
+}
+
+pub(super) fn load_detail_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_generated_icon(
+        ctx,
+        include_bytes!(concat!(env!("OUT_DIR"), "/detail-icon-ui.png")),
+        "game_menu_detail_icon",
+    )
+}
+
+pub(super) fn load_hide_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_generated_icon(
+        ctx,
+        include_bytes!(concat!(env!("OUT_DIR"), "/hide-icon-ui.png")),
+        "game_menu_hide_icon",
+    )
+}
+
+pub(super) fn load_show_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_generated_icon(
+        ctx,
+        include_bytes!(concat!(env!("OUT_DIR"), "/show-icon-ui.png")),
+        "game_menu_show_icon",
+    )
+}
+
+pub(super) fn load_shelf_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_generated_icon(
+        ctx,
+        include_bytes!(concat!(env!("OUT_DIR"), "/shelf-icon-ui.png")),
+        "home_game_library_icon",
+    )
+}
+
+pub(super) fn load_game_library_background(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_embedded_png_texture(
+        ctx,
+        include_bytes!("../arts/website_style.png"),
+        "game_library_background",
+    )
+}
+
 pub(super) fn load_xbox_guide_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
     load_embedded_png_texture(
         ctx,

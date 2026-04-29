@@ -29,9 +29,79 @@ fn scheduled_repaint_delay(
 }
 
 impl LauncherApp {
-    pub(super) fn can_open_achievement_panel_for_selected(&self) -> bool {
+    pub(super) fn home_game_indices(&self) -> Vec<usize> {
+        let indices = self.games.iter().enumerate().filter_map(|(index, game)| {
+            (!self.hidden_home_game_keys.contains(&game.persistent_key())).then_some(index)
+        });
+
+        match self.home_game_limit {
+            crate::config::HomeGameLimit::Limited(limit) => indices.take(limit).collect(),
+            crate::config::HomeGameLimit::Unlimited => indices.collect(),
+        }
+    }
+
+    pub(super) fn home_items_len(&self) -> usize {
+        self.home_game_indices().len() + 1
+    }
+
+    pub(super) fn selected_home_game_index(&self) -> Option<usize> {
+        self.home_game_indices().get(self.page.selected()).copied()
+    }
+
+    pub(super) fn selected_game_index(&self) -> Option<usize> {
+        if self.page.show_game_library_page() {
+            (!self.games.is_empty()).then_some(self.page.game_library_selected())
+        } else {
+            self.selected_home_game_index()
+        }
+    }
+
+    pub(super) fn selected_game(&self) -> Option<&crate::game::Game> {
+        self.selected_game_index()
+            .and_then(|index| self.games.get(index))
+    }
+
+    pub(super) fn game_hidden_from_home(&self, game_index: usize) -> bool {
         self.games
-            .get(self.page.selected())
+            .get(game_index)
+            .map(|game| self.hidden_home_game_keys.contains(&game.persistent_key()))
+            .unwrap_or(false)
+    }
+
+    pub(super) fn set_game_home_hidden(
+        &mut self,
+        game_index: usize,
+        hidden: bool,
+        ctx: &egui::Context,
+    ) {
+        let Some(key) = self
+            .games
+            .get(game_index)
+            .map(crate::game::Game::persistent_key)
+        else {
+            return;
+        };
+
+        let changed = if hidden {
+            self.hidden_home_game_keys.insert(key)
+        } else {
+            self.hidden_home_game_keys.remove(&key)
+        };
+        if !changed {
+            return;
+        }
+
+        crate::game_home_visibility::store_hidden_keys(&self.hidden_home_game_keys);
+        self.page.clamp_home_selection(self.home_items_len());
+        self.page.clamp_library_selection(self.games.len());
+        self.refresh_selected_playtime(ctx);
+        self.refresh_selected_install_size(ctx);
+        self.refresh_selected_dlss(ctx);
+        ctx.request_repaint();
+    }
+
+    pub(super) fn can_open_achievement_panel_for_selected(&self) -> bool {
+        self.selected_game()
             .map(|game| matches!(game.source, GameSource::Steam))
             .unwrap_or(false)
     }
@@ -41,21 +111,22 @@ impl LauncherApp {
     }
 
     pub(super) fn refresh_selected_playtime(&mut self, ctx: &egui::Context) {
-        self.playtime.refresh_for_selected(
-            self.games.get(self.page.selected()),
-            &self.steam_paths,
-            ctx,
-        );
+        let selected_game_index = self.selected_game_index();
+        let selected_game = selected_game_index.and_then(|index| self.games.get(index));
+        self.playtime
+            .refresh_for_selected(selected_game, &self.steam_paths, ctx);
     }
 
     pub(super) fn refresh_selected_install_size(&mut self, ctx: &egui::Context) {
-        self.install_size
-            .refresh_for_selected(self.games.get(self.page.selected()), ctx);
+        let selected_game_index = self.selected_game_index();
+        let selected_game = selected_game_index.and_then(|index| self.games.get(index));
+        self.install_size.refresh_for_selected(selected_game, ctx);
     }
 
     pub(super) fn refresh_selected_dlss(&mut self, ctx: &egui::Context) {
-        self.dlss
-            .refresh_for_selected(self.games.get(self.page.selected()), ctx);
+        let selected_game_index = self.selected_game_index();
+        let selected_game = selected_game_index.and_then(|index| self.games.get(index));
+        self.dlss.refresh_for_selected(selected_game, ctx);
     }
 
     pub(super) fn close_root_viewport(&self, ctx: &egui::Context) {

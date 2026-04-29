@@ -6,8 +6,8 @@ use crate::game::{Game, GameSource};
 use crate::i18n::AppLanguage;
 use crate::steam::AchievementSummary;
 
-use super::lerp_f32;
 use super::text::{build_wrapped_galley, color_with_scaled_alpha, corner_radius, scale_alpha};
+use super::{design_units, lerp_f32};
 
 pub(crate) fn dlss_tag_text(game: &Game) -> Option<String> {
     game.dlss_version.as_ref().map(|version| {
@@ -59,6 +59,7 @@ pub(crate) fn draw_selected_game_text_badge(
     text: &str,
     title_pos: egui::Pos2,
     title_size: egui::Vec2,
+    layout_scale: f32,
     alpha_scale: f32,
 ) -> egui::Vec2 {
     draw_selected_game_text_badge_with_style(
@@ -66,6 +67,7 @@ pub(crate) fn draw_selected_game_text_badge(
         text,
         title_pos,
         title_size,
+        layout_scale,
         alpha_scale,
         &SelectedGameBadgeStyle::steam(),
     )
@@ -75,16 +77,20 @@ pub(crate) fn measure_selected_game_text_badge(
     painter: &egui::Painter,
     text: &str,
     title_size: egui::Vec2,
+    layout_scale: f32,
 ) -> egui::Vec2 {
     let badge_font = egui::FontId::new(
-        (title_size.y * 0.46).clamp(13.0, 17.0),
+        (title_size.y * 0.46).clamp(
+            design_units(13.0, layout_scale),
+            design_units(17.0, layout_scale),
+        ),
         egui::FontFamily::Name("Bold".into()),
     );
     let badge_galley =
         painter.layout_no_wrap(text.to_owned(), badge_font, egui::Color32::TRANSPARENT);
-    let padding_x = 14.0;
-    let padding_y = 6.0;
-    let gap = 12.0;
+    let padding_x = design_units(14.0, layout_scale);
+    let padding_y = design_units(6.0, layout_scale);
+    let gap = design_units(12.0, layout_scale);
 
     egui::vec2(
         badge_galley.size().x + padding_x * 2.0 + gap,
@@ -97,6 +103,7 @@ pub(crate) fn draw_selected_game_text_badge_with_style(
     text: &str,
     title_pos: egui::Pos2,
     title_size: egui::Vec2,
+    layout_scale: f32,
     alpha_scale: f32,
     style: &SelectedGameBadgeStyle,
 ) -> egui::Vec2 {
@@ -106,7 +113,10 @@ pub(crate) fn draw_selected_game_text_badge_with_style(
     }
 
     let badge_font = egui::FontId::new(
-        (title_size.y * 0.46).clamp(13.0, 17.0),
+        (title_size.y * 0.46).clamp(
+            design_units(13.0, layout_scale),
+            design_units(17.0, layout_scale),
+        ),
         egui::FontFamily::Name("Bold".into()),
     );
     let badge_galley = painter.layout_no_wrap(
@@ -119,9 +129,9 @@ pub(crate) fn draw_selected_game_text_badge_with_style(
             alpha,
         ),
     );
-    let padding_x = 14.0;
-    let padding_y = 6.0;
-    let gap = 12.0;
+    let padding_x = design_units(14.0, layout_scale);
+    let padding_y = design_units(6.0, layout_scale);
+    let gap = design_units(12.0, layout_scale);
     let badge_width = badge_galley.size().x + padding_x * 2.0;
     let badge_height = badge_galley.size().y + padding_y * 2.0;
     let badge_rect = egui::Rect::from_min_size(
@@ -134,7 +144,7 @@ pub(crate) fn draw_selected_game_text_badge_with_style(
 
     painter.rect_filled(
         badge_rect,
-        corner_radius((badge_rect.height() * 0.5).min(10.0)),
+        corner_radius((badge_rect.height() * 0.5).min(design_units(10.0, layout_scale))),
         egui::Color32::from_rgba_unmultiplied(
             style.fill_color.r(),
             style.fill_color.g(),
@@ -145,9 +155,9 @@ pub(crate) fn draw_selected_game_text_badge_with_style(
     if let Some(stroke_color) = style.stroke_color {
         painter.rect_stroke(
             badge_rect,
-            corner_radius((badge_rect.height() * 0.5).min(10.0)),
+            corner_radius((badge_rect.height() * 0.5).min(design_units(10.0, layout_scale))),
             egui::Stroke::new(
-                1.0,
+                design_units(1.0, layout_scale),
                 egui::Color32::from_rgba_unmultiplied(
                     stroke_color.r(),
                     stroke_color.g(),
@@ -367,10 +377,19 @@ pub(crate) fn draw_selected_game_badge(
     game: &Game,
     title_pos: egui::Pos2,
     title_size: egui::Vec2,
+    layout_scale: f32,
     alpha_scale: f32,
 ) -> f32 {
     let badge_text = game_source_badge_text(game.source);
-    draw_selected_game_text_badge(painter, badge_text, title_pos, title_size, alpha_scale).x
+    draw_selected_game_text_badge(
+        painter,
+        badge_text,
+        title_pos,
+        title_size,
+        layout_scale,
+        alpha_scale,
+    )
+    .x
 }
 
 pub(crate) fn draw_selected_game_summary(

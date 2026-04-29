@@ -2,8 +2,10 @@ use std::time::Instant;
 
 use eframe::egui;
 
+use super::game_menu::{GameMenuLayout, GameMenuOption};
 use super::power::{PowerMenuLayout, PowerMenuOption};
 use crate::animation::ExponentialAnimation;
+use crate::config::HomeGameLimit;
 use crate::input::ControllerAction;
 use crate::system::external_apps::ExternalAppKind;
 
@@ -13,6 +15,10 @@ const SETTINGS_PAGE_EXIT_ANIM_SPEED: f32 = 8.0;
 const SETTINGS_SUBMENU_ENTER_ANIM_SPEED: f32 = 4.0;
 const SETTINGS_SUBMENU_EXIT_ANIM_SPEED: f32 = 4.0;
 const SETTINGS_PAGE_ENTER_INITIAL_PROGRESS: f32 = 0.18;
+const GAME_LIBRARY_PAGE_ENTER_ANIM_SPEED: f32 = 5.0;
+const GAME_LIBRARY_PAGE_EXIT_ANIM_SPEED: f32 = 8.0;
+const GAME_LIBRARY_PAGE_ENTER_INITIAL_PROGRESS: f32 = SETTINGS_PAGE_ENTER_INITIAL_PROGRESS;
+const GAME_LIBRARY_COLUMNS: usize = 7;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScreenSettingsAction {
@@ -41,6 +47,11 @@ enum ScreenDropdown {
     Resolution,
     RefreshRate,
     Scale,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SystemDropdown {
+    HomeGameLimit,
 }
 
 impl SettingsSection {
@@ -86,7 +97,12 @@ pub struct PageActionResult {
     pub toggle_detect_steam_games: bool,
     pub toggle_detect_epic_games: bool,
     pub toggle_detect_xbox_games: bool,
+    pub select_home_game_limit: Option<HomeGameLimit>,
     pub launch_selected: bool,
+    pub open_game_menu: bool,
+    pub force_close_game_index: Option<usize>,
+    pub hide_game_from_home: Option<usize>,
+    pub show_game_on_home: Option<usize>,
     pub launch_external_app: Option<ExternalAppKind>,
     pub selected_changed: bool,
     pub close_frame: bool,
@@ -114,6 +130,15 @@ pub struct PageState {
     power_menu_select_anim_target: Option<usize>,
     power_menu_layout: PowerMenuLayout,
     power_menu_scroll_offset: f32,
+    show_game_menu: bool,
+    game_menu_anim: ExponentialAnimation,
+    game_menu_selected: usize,
+    game_menu_select_anim: ExponentialAnimation,
+    game_menu_select_anim_target: Option<usize>,
+    game_menu_layout: GameMenuLayout,
+    game_menu_scroll_offset: f32,
+    game_menu_game_index: Option<usize>,
+    game_menu_home_hidden: bool,
     show_settings_page: bool,
     settings_page_anim: ExponentialAnimation,
     settings_submenu_anim: ExponentialAnimation,
@@ -122,6 +147,9 @@ pub struct PageState {
     settings_section: SettingsSection,
     settings_in_submenu: bool,
     settings_system_selected: usize,
+    settings_system_dropdown: Option<SystemDropdown>,
+    settings_home_game_limit_selected: usize,
+    settings_home_game_limit_current: usize,
     settings_screen_selected: usize,
     settings_screen_dropdown: Option<ScreenDropdown>,
     settings_screen_dropdown_selected: usize,
@@ -133,11 +161,18 @@ pub struct PageState {
     settings_screen_current_scale: usize,
     settings_apps_selected: usize,
     show_achievement_panel: bool,
+    achievement_from_game_library: bool,
     achievement_panel_anim: ExponentialAnimation,
     achievement_selected: usize,
     achievement_select_anim: ExponentialAnimation,
     achievement_select_anim_target: Option<usize>,
     achievement_scroll_offset: ExponentialAnimation,
+    show_game_library_page: bool,
+    game_library_page_anim: ExponentialAnimation,
+    game_library_selected: usize,
+    game_library_select_anim: ExponentialAnimation,
+    game_library_select_anim_target: Option<usize>,
+    game_library_scroll_offset: ExponentialAnimation,
 }
 
 impl PageState {
@@ -161,6 +196,15 @@ impl PageState {
             power_menu_select_anim_target: None,
             power_menu_layout: PowerMenuLayout::default(),
             power_menu_scroll_offset: 0.0,
+            show_game_menu: false,
+            game_menu_anim: ExponentialAnimation::new(0.0),
+            game_menu_selected: 0,
+            game_menu_select_anim: ExponentialAnimation::new(0.0),
+            game_menu_select_anim_target: None,
+            game_menu_layout: GameMenuLayout::default(),
+            game_menu_scroll_offset: 0.0,
+            game_menu_game_index: None,
+            game_menu_home_hidden: false,
             show_settings_page: false,
             settings_page_anim: ExponentialAnimation::new(0.0),
             settings_submenu_anim: ExponentialAnimation::new(0.0),
@@ -169,6 +213,9 @@ impl PageState {
             settings_section: SettingsSection::System,
             settings_in_submenu: false,
             settings_system_selected: 0,
+            settings_system_dropdown: None,
+            settings_home_game_limit_selected: HomeGameLimit::default().option_index(),
+            settings_home_game_limit_current: HomeGameLimit::default().option_index(),
             settings_screen_selected: 0,
             settings_screen_dropdown: None,
             settings_screen_dropdown_selected: 0,
@@ -180,16 +227,32 @@ impl PageState {
             settings_screen_current_scale: 0,
             settings_apps_selected: 0,
             show_achievement_panel: false,
+            achievement_from_game_library: false,
             achievement_panel_anim: ExponentialAnimation::new(0.0),
             achievement_selected: 0,
             achievement_select_anim: ExponentialAnimation::new(0.0),
             achievement_select_anim_target: None,
             achievement_scroll_offset: ExponentialAnimation::new(0.0),
+            show_game_library_page: false,
+            game_library_page_anim: ExponentialAnimation::new(0.0),
+            game_library_selected: 0,
+            game_library_select_anim: ExponentialAnimation::new(0.0),
+            game_library_select_anim_target: None,
+            game_library_scroll_offset: ExponentialAnimation::new(0.0),
         }
     }
 
     pub fn selected(&self) -> usize {
         self.selected
+    }
+
+    #[cfg(test)]
+    pub fn force_select(&mut self, selected: usize) {
+        self.selected = selected;
+        self.select_anim.set_immediate(0.0);
+        self.select_anim_target = None;
+        self.scroll_offset.set_immediate(selected as f32);
+        self.reset_achievement_selection();
     }
 
     pub fn home_settings_selected(&self) -> bool {
@@ -222,12 +285,24 @@ impl PageState {
         self.show_achievement_panel
     }
 
+    pub fn achievement_from_game_library(&self) -> bool {
+        self.achievement_from_game_library
+    }
+
     pub fn show_power_menu(&self) -> bool {
         self.show_power_menu
     }
 
+    pub fn show_game_menu(&self) -> bool {
+        self.show_game_menu
+    }
+
     pub fn show_settings_page(&self) -> bool {
         self.show_settings_page
+    }
+
+    pub fn show_game_library_page(&self) -> bool {
+        self.show_game_library_page
     }
 
     pub fn cover_nav_dir(&self) -> f32 {
@@ -258,6 +333,30 @@ impl PageState {
         self.power_menu_anim.value()
     }
 
+    pub fn game_menu_anim(&self) -> f32 {
+        self.game_menu_anim.value()
+    }
+
+    pub fn game_menu_select_anim(&self) -> f32 {
+        self.game_menu_select_anim.value()
+    }
+
+    pub fn game_menu_scroll_offset(&self) -> f32 {
+        self.game_menu_scroll_offset
+    }
+
+    pub fn game_menu_layout(&self) -> &GameMenuLayout {
+        &self.game_menu_layout
+    }
+
+    pub fn game_menu_game_index(&self) -> Option<usize> {
+        self.game_menu_game_index
+    }
+
+    pub fn game_menu_home_hidden(&self) -> bool {
+        self.game_menu_home_hidden
+    }
+
     pub fn power_menu_select_anim(&self) -> f32 {
         self.power_menu_select_anim.value()
     }
@@ -268,6 +367,22 @@ impl PageState {
 
     pub fn settings_page_anim(&self) -> f32 {
         self.settings_page_anim.value()
+    }
+
+    pub fn game_library_page_anim(&self) -> f32 {
+        self.game_library_page_anim.value()
+    }
+
+    pub fn game_library_selected(&self) -> usize {
+        self.game_library_selected
+    }
+
+    pub fn game_library_select_anim(&self) -> f32 {
+        self.game_library_select_anim.value()
+    }
+
+    pub fn game_library_scroll_offset(&self) -> f32 {
+        self.game_library_scroll_offset.value()
     }
 
     pub fn settings_submenu_anim(&self) -> f32 {
@@ -315,8 +430,25 @@ impl PageState {
         self.settings_screen_dropdown == Some(ScreenDropdown::Scale)
     }
 
+    pub fn settings_home_game_limit_dropdown_open(&self) -> bool {
+        self.settings_system_dropdown == Some(SystemDropdown::HomeGameLimit)
+    }
+
     pub fn settings_screen_dropdown_selected_index(&self) -> usize {
         self.settings_screen_dropdown_selected
+    }
+
+    pub fn settings_home_game_limit_dropdown_selected_index(&self) -> usize {
+        self.settings_home_game_limit_selected
+    }
+
+    pub fn sync_home_game_limit(&mut self, home_game_limit: HomeGameLimit) {
+        self.settings_home_game_limit_current = home_game_limit.option_index();
+        if self.settings_system_dropdown == Some(SystemDropdown::HomeGameLimit) {
+            self.settings_home_game_limit_selected = self
+                .settings_home_game_limit_selected
+                .min(HomeGameLimit::OPTION_COUNT.saturating_sub(1));
+        }
     }
 
     pub fn sync_screen_settings(
@@ -386,29 +518,6 @@ impl PageState {
         self.wake_anim.restart(0.0, 1.0, 8.0, now);
     }
 
-    pub fn force_select(&mut self, selected: usize) {
-        let keep_settings_page_open = self.show_settings_page;
-
-        self.selected = selected;
-        self.clear_home_top_button_selection();
-        self.home_settings_focus_anim.set_immediate(0.0);
-        self.home_power_focus_anim.set_immediate(0.0);
-        self.cover_nav_dir = 0.0;
-        self.select_anim.set_immediate(0.0);
-        self.select_anim_target = None;
-        self.scroll_offset.set_immediate(selected as f32);
-        if !keep_settings_page_open {
-            self.show_settings_page = false;
-            self.settings_page_anim.set_immediate(0.0);
-            self.settings_select_anim.set_immediate(0.0);
-            self.settings_select_anim_target = None;
-            self.reset_settings_navigation();
-        }
-        self.show_achievement_panel = false;
-        self.achievement_panel_anim.set_immediate(0.0);
-        self.reset_achievement_selection();
-    }
-
     /// Relocate the current selection (e.g. after a list reorder that moved the
     /// currently-selected item to a different index) without restarting the
     /// selection animation or affecting achievement panel state.
@@ -419,6 +528,27 @@ impl PageState {
         // `select_anim` back to 0 (which would re-shrink the title/badge).
         self.select_anim_target = Some(selected);
         self.scroll_offset.set_immediate(selected as f32);
+    }
+
+    pub fn relocate_library_selection(&mut self, selected: usize) {
+        self.game_library_selected = selected;
+        self.game_library_select_anim_target = Some(selected);
+        self.game_library_scroll_offset
+            .set_immediate((selected / GAME_LIBRARY_COLUMNS) as f32);
+    }
+
+    pub fn clamp_home_selection(&mut self, home_items_len: usize) {
+        self.selected = self.selected.min(home_items_len.saturating_sub(1));
+        self.scroll_offset.animate_to(
+            self.selected as f32,
+            14.0,
+            Instant::now(),
+            ANIMATION_EPSILON,
+        );
+    }
+
+    pub fn clamp_library_selection(&mut self, games_len: usize) {
+        self.game_library_selected = self.game_library_selected.min(games_len.saturating_sub(1));
     }
 
     pub fn open_power_menu(&mut self, layout: PowerMenuLayout) {
@@ -432,9 +562,52 @@ impl PageState {
         self.show_power_menu = true;
     }
 
+    pub fn open_game_menu(
+        &mut self,
+        game_index: usize,
+        show_force_close: bool,
+        home_hidden: bool,
+        show_details: bool,
+    ) {
+        let layout = GameMenuLayout::new(show_force_close, show_details);
+        let default_selected = layout.default_selected();
+        self.game_menu_layout = layout;
+        self.game_menu_anim.set_immediate(0.0);
+        self.game_menu_selected = default_selected;
+        self.game_menu_select_anim.set_immediate(0.0);
+        self.game_menu_select_anim_target = None;
+        self.game_menu_scroll_offset = 0.0;
+        self.game_menu_game_index = Some(game_index);
+        self.game_menu_home_hidden = home_hidden;
+        self.show_game_menu = true;
+        self.close_power_menu();
+    }
+
+    #[cfg(test)]
     pub fn handle_action(
         &mut self,
         action: &ControllerAction,
+        games_len: usize,
+        can_open_achievement_panel: bool,
+        achievement_len: usize,
+    ) -> PageActionResult {
+        self.handle_action_with_context(
+            action,
+            games_len,
+            false,
+            Some(self.selected),
+            games_len,
+            can_open_achievement_panel,
+            achievement_len,
+        )
+    }
+
+    pub fn handle_action_with_context(
+        &mut self,
+        action: &ControllerAction,
+        home_items_len: usize,
+        selected_home_item_is_library: bool,
+        selected_game_index: Option<usize>,
         games_len: usize,
         can_open_achievement_panel: bool,
         achievement_len: usize,
@@ -453,7 +626,12 @@ impl PageState {
             toggle_detect_steam_games: false,
             toggle_detect_epic_games: false,
             toggle_detect_xbox_games: false,
+            select_home_game_limit: None,
             launch_selected: false,
+            open_game_menu: false,
+            force_close_game_index: None,
+            hide_game_from_home: None,
+            show_game_on_home: None,
             launch_external_app: None,
             selected_changed: false,
             close_frame: false,
@@ -502,6 +680,62 @@ impl PageState {
             return result;
         }
 
+        if self.show_game_menu {
+            match action {
+                ControllerAction::Left | ControllerAction::Right => {}
+                ControllerAction::Up => {
+                    let next = self.game_menu_layout.move_up(self.game_menu_selected);
+                    if next != self.game_menu_selected {
+                        self.game_menu_selected = next;
+                    }
+                }
+                ControllerAction::Down => {
+                    let next = self.game_menu_layout.move_down(self.game_menu_selected);
+                    if next != self.game_menu_selected {
+                        self.game_menu_selected = next;
+                    }
+                }
+                ControllerAction::Launch => {
+                    let Some(game_index) = self.game_menu_game_index else {
+                        self.close_game_menu();
+                        return result;
+                    };
+                    match self.game_menu_layout.option_at(self.game_menu_selected) {
+                        Some(GameMenuOption::Details) => {
+                            self.close_game_menu();
+                            self.achievement_from_game_library = self.show_game_library_page;
+                            self.show_achievement_panel = true;
+                            if self.achievement_from_game_library {
+                                self.achievement_panel_anim
+                                    .set_immediate(GAME_LIBRARY_PAGE_ENTER_INITIAL_PROGRESS);
+                            }
+                            self.reset_achievement_selection();
+                            result.open_achievement_panel = true;
+                        }
+                        Some(GameMenuOption::ForceClose) => {
+                            self.close_game_menu();
+                            result.force_close_game_index = Some(game_index);
+                        }
+                        Some(GameMenuOption::ToggleHomeVisibility) => {
+                            let was_hidden = self.game_menu_home_hidden;
+                            self.close_game_menu();
+                            if was_hidden {
+                                result.show_game_on_home = Some(game_index);
+                            } else {
+                                result.hide_game_from_home = Some(game_index);
+                            }
+                        }
+                        None => {}
+                    }
+                }
+                ControllerAction::Quit | ControllerAction::Menu => {
+                    self.close_game_menu();
+                }
+                _ => {}
+            }
+            return result;
+        }
+
         if self.show_settings_page {
             match action {
                 ControllerAction::Left => {}
@@ -512,7 +746,11 @@ impl PageState {
                 }
                 ControllerAction::Up => {
                     if self.settings_in_submenu {
-                        if self.settings_section == SettingsSection::Screen
+                        if self.settings_section == SettingsSection::System
+                            && self.settings_system_dropdown.is_some()
+                        {
+                            self.move_system_dropdown(false);
+                        } else if self.settings_section == SettingsSection::Screen
                             && self.settings_screen_dropdown.is_some()
                         {
                             self.move_screen_dropdown(false);
@@ -525,7 +763,11 @@ impl PageState {
                 }
                 ControllerAction::Down => {
                     if self.settings_in_submenu {
-                        if self.settings_section == SettingsSection::Screen
+                        if self.settings_section == SettingsSection::System
+                            && self.settings_system_dropdown.is_some()
+                        {
+                            self.move_system_dropdown(true);
+                        } else if self.settings_section == SettingsSection::Screen
                             && self.settings_screen_dropdown.is_some()
                         {
                             self.move_screen_dropdown(true);
@@ -543,11 +785,27 @@ impl PageState {
                                 0 => result.toggle_detect_steam_games = true,
                                 1 => result.toggle_detect_epic_games = true,
                                 2 => result.toggle_detect_xbox_games = true,
-                                3 => result.toggle_background_home_wake = true,
-                                4 => result.toggle_controller_vibration_feedback = true,
-                                5 => result.toggle_idle_frame_rate_reduction = true,
-                                6 => result.cycle_display_mode_setting = true,
-                                7 => result.cycle_language_setting = true,
+                                3 => {
+                                    if self.settings_system_dropdown
+                                        == Some(SystemDropdown::HomeGameLimit)
+                                    {
+                                        result.select_home_game_limit =
+                                            Some(HomeGameLimit::from_option_index(
+                                                self.settings_home_game_limit_selected,
+                                            ));
+                                        self.settings_system_dropdown = None;
+                                    } else {
+                                        self.settings_home_game_limit_selected =
+                                            self.settings_home_game_limit_current;
+                                        self.settings_system_dropdown =
+                                            Some(SystemDropdown::HomeGameLimit);
+                                    }
+                                }
+                                4 => result.toggle_background_home_wake = true,
+                                5 => result.toggle_controller_vibration_feedback = true,
+                                6 => result.toggle_idle_frame_rate_reduction = true,
+                                7 => result.cycle_display_mode_setting = true,
+                                8 => result.cycle_language_setting = true,
                                 _ => result.toggle_launch_on_startup = true,
                             },
                             SettingsSection::Screen => match self.settings_screen_dropdown {
@@ -614,7 +872,11 @@ impl PageState {
                 }
                 ControllerAction::Quit => {
                     if self.settings_in_submenu {
-                        if self.settings_section == SettingsSection::Screen
+                        if self.settings_section == SettingsSection::System
+                            && self.settings_system_dropdown.is_some()
+                        {
+                            self.settings_system_dropdown = None;
+                        } else if self.settings_section == SettingsSection::Screen
                             && self.settings_screen_dropdown.is_some()
                         {
                             self.settings_screen_dropdown = None;
@@ -635,7 +897,7 @@ impl PageState {
                 ControllerAction::Up => {
                     if self.achievement_selected > 0 {
                         self.achievement_selected -= 1;
-                    } else {
+                    } else if !self.achievement_from_game_library {
                         self.close_achievement_panel();
                     }
                 }
@@ -658,6 +920,51 @@ impl PageState {
             return result;
         }
 
+        if self.show_game_library_page {
+            match action {
+                ControllerAction::Left => {
+                    if self.game_library_selected > 0 {
+                        self.game_library_selected -= 1;
+                        result.selected_changed = true;
+                    }
+                }
+                ControllerAction::Right => {
+                    if self.game_library_selected + 1 < games_len {
+                        self.game_library_selected += 1;
+                        result.selected_changed = true;
+                    }
+                }
+                ControllerAction::Up => {
+                    if self.game_library_selected >= GAME_LIBRARY_COLUMNS {
+                        self.game_library_selected -= GAME_LIBRARY_COLUMNS;
+                        result.selected_changed = true;
+                    }
+                }
+                ControllerAction::Down => {
+                    let next = self.game_library_selected + GAME_LIBRARY_COLUMNS;
+                    if next < games_len {
+                        self.game_library_selected = next;
+                        result.selected_changed = true;
+                    }
+                }
+                ControllerAction::Launch => {
+                    if games_len > 0 {
+                        result.launch_selected = true;
+                    }
+                }
+                ControllerAction::Menu => {
+                    if games_len > 0 {
+                        result.open_game_menu = true;
+                    }
+                }
+                ControllerAction::Quit => {
+                    self.close_game_library_page();
+                }
+                ControllerAction::Refresh | ControllerAction::Settings => {}
+            }
+            return result;
+        }
+
         if self.home_power_selected {
             match action {
                 ControllerAction::Launch => {
@@ -675,7 +982,7 @@ impl PageState {
                 ControllerAction::Quit => {
                     self.clear_home_top_button_selection();
                 }
-                ControllerAction::Refresh | ControllerAction::Up => {}
+                ControllerAction::Refresh | ControllerAction::Menu | ControllerAction::Up => {}
             }
             return result;
         }
@@ -697,6 +1004,7 @@ impl PageState {
                 ControllerAction::Right
                 | ControllerAction::Refresh
                 | ControllerAction::Settings
+                | ControllerAction::Menu
                 | ControllerAction::Up => {}
             }
             return result;
@@ -712,7 +1020,7 @@ impl PageState {
                 }
             }
             ControllerAction::Right => {
-                if self.selected + 1 < games_len {
+                if self.selected + 1 < home_items_len {
                     self.selected += 1;
                     self.cover_nav_dir = 1.0;
                     self.reset_achievement_selection();
@@ -721,19 +1029,36 @@ impl PageState {
             }
             ControllerAction::Down => {
                 if can_open_achievement_panel {
+                    self.achievement_from_game_library = false;
                     self.show_achievement_panel = true;
                     self.reset_achievement_selection();
                     result.open_achievement_panel = true;
                 }
             }
             ControllerAction::Launch => {
-                result.launch_selected = true;
+                if selected_home_item_is_library {
+                    self.open_game_library_page(selected_game_index.unwrap_or(0));
+                } else {
+                    result.launch_selected = true;
+                }
+            }
+            ControllerAction::Menu => {
+                if !selected_home_item_is_library && selected_game_index.is_some() {
+                    result.open_game_menu = true;
+                }
             }
             ControllerAction::Refresh => {}
             ControllerAction::Settings => {
                 self.select_home_settings_button();
             }
-            ControllerAction::Quit => {}
+            ControllerAction::Quit => {
+                if self.selected > 0 {
+                    self.selected = 0;
+                    self.cover_nav_dir = -1.0;
+                    self.reset_achievement_selection();
+                    result.selected_changed = true;
+                }
+            }
             ControllerAction::Up => {
                 self.select_home_power_button();
             }
@@ -760,10 +1085,28 @@ impl PageState {
         } else {
             0.0
         };
-        self.achievement_panel_anim
-            .animate_to(panel_target, 5.4, now, ANIMATION_EPSILON);
+        let achievement_diff = panel_target - self.achievement_panel_anim.value_at(now);
+        let achievement_anim_speed = if self.achievement_from_game_library {
+            if achievement_diff < 0.0 {
+                SETTINGS_PAGE_EXIT_ANIM_SPEED
+            } else {
+                GAME_LIBRARY_PAGE_ENTER_ANIM_SPEED
+            }
+        } else {
+            5.4
+        };
+        self.achievement_panel_anim.animate_to(
+            panel_target,
+            achievement_anim_speed,
+            now,
+            ANIMATION_EPSILON,
+        );
         if self.achievement_panel_anim.update(now, ANIMATION_EPSILON) {
             ctx.request_repaint();
+        } else if !self.show_achievement_panel
+            && self.achievement_panel_anim.value() <= ANIMATION_EPSILON
+        {
+            self.achievement_from_game_library = false;
         }
 
         let home_settings_target = if self.home_settings_selected {
@@ -818,6 +1161,37 @@ impl PageState {
             self.power_menu_scroll_offset = self.power_menu_selected as f32;
         }
 
+        if self.show_game_menu {
+            self.game_menu_anim
+                .animate_to(1.0, 4.8, now, ANIMATION_EPSILON);
+            if self.game_menu_anim.update(now, ANIMATION_EPSILON) {
+                ctx.request_repaint();
+            }
+
+            let game_menu_select_target = Some(self.game_menu_selected);
+            if self.game_menu_select_anim_target != game_menu_select_target {
+                self.game_menu_select_anim_target = game_menu_select_target;
+                self.game_menu_select_anim.restart(0.0, 1.0, 11.0, now);
+            }
+            if self.game_menu_select_anim.update(now, ANIMATION_EPSILON) {
+                ctx.request_repaint();
+            }
+
+            self.game_menu_scroll_offset = self.game_menu_selected as f32;
+        } else {
+            self.game_menu_anim
+                .animate_to(0.0, 6.5, now, ANIMATION_EPSILON);
+            if self.game_menu_anim.update(now, ANIMATION_EPSILON) {
+                ctx.request_repaint();
+            } else {
+                self.game_menu_selected = self.game_menu_layout.clamp_selected(0);
+                self.game_menu_select_anim.set_immediate(0.0);
+                self.game_menu_select_anim_target = None;
+                self.game_menu_game_index = None;
+            }
+            self.game_menu_scroll_offset = self.game_menu_selected as f32;
+        }
+
         let settings_target = if self.show_settings_page { 1.0 } else { 0.0 };
         let settings_diff = settings_target - self.settings_page_anim.value_at(now);
         let settings_anim_speed = if settings_diff < 0.0 {
@@ -832,6 +1206,60 @@ impl PageState {
             ANIMATION_EPSILON,
         );
         if self.settings_page_anim.update(now, ANIMATION_EPSILON) {
+            ctx.request_repaint();
+        }
+
+        let library_target = if self.show_game_library_page {
+            1.0
+        } else {
+            0.0
+        };
+        let library_diff = library_target - self.game_library_page_anim.value_at(now);
+        let library_anim_speed = if library_diff < 0.0 {
+            GAME_LIBRARY_PAGE_EXIT_ANIM_SPEED
+        } else {
+            GAME_LIBRARY_PAGE_ENTER_ANIM_SPEED
+        };
+        self.game_library_page_anim.animate_to(
+            library_target,
+            library_anim_speed,
+            now,
+            ANIMATION_EPSILON,
+        );
+        if self.game_library_page_anim.update(now, ANIMATION_EPSILON) {
+            ctx.request_repaint();
+        }
+
+        let library_select_target = if self.show_game_library_page {
+            Some(self.game_library_selected)
+        } else {
+            None
+        };
+        if self.game_library_select_anim_target != library_select_target {
+            self.game_library_select_anim_target = library_select_target;
+            if library_select_target.is_some() {
+                self.game_library_select_anim.restart(0.0, 1.0, 11.0, now);
+            } else {
+                self.game_library_select_anim.set_immediate(0.0);
+            }
+        }
+        if library_select_target.is_some()
+            && self.game_library_select_anim.update(now, ANIMATION_EPSILON)
+        {
+            ctx.request_repaint();
+        }
+
+        let library_scroll_target = (self.game_library_selected / GAME_LIBRARY_COLUMNS) as f32;
+        self.game_library_scroll_offset.animate_to(
+            library_scroll_target,
+            14.0,
+            now,
+            ANIMATION_EPSILON,
+        );
+        if self
+            .game_library_scroll_offset
+            .update(now, ANIMATION_EPSILON)
+        {
             ctx.request_repaint();
         }
 
@@ -932,9 +1360,34 @@ impl PageState {
         self.show_power_menu = false;
     }
 
+    fn close_game_menu(&mut self) {
+        self.show_game_menu = false;
+    }
+
+    fn open_game_library_page(&mut self, selected_game_index: usize) {
+        self.close_power_menu();
+        self.close_game_menu();
+        self.close_achievement_panel();
+        self.clear_home_top_button_selection();
+        self.show_game_library_page = true;
+        self.game_library_page_anim
+            .set_immediate(GAME_LIBRARY_PAGE_ENTER_INITIAL_PROGRESS);
+        self.game_library_selected = selected_game_index;
+        self.game_library_select_anim.set_immediate(0.0);
+        self.game_library_select_anim_target = None;
+        self.game_library_scroll_offset
+            .set_immediate((selected_game_index / GAME_LIBRARY_COLUMNS) as f32);
+    }
+
+    fn close_game_library_page(&mut self) {
+        self.show_game_library_page = false;
+    }
+
     fn open_settings_page(&mut self) {
         self.close_power_menu();
+        self.close_game_menu();
         self.close_achievement_panel();
+        self.close_game_library_page();
         self.select_home_settings_button();
         self.show_settings_page = true;
         self.settings_page_anim
@@ -946,6 +1399,7 @@ impl PageState {
     fn close_settings_page(&mut self) {
         self.show_settings_page = false;
         self.settings_in_submenu = false;
+        self.settings_system_dropdown = None;
         self.settings_screen_dropdown = None;
     }
 
@@ -953,6 +1407,8 @@ impl PageState {
         self.settings_section = SettingsSection::System;
         self.settings_in_submenu = false;
         self.settings_system_selected = 0;
+        self.settings_system_dropdown = None;
+        self.settings_home_game_limit_selected = self.settings_home_game_limit_current;
         self.settings_screen_selected = 0;
         self.settings_screen_dropdown = None;
         self.settings_screen_dropdown_selected = 0;
@@ -977,6 +1433,11 @@ impl PageState {
     fn settings_selection_key(&self) -> u16 {
         if self.settings_in_submenu {
             match self.settings_section {
+                SettingsSection::System
+                    if self.settings_system_dropdown == Some(SystemDropdown::HomeGameLimit) =>
+                {
+                    900 + self.settings_home_game_limit_selected as u16
+                }
                 SettingsSection::System => 10 + self.settings_system_selected as u16,
                 SettingsSection::Screen => match self.settings_screen_dropdown {
                     Some(ScreenDropdown::Resolution) => {
@@ -1013,7 +1474,7 @@ impl PageState {
             SettingsSection::CloseApp => return,
         };
         let max_index = match self.settings_section {
-            SettingsSection::System => 8,
+            SettingsSection::System => 9,
             SettingsSection::Screen => 2,
             SettingsSection::Apps => 1,
             SettingsSection::CloseApp => 0,
@@ -1044,6 +1505,21 @@ impl PageState {
         } else {
             self.settings_screen_dropdown_selected =
                 self.settings_screen_dropdown_selected.saturating_sub(1);
+        }
+    }
+
+    fn move_system_dropdown(&mut self, down: bool) {
+        let max_index = match self.settings_system_dropdown {
+            Some(SystemDropdown::HomeGameLimit) => HomeGameLimit::OPTION_COUNT.saturating_sub(1),
+            None => return,
+        };
+
+        if down {
+            self.settings_home_game_limit_selected =
+                (self.settings_home_game_limit_selected + 1).min(max_index);
+        } else {
+            self.settings_home_game_limit_selected =
+                self.settings_home_game_limit_selected.saturating_sub(1);
         }
     }
 }
@@ -1099,6 +1575,43 @@ mod tests {
     }
 
     #[test]
+    fn game_library_menu_details_opens_achievement_page_above_library() {
+        let mut page = PageState::new();
+        page.open_game_library_page(1);
+        page.open_game_menu(1, false, false, true);
+
+        let open_result = page.handle_action_with_context(
+            &ControllerAction::Launch,
+            4,
+            false,
+            Some(1),
+            3,
+            true,
+            4,
+        );
+
+        assert!(open_result.open_achievement_panel);
+        assert!(page.show_achievement_panel());
+        assert!(page.achievement_from_game_library());
+        assert!(page.show_game_library_page());
+        assert!(!page.show_game_menu());
+
+        let up_result =
+            page.handle_action_with_context(&ControllerAction::Up, 4, false, Some(1), 3, true, 4);
+
+        assert!(!up_result.open_achievement_panel);
+        assert!(page.show_achievement_panel());
+        assert!(page.show_game_library_page());
+
+        let close_result =
+            page.handle_action_with_context(&ControllerAction::Quit, 4, false, Some(1), 3, true, 4);
+
+        assert!(!close_result.open_achievement_panel);
+        assert!(!page.show_achievement_panel());
+        assert!(page.show_game_library_page());
+    }
+
+    #[test]
     fn quit_on_main_page_does_not_close_frame() {
         let mut page = PageState::new();
 
@@ -1106,6 +1619,18 @@ mod tests {
 
         assert!(!result.close_frame);
         assert!(!page.show_power_menu());
+    }
+
+    #[test]
+    fn quit_on_later_home_item_returns_to_first_item() {
+        let mut page = PageState::new();
+        page.force_select(2);
+
+        let result = page.handle_action(&ControllerAction::Quit, 4, true, 4);
+
+        assert!(result.selected_changed);
+        assert!(!result.close_frame);
+        assert_eq!(page.selected(), 0);
     }
 
     #[test]

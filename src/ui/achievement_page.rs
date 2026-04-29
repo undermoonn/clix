@@ -19,6 +19,8 @@ use super::text::{
 };
 use super::{design_units, lerp_f32, smoothstep01, viewport_layout_scale};
 
+const LIBRARY_DETAIL_BACKDROP_PHASE: f32 = 0.18;
+
 fn draw_achievement_icon(
     painter: &egui::Painter,
     texture: &egui::TextureHandle,
@@ -248,6 +250,16 @@ fn draw_achievement_row_focus_frame(
     );
 }
 
+fn library_detail_entry_progress(anim: f32) -> (f32, f32) {
+    let anim = anim.clamp(0.0, 1.0);
+    let backdrop_t = smoothstep01((anim / LIBRARY_DETAIL_BACKDROP_PHASE).clamp(0.0, 1.0));
+    let content_t = ((anim - LIBRARY_DETAIL_BACKDROP_PHASE)
+        / (1.0 - LIBRARY_DETAIL_BACKDROP_PHASE))
+        .clamp(0.0, 1.0);
+
+    (backdrop_t, smoothstep01(content_t))
+}
+
 pub fn draw_achievement_page(
     ui: &mut egui::Ui,
     language: AppLanguage,
@@ -263,6 +275,8 @@ pub fn draw_achievement_page(
     game_select_anim: f32,
     _game_scroll_offset: f32,
     scroll_offset: f32,
+    from_game_library: bool,
+    show_achievement_panel: bool,
     game_icon: Option<&egui::TextureHandle>,
     hint_icons: Option<&HintIcons>,
     revealed_hidden: Option<&str>,
@@ -277,13 +291,47 @@ pub fn draw_achievement_page(
     let padding = design_units(50.0, layout_scale);
     let padded_rect = panel_rect.shrink(padding);
     let painter = ui.painter().with_clip_rect(panel_rect);
-    let panel_t = smoothstep01(achievement_panel_anim);
-    let wake_t = 1.0_f32;
-    let page_enter_offset_y = lerp_f32(
-        panel_rect.height() + design_units(28.0, layout_scale),
-        0.0,
-        panel_t,
-    );
+    let regular_panel_t = smoothstep01(achievement_panel_anim);
+    let (panel_t, page_enter_offset_y) = if from_game_library && show_achievement_panel {
+        let (backdrop_t, content_t) = library_detail_entry_progress(achievement_panel_anim);
+        painter.rect_filled(
+            panel_rect,
+            egui::CornerRadius::ZERO,
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(18, 18, 18, 255),
+                backdrop_t,
+            ),
+        );
+        (
+            content_t,
+            lerp_f32(design_units(18.0, layout_scale), 0.0, content_t),
+        )
+    } else if from_game_library {
+        let exit_t = regular_panel_t;
+        painter.rect_filled(
+            panel_rect,
+            egui::CornerRadius::ZERO,
+            color_with_scaled_alpha(
+                egui::Color32::from_rgba_unmultiplied(18, 18, 18, 255),
+                exit_t,
+            ),
+        );
+        (
+            exit_t,
+            lerp_f32(design_units(18.0, layout_scale), 0.0, exit_t),
+        )
+    } else {
+        (
+            regular_panel_t,
+            lerp_f32(
+                panel_rect.height() + design_units(28.0, layout_scale),
+                0.0,
+                regular_panel_t,
+            ),
+        )
+    };
+    let wake_t = if from_game_library { panel_t } else { 1.0_f32 };
+    let hint_icons = if from_game_library { None } else { hint_icons };
     let content_top = padded_rect.min.y + design_units(18.0, layout_scale);
     let title_font_size = design_units(18.0, layout_scale)
         + (design_units(30.0, layout_scale) - design_units(18.0, layout_scale))
@@ -299,7 +347,7 @@ pub fn draw_achievement_page(
         None,
         0.0,
         title_font,
-        egui::Color32::WHITE,
+        color_with_scaled_alpha(egui::Color32::WHITE, wake_t),
         design_units(17.0, layout_scale),
         0.0,
         (padded_rect.width() - design_units(96.0, layout_scale))
@@ -350,8 +398,12 @@ pub fn draw_achievement_page(
     let header_visual_offset = egui::vec2(0.0, -design_units(14.0, layout_scale));
     let summary_pos = summary_base_pos + content_offset + header_visual_offset;
     let source_badge_text = game_source_badge_text(game.source);
-    let steam_badge_size =
-        measure_selected_game_text_badge(&painter, source_badge_text, header.title_galley.size());
+    let steam_badge_size = measure_selected_game_text_badge(
+        &painter,
+        source_badge_text,
+        header.title_galley.size(),
+        layout_scale,
+    );
     let header_stack_height =
         steam_badge_size.y + design_units(14.0, layout_scale) + header.title_galley.size().y;
     let game_icon_size = header_stack_height;
@@ -387,6 +439,7 @@ pub fn draw_achievement_page(
         source_badge_text,
         badge_pos,
         header.title_galley.size(),
+        layout_scale,
         wake_t,
     );
     badge_row_offset += steam_badge_size.x;
@@ -396,6 +449,7 @@ pub fn draw_achievement_page(
             &tag_text,
             egui::pos2(badge_pos.x + badge_row_offset, badge_pos.y),
             header.title_galley.size(),
+            layout_scale,
             panel_t * wake_t,
             &SelectedGameBadgeStyle::detail_tag(egui::Color32::from_rgb(28, 30, 34)),
         );
@@ -407,6 +461,7 @@ pub fn draw_achievement_page(
             &tag_text,
             egui::pos2(badge_pos.x + badge_row_offset, badge_pos.y),
             header.title_galley.size(),
+            layout_scale,
             panel_t * wake_t,
             &SelectedGameBadgeStyle::detail_tag(egui::Color32::from_rgb(34, 36, 40)),
         );
@@ -427,7 +482,7 @@ pub fn draw_achievement_page(
         achievement_x,
         achievement_width,
         &detail_summary_style,
-        1.0,
+        wake_t,
         wake_t,
     );
 

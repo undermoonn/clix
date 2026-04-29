@@ -1,6 +1,8 @@
 mod achievement_page;
 mod background;
+mod game_library;
 mod game_list;
+mod game_menu;
 mod header;
 mod hint_bar;
 mod hint_icons;
@@ -16,7 +18,9 @@ const VIEWPORT_LAYOUT_BASELINE_HEIGHT: f32 = 1080.0;
 pub(crate) use crate::animation::easing::{lerp_f32, smoothstep01};
 pub use achievement_page::draw_achievement_page;
 pub use background::draw_background;
+pub use game_library::draw_game_library_page;
 pub use game_list::draw_game_list;
+pub use game_menu::draw_game_menu;
 pub use hint_bar::draw_hint_bar;
 pub use hint_icons::load_hint_icons;
 pub(crate) use hint_icons::HintIcons;
@@ -30,6 +34,10 @@ pub(crate) fn viewport_layout_scale(panel_rect: egui::Rect) -> f32 {
 
 pub(crate) fn design_units(value: f32, layout_scale: f32) -> f32 {
     value * layout_scale
+}
+
+pub(crate) fn menu_icon_center_y(row_center_y: f32, layout_scale: f32) -> f32 {
+    row_center_y + design_units(1.5, layout_scale)
 }
 
 pub(crate) use text::{

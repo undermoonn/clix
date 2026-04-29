@@ -14,14 +14,15 @@ pub fn draw_hint_bar(
     icons: &HintIcons,
     achievement_panel_active: bool,
     power_menu_active: bool,
+    game_menu_active: bool,
+    game_library_active: bool,
     settings_active: bool,
     home_top_button_selected: bool,
     home_top_action_label: Option<&str>,
     settings_action_label: Option<&str>,
     can_open_achievement_panel: bool,
+    can_open_game_menu: bool,
     achievement_refresh_loading: bool,
-    game_running: bool,
-    force_close_hold_progress: f32,
     wake_anim: f32,
 ) {
     let panel_rect = ui.available_rect_before_wrap();
@@ -60,39 +61,6 @@ pub fn draw_hint_bar(
     let label_y = |galley: &Arc<egui::Galley>| {
         hint_y + (row_h - galley.size().y) * 0.5 - design_units(2.0, layout_scale)
     };
-    let draw_progress_ring =
-        |painter: &egui::Painter, center: egui::Pos2, radius: f32, progress: f32| {
-            if progress <= 0.0 {
-                return;
-            }
-
-            let clamped = progress.clamp(0.0, 1.0);
-            let bg_stroke = egui::Stroke::new(
-                design_units(2.0, layout_scale),
-                color_with_scaled_alpha(
-                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 40),
-                    wake_t,
-                ),
-            );
-            let fg_stroke = egui::Stroke::new(
-                design_units(2.5, layout_scale),
-                color_with_scaled_alpha(egui::Color32::from_rgb(255, 255, 255), wake_t),
-            );
-            painter.circle_stroke(center, radius, bg_stroke);
-
-            let start_angle = -std::f32::consts::FRAC_PI_2;
-            let sweep = std::f32::consts::TAU * clamped;
-            let segments = ((64.0 * clamped).ceil() as usize).max(8);
-            let mut points = Vec::with_capacity(segments + 1);
-
-            for index in 0..=segments {
-                let t = index as f32 / segments as f32;
-                let angle = start_angle + sweep * t;
-                points.push(center + egui::vec2(angle.cos() * radius, angle.sin() * radius));
-            }
-
-            painter.add(egui::Shape::line(points, fg_stroke));
-        };
     let draw_loading_ring = |painter: &egui::Painter, center: egui::Pos2, radius: f32| {
         let time = painter.ctx().input(|input| input.time) as f32;
         let sweep = std::f32::consts::TAU * 0.26;
@@ -154,11 +122,19 @@ pub fn draw_hint_bar(
         hint_font.clone(),
         hint_color,
     );
-    let g_force_close = painter.layout_no_wrap(
-        language.hold_close_game_text().to_string(),
+    let g_menu = painter.layout_no_wrap(
+        language.menu_text().to_string(),
         hint_font.clone(),
         hint_color,
     );
+
+    let reserve_menu_hint = |reserve_group: &mut dyn FnMut(&Arc<egui::Galley>) -> f32| {
+        if can_open_game_menu {
+            let menu_x = reserve_group(&g_menu);
+            draw_labeled_icon_group(&icons.btn_menu, menu_x, &g_menu);
+        }
+    };
+
     if settings_active {
         if let Some(action_label) = settings_action_label {
             let g_action =
@@ -173,7 +149,7 @@ pub fn draw_hint_bar(
         return;
     }
 
-    if power_menu_active {
+    if power_menu_active || game_menu_active {
         let g_confirm = painter.layout_no_wrap(
             language.confirm_text().to_string(),
             hint_font.clone(),
@@ -220,31 +196,29 @@ pub fn draw_hint_bar(
         return;
     }
 
+    if game_library_active {
+        let g_launch = painter.layout_no_wrap(
+            language.start_text().to_string(),
+            hint_font.clone(),
+            hint_color,
+        );
+        let launch_x = reserve_group(&g_launch);
+        draw_labeled_icon_group(&icons.btn_a, launch_x, &g_launch);
+
+        let back_x = reserve_group(&g_back);
+        draw_labeled_icon_group(&icons.btn_b, back_x, &g_back);
+
+        reserve_menu_hint(&mut reserve_group);
+
+        return;
+    }
+
     if home_top_button_selected {
         let top_action_label = home_top_action_label.unwrap_or_else(|| language.settings_text());
         let g_top_action =
             painter.layout_no_wrap(top_action_label.to_string(), hint_font.clone(), hint_color);
         let settings_x = reserve_group(&g_top_action);
         draw_labeled_icon_group(&icons.btn_a, settings_x, &g_top_action);
-
-        if game_running {
-            let force_close_x = reserve_group(&g_force_close);
-            draw_icon(painter, &icons.btn_x, force_close_x, action_icon_h);
-            draw_progress_ring(
-                painter,
-                egui::pos2(force_close_x + action_icon_h * 0.5, hint_y + row_h * 0.5),
-                action_icon_h * 0.48,
-                force_close_hold_progress,
-            );
-            painter.galley(
-                egui::pos2(
-                    force_close_x + action_icon_h + design_units(6.0, layout_scale),
-                    label_y(&g_force_close),
-                ),
-                g_force_close,
-                egui::Color32::WHITE,
-            );
-        }
 
         let back_x = reserve_group(&g_back);
         draw_labeled_icon_group(&icons.btn_b, back_x, &g_back);
@@ -261,26 +235,7 @@ pub fn draw_hint_bar(
     let launch_x = reserve_group(&g_launch);
     draw_labeled_icon_group(&icons.btn_a, launch_x, &g_launch);
 
-    if game_running {
-        let force_close_x = reserve_group(&g_force_close);
-        draw_icon(painter, &icons.btn_x, force_close_x, action_icon_h);
-        draw_progress_ring(
-            painter,
-            egui::pos2(force_close_x + action_icon_h * 0.5, hint_y + row_h * 0.5),
-            action_icon_h * 0.48,
-            force_close_hold_progress,
-        );
-
-        let gy = label_y(&g_force_close);
-        painter.galley(
-            egui::pos2(
-                force_close_x + action_icon_h + design_units(6.0, layout_scale),
-                gy,
-            ),
-            g_force_close,
-            egui::Color32::WHITE,
-        );
-    }
+    reserve_menu_hint(&mut reserve_group);
 
     let _ = can_open_achievement_panel;
 }

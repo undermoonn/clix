@@ -17,11 +17,11 @@ mod steam_update;
 mod ui_assets;
 mod view_helpers;
 
-pub(crate) use self::state::{PowerMenuLayout, PowerMenuOption};
+pub(crate) use self::state::{GameMenuLayout, GameMenuOption, PowerMenuLayout, PowerMenuOption};
 
 // Standard library.
 use eframe::egui;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 // Crate modules.
@@ -54,11 +54,14 @@ use self::playtime::PlaytimeState;
 use self::state::{PageState, RuntimeState};
 use self::steam_update::SteamUpdateState;
 use self::ui_assets::{
+    load_close_icon, load_detail_icon, load_game_library_background, load_hide_icon,
     load_playstation_home_icon, load_power_off_icon, load_power_reboot_icon, load_power_sleep_icon,
     load_settings_apps_icon, load_settings_exit_icon, load_settings_icon,
-    load_settings_screen_icon, load_settings_system_icon, load_xbox_guide_icon,
+    load_settings_screen_icon, load_settings_system_icon, load_shelf_icon, load_show_icon,
+    load_xbox_guide_icon,
 };
 use self::view_helpers::ViewRenderState;
+use crate::config::HomeGameLimit;
 
 const PASSIVE_REPAINT_INTERVAL: Duration = Duration::from_secs(1);
 const CONTROLLER_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -74,6 +77,7 @@ pub struct LauncherApp {
     // Core app context.
     language: AppLanguage,
     games: Vec<Game>,
+    hidden_home_game_keys: HashSet<String>,
     steam_paths: Vec<std::path::PathBuf>,
 
     // Runtime coordinators.
@@ -86,6 +90,7 @@ pub struct LauncherApp {
     hint_icon_theme: PromptIconTheme,
     language_setting: AppLanguageSetting,
     display_mode_setting: DisplayModeSetting,
+    home_game_limit: HomeGameLimit,
     idle_frame_rate_reduction_enabled: bool,
     game_scan_options: game::GameScanOptions,
     launch_on_startup_enabled: bool,
@@ -107,6 +112,12 @@ pub struct LauncherApp {
     power_sleep_icon: Option<egui::TextureHandle>,
     power_reboot_icon: Option<egui::TextureHandle>,
     power_off_icon: Option<egui::TextureHandle>,
+    close_icon: Option<egui::TextureHandle>,
+    detail_icon: Option<egui::TextureHandle>,
+    hide_icon: Option<egui::TextureHandle>,
+    show_icon: Option<egui::TextureHandle>,
+    shelf_icon: Option<egui::TextureHandle>,
+    game_library_background: Option<egui::TextureHandle>,
     game_icons: GameIconState,
     external_app_icons: ExternalAppIconState,
 
@@ -157,12 +168,14 @@ impl LauncherApp {
         let steam_paths = crate::game_scan::steam::find_steam_paths();
         let game_scan_options = crate::config::load_game_scan_options();
         let games = game::scan_installed_games(&steam_paths, &game_scan_options);
+        let hidden_home_game_keys = crate::game_home_visibility::load_hidden_keys();
 
         // Persisted settings and system options.
         let launch_on_startup_enabled = startup::is_enabled();
         let hint_icon_theme = crate::config::load_hint_icon_theme();
         let language_setting = crate::config::load_app_language_setting();
         let display_mode_setting = crate::config::load_display_mode_setting();
+        let home_game_limit = crate::config::load_home_game_limit();
         let idle_frame_rate_reduction_enabled =
             crate::config::load_idle_frame_rate_reduction_enabled();
         let controller_vibration_enabled = crate::config::load_controller_vibration_enabled();
@@ -174,7 +187,8 @@ impl LauncherApp {
         let mut input = InputController::new();
         input.set_selection_vibration_enabled(controller_vibration_enabled);
         let artwork = ArtworkState::new(ctx);
-        let page = PageState::new();
+        let mut page = PageState::new();
+        page.sync_home_game_limit(home_game_limit);
         let runtime = RuntimeState::new();
 
         // UI assets and icon caches.
@@ -189,6 +203,12 @@ impl LauncherApp {
         let power_sleep_icon = load_power_sleep_icon(ctx);
         let power_reboot_icon = load_power_reboot_icon(ctx);
         let power_off_icon = load_power_off_icon(ctx);
+        let close_icon = load_close_icon(ctx);
+        let detail_icon = load_detail_icon(ctx);
+        let hide_icon = load_hide_icon(ctx);
+        let show_icon = load_show_icon(ctx);
+        let shelf_icon = load_shelf_icon(ctx);
+        let game_library_background = load_game_library_background(ctx);
         let game_icons = GameIconState::new();
         let external_app_icons = ExternalAppIconState::new();
 
@@ -205,6 +225,7 @@ impl LauncherApp {
         let mut app = LauncherApp {
             language,
             games,
+            hidden_home_game_keys,
             steam_paths,
 
             input,
@@ -215,6 +236,7 @@ impl LauncherApp {
             hint_icon_theme,
             language_setting,
             display_mode_setting,
+            home_game_limit,
             idle_frame_rate_reduction_enabled,
             game_scan_options,
             launch_on_startup_enabled,
@@ -235,6 +257,12 @@ impl LauncherApp {
             power_sleep_icon,
             power_reboot_icon,
             power_off_icon,
+            close_icon,
+            detail_icon,
+            hide_icon,
+            show_icon,
+            shelf_icon,
+            game_library_background,
             game_icons,
             external_app_icons,
 
@@ -291,8 +319,7 @@ impl eframe::App for LauncherApp {
 
         self.drain_pending_launch_request(now, &ctx);
         let selected_steam_app_id = self
-            .games
-            .get(self.page.selected())
+            .selected_game()
             .filter(|game| matches!(game.source, GameSource::Steam))
             .and_then(|game| game.steam_app_id);
         self.sync_steam_update_state(selected_steam_app_id, now, &ctx);

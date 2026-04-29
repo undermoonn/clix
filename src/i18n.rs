@@ -142,6 +142,34 @@ impl AppLanguage {
         }
     }
 
+    pub fn game_library_text(self) -> &'static str {
+        match self {
+            Self::English => "Game Library",
+            Self::SimplifiedChinese => "游戏库",
+        }
+    }
+
+    pub fn game_details_text(self) -> &'static str {
+        match self {
+            Self::English => "Details",
+            Self::SimplifiedChinese => "详情",
+        }
+    }
+
+    pub fn hide_from_home_text(self) -> &'static str {
+        match self {
+            Self::English => "Hide from Home",
+            Self::SimplifiedChinese => "在主页隐藏",
+        }
+    }
+
+    pub fn show_on_home_text(self) -> &'static str {
+        match self {
+            Self::English => "Show on Home",
+            Self::SimplifiedChinese => "在主页显示",
+        }
+    }
+
     pub fn system_text(self) -> &'static str {
         match self {
             Self::English => "System",
@@ -223,6 +251,20 @@ impl AppLanguage {
         match self {
             Self::English => "Display Mode",
             Self::SimplifiedChinese => "显示模式",
+        }
+    }
+
+    pub fn home_game_limit_text(self) -> &'static str {
+        match self {
+            Self::English => "Home Games",
+            Self::SimplifiedChinese => "主屏幕游戏数量",
+        }
+    }
+
+    pub fn unlimited_text(self) -> &'static str {
+        match self {
+            Self::English => "Unlimited",
+            Self::SimplifiedChinese => "不限制",
         }
     }
 
@@ -363,6 +405,13 @@ impl AppLanguage {
         match self {
             Self::English => "Confirm",
             Self::SimplifiedChinese => "确认",
+        }
+    }
+
+    pub fn menu_text(self) -> &'static str {
+        match self {
+            Self::English => "Menu",
+            Self::SimplifiedChinese => "菜单",
         }
     }
 

@@ -29,10 +29,7 @@ impl LauncherApp {
         steam_launch_flow_active: bool,
         idle_dim_target: f32,
     ) -> ViewRenderState {
-        let selected_steam_app_id = self
-            .games
-            .get(self.page.selected())
-            .and_then(|game| game.steam_app_id);
+        let selected_steam_app_id = self.selected_game().and_then(|game| game.steam_app_id);
         let achievement_icon_scope = achievement_panel_scope_steam_app_id(
             selected_steam_app_id,
             self.page.show_achievement_panel(),
@@ -43,8 +40,18 @@ impl LauncherApp {
         self.achievements.sync_summary_scope(selected_steam_app_id);
         self.achievements.sync_detail_scope(achievement_icon_scope);
         self.achievements.sync_icon_scope(achievement_icon_scope);
+        let selected_game_index = self.selected_game_index();
+        let selected_game = selected_game_index.and_then(|index| self.games.get(index));
+        let artwork_game_index = if self.page.show_game_library_page() {
+            self.selected_home_game_index()
+        } else {
+            selected_game_index
+        };
+        let artwork_steam_app_id = artwork_game_index
+            .and_then(|index| self.games.get(index))
+            .and_then(|game| game.steam_app_id);
         self.achievements.refresh_after_global_percentage_update(
-            self.games.get(self.page.selected()),
+            selected_game,
             &self.steam_paths,
             self.language,
             self.page.show_achievement_panel(),
@@ -52,19 +59,20 @@ impl LauncherApp {
             ctx,
         );
         if self.artwork.tick_selection(
-            self.page.selected(),
-            selected_steam_app_id,
+            artwork_game_index.unwrap_or(usize::MAX),
+            artwork_steam_app_id,
             &self.steam_paths,
             ctx,
         ) {
+            let selected_game = artwork_game_index.and_then(|index| self.games.get(index));
             self.achievements.refresh_summary_for_selected(
-                self.games.get(self.page.selected()),
+                selected_game,
                 &self.steam_paths,
                 self.language,
                 ctx,
             );
         }
-        self.artwork.drain_pending(selected_steam_app_id, ctx);
+        self.artwork.drain_pending(artwork_steam_app_id, ctx);
 
         let now = Instant::now();
         self.idle_dim_anim
@@ -76,8 +84,12 @@ impl LauncherApp {
         self.page.tick_animations(ctx, now);
         self.achievements.animate_reveals(ctx, now);
 
-        self.game_icons
-            .ensure_loaded(ctx, &self.steam_paths, &self.games, self.page.selected());
+        self.game_icons.ensure_loaded(
+            ctx,
+            &self.steam_paths,
+            &self.games,
+            self.selected_game_index().unwrap_or(0),
+        );
         self.external_app_icons
             .ensure_loaded(ctx, &self.power_menu_external_apps);
 
@@ -124,11 +136,11 @@ impl LauncherApp {
     ) -> Option<(usize, String, f32, egui::Color32, bool)> {
         self.launch_notice.as_ref().and_then(|notice| {
             self.games
-                .get(self.page.selected())
+                .get(self.selected_game_index()?)
                 .filter(|game| matches!(game.source, GameSource::Steam))
                 .map(|_| {
                     (
-                        self.page.selected(),
+                        self.selected_game_index().unwrap_or(0),
                         self.launch_notice_text(notice),
                         Self::launch_notice_overlay_t(notice, now),
                         Self::launch_notice_color(notice),
@@ -156,7 +168,7 @@ impl LauncherApp {
         }
 
         Some((
-            self.page.selected(),
+            self.selected_game_index().unwrap_or(0),
             self.steam_update_overlay_text(selected_steam_app_id),
             Self::steam_update_overlay_color(),
         ))

@@ -8,6 +8,7 @@ mod app;
 mod assets;
 mod config;
 mod game;
+mod game_home_visibility;
 mod game_last_played;
 mod game_scan;
 mod i18n;

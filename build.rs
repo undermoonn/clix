@@ -17,6 +17,11 @@ const SYSTEM_SVG_PATH: &str = "src/icons/system.svg";
 const SCREEN_SVG_PATH: &str = "src/icons/screen.svg";
 const APPS_SVG_PATH: &str = "src/icons/apps.svg";
 const EXIT_SVG_PATH: &str = "src/icons/exit.svg";
+const CLOSE_SVG_PATH: &str = "src/icons/close.svg";
+const DETAIL_SVG_PATH: &str = "src/icons/detail.svg";
+const HIDE_SVG_PATH: &str = "src/icons/hide.svg";
+const SHOW_SVG_PATH: &str = "src/icons/show.svg";
+const SHELF_SVG_PATH: &str = "src/icons/shelf.svg";
 const POWER_SLEEP_SVG_PATH: &str = "src/icons/power-sleep.svg";
 const POWER_REBOOT_SVG_PATH: &str = "src/icons/power-reboot.svg";
 const POWER_OFF_SVG_PATH: &str = "src/icons/power-off.svg";
@@ -26,6 +31,7 @@ const POWER_TRIGGER_ICON_SCALE: f32 = 1.18;
 const UI_ICON_MAX_RENDERED_SIZE: u32 =
     (MAIN_CLOCK_FONT_SIZE * SETTINGS_ICON_SCALE * POWER_TRIGGER_ICON_SCALE).ceil() as u32;
 const UI_ICON_RENDER_SIZE: u32 = UI_ICON_MAX_RENDERED_SIZE * 4;
+const SHELF_ICON_RENDER_SIZE: u32 = 1024;
 const PNG_FILE_NAME: &str = "app-icon-256.png";
 const ICO_FILE_NAME: &str = "app-icon.ico";
 const STORE_LOGO_1080_FILE_NAME: &str = "app-store-logo-1080.png";
@@ -40,6 +46,11 @@ const SYSTEM_PNG_FILE_NAME: &str = "system-icon-ui.png";
 const SCREEN_PNG_FILE_NAME: &str = "screen-icon-ui.png";
 const APPS_PNG_FILE_NAME: &str = "apps-icon-ui.png";
 const EXIT_PNG_FILE_NAME: &str = "exit-icon-ui.png";
+const CLOSE_PNG_FILE_NAME: &str = "close-icon-ui.png";
+const DETAIL_PNG_FILE_NAME: &str = "detail-icon-ui.png";
+const HIDE_PNG_FILE_NAME: &str = "hide-icon-ui.png";
+const SHOW_PNG_FILE_NAME: &str = "show-icon-ui.png";
+const SHELF_PNG_FILE_NAME: &str = "shelf-icon-ui.png";
 const POWER_SLEEP_PNG_FILE_NAME: &str = "power-sleep-icon-ui.png";
 const POWER_REBOOT_PNG_FILE_NAME: &str = "power-reboot-icon-ui.png";
 const POWER_OFF_PNG_FILE_NAME: &str = "power-off-icon-ui.png";
@@ -61,6 +72,11 @@ fn main() {
     println!("cargo:rerun-if-changed={}", SCREEN_SVG_PATH);
     println!("cargo:rerun-if-changed={}", APPS_SVG_PATH);
     println!("cargo:rerun-if-changed={}", EXIT_SVG_PATH);
+    println!("cargo:rerun-if-changed={}", CLOSE_SVG_PATH);
+    println!("cargo:rerun-if-changed={}", DETAIL_SVG_PATH);
+    println!("cargo:rerun-if-changed={}", HIDE_SVG_PATH);
+    println!("cargo:rerun-if-changed={}", SHOW_SVG_PATH);
+    println!("cargo:rerun-if-changed={}", SHELF_SVG_PATH);
     println!("cargo:rerun-if-changed={}", POWER_SLEEP_SVG_PATH);
     println!("cargo:rerun-if-changed={}", POWER_REBOOT_SVG_PATH);
     println!("cargo:rerun-if-changed={}", POWER_OFF_SVG_PATH);
@@ -144,6 +160,11 @@ fn build_icon_assets() -> Result<(), Box<dyn Error>> {
     let screen_svg = fs::read_to_string(SCREEN_SVG_PATH)?;
     let apps_svg = fs::read_to_string(APPS_SVG_PATH)?;
     let exit_svg = fs::read_to_string(EXIT_SVG_PATH)?;
+    let close_svg = fs::read_to_string(CLOSE_SVG_PATH)?;
+    let detail_svg = fs::read_to_string(DETAIL_SVG_PATH)?;
+    let hide_svg = fs::read_to_string(HIDE_SVG_PATH)?;
+    let show_svg = fs::read_to_string(SHOW_SVG_PATH)?;
+    let shelf_svg = fs::read_to_string(SHELF_SVG_PATH)?;
     let power_sleep_svg = fs::read_to_string(POWER_SLEEP_SVG_PATH)?;
     let power_reboot_svg = fs::read_to_string(POWER_REBOOT_SVG_PATH)?;
     let power_off_svg = fs::read_to_string(POWER_OFF_SVG_PATH)?;
@@ -158,6 +179,11 @@ fn build_icon_assets() -> Result<(), Box<dyn Error>> {
     let screen_png_path = out_dir.join(SCREEN_PNG_FILE_NAME);
     let apps_png_path = out_dir.join(APPS_PNG_FILE_NAME);
     let exit_png_path = out_dir.join(EXIT_PNG_FILE_NAME);
+    let close_png_path = out_dir.join(CLOSE_PNG_FILE_NAME);
+    let detail_png_path = out_dir.join(DETAIL_PNG_FILE_NAME);
+    let hide_png_path = out_dir.join(HIDE_PNG_FILE_NAME);
+    let show_png_path = out_dir.join(SHOW_PNG_FILE_NAME);
+    let shelf_png_path = out_dir.join(SHELF_PNG_FILE_NAME);
     let power_sleep_png_path = out_dir.join(POWER_SLEEP_PNG_FILE_NAME);
     let power_reboot_png_path = out_dir.join(POWER_REBOOT_PNG_FILE_NAME);
     let power_off_png_path = out_dir.join(POWER_OFF_PNG_FILE_NAME);
@@ -217,6 +243,31 @@ fn build_icon_assets() -> Result<(), Box<dyn Error>> {
         &exit_png_path,
         &exit_svg.replace("currentColor", "#ffffff"),
         UI_ICON_RENDER_SIZE,
+    )?;
+    write_png(
+        &close_png_path,
+        &close_svg.replace("currentColor", "#ffffff"),
+        UI_ICON_RENDER_SIZE,
+    )?;
+    write_png(
+        &detail_png_path,
+        &detail_svg.replace("currentColor", "#ffffff"),
+        UI_ICON_RENDER_SIZE,
+    )?;
+    write_png(
+        &hide_png_path,
+        &hide_svg.replace("currentColor", "#ffffff"),
+        UI_ICON_RENDER_SIZE,
+    )?;
+    write_png(
+        &show_png_path,
+        &show_svg.replace("currentColor", "#ffffff"),
+        UI_ICON_RENDER_SIZE,
+    )?;
+    write_png(
+        &shelf_png_path,
+        &shelf_svg.replace("currentColor", "#ffffff"),
+        SHELF_ICON_RENDER_SIZE,
     )?;
     write_png(
         &power_sleep_png_path,

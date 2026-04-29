@@ -23,9 +23,12 @@ impl LauncherApp {
     ) -> InputFlowOutcome {
         let modal_open = self.page.show_achievement_panel()
             || self.page.show_power_menu()
+            || self.page.show_game_menu()
+            || self.page.show_game_library_page()
             || self.page.show_settings_page()
             || self.page.home_top_button_selected();
-        let input_frame = self.input.poll(process_input, modal_open);
+        let include_quit_action = modal_open || self.page.selected() > 0;
+        let input_frame = self.input.poll(process_input, include_quit_action);
         if let Some(theme) = input_frame.prompt_icon_theme {
             self.set_hint_icon_theme(theme, ctx);
         }
@@ -48,41 +51,36 @@ impl LauncherApp {
             }
         }
 
-        let selected_running = self.running_games.contains_key(&self.page.selected());
+        let selected_game_index = self.selected_game_index();
+        let selected_running = selected_game_index
+            .map(|index| self.running_games.contains_key(&index))
+            .unwrap_or(false);
         self.runtime
             .update_home_button(process_input, self.page.show_power_menu(), guide_held);
-
-        let can_force_close =
-            !self.page.show_achievement_panel() && !self.page.show_settings_page();
-        let force_close_hold = self.runtime.update_force_close_hold(
-            process_input && can_force_close,
-            selected_running && can_force_close,
-            input_frame.force_close_held && can_force_close,
-            now,
-        );
-        if force_close_hold.trigger_force_close {
-            if let Some(state) = self.running_games.get_mut(&self.page.selected()) {
-                if launch::close_running_game(state) {
-                    ctx.request_repaint();
-                }
-            }
-        }
-        if force_close_hold.should_repaint {
-            ctx.request_repaint();
-        }
 
         let launch_held = input_frame.launch_held;
         let actions = input_frame.actions;
         if !self.send_to_background_after_frame {
             for action in &actions {
-                let previous_selected = self.page.selected();
+                self.page.sync_home_game_limit(self.home_game_limit);
+                let previous_selected = self.selected_game_index();
                 let previous_achievement_panel = self.page.show_achievement_panel();
                 let previous_achievement_selected = self.page.achievement_selected();
-                let achievement_len = self
-                    .achievements
-                    .detail_len_for_selected(self.games.get(previous_selected));
-                let result = self.page.handle_action(
+                let achievement_len = self.achievements.detail_len_for_selected(
+                    previous_selected.and_then(|index| self.games.get(index)),
+                );
+                let home_game_indices = self.home_game_indices();
+                let selected_home_item_is_library = self.page.selected() >= home_game_indices.len();
+                let selected_game_index = if self.page.show_game_library_page() {
+                    (!self.games.is_empty()).then_some(self.page.game_library_selected())
+                } else {
+                    home_game_indices.get(self.page.selected()).copied()
+                };
+                let result = self.page.handle_action_with_context(
                     action,
+                    home_game_indices.len() + 1,
+                    selected_home_item_is_library,
+                    selected_game_index,
                     self.games.len(),
                     self.can_open_achievement_panel_for_selected(),
                     achievement_len,
@@ -100,7 +98,7 @@ impl LauncherApp {
                 let refresh_requested = result.refresh_achievements
                     && self
                         .achievements
-                        .can_refresh_for_selected(self.games.get(self.page.selected()));
+                        .can_refresh_for_selected(self.selected_game());
 
                 if result.selected_changed
                     || result.open_achievement_panel
@@ -108,13 +106,17 @@ impl LauncherApp {
                     || achievement_selection_changed
                     || achievement_panel_closed
                 {
-                    self.achievements
-                        .clear_revealed_hidden_for_selected(self.games.get(previous_selected));
+                    self.achievements.clear_revealed_hidden_for_selected(
+                        previous_selected.and_then(|index| self.games.get(index)),
+                    );
                 }
 
                 if result.open_achievement_panel {
+                    let selected_game = self
+                        .selected_game_index()
+                        .and_then(|index| self.games.get(index));
                     self.achievements.refresh_details_for_selected(
-                        self.games.get(self.page.selected()),
+                        selected_game,
                         &self.steam_paths,
                         self.language,
                         ctx,
@@ -122,17 +124,23 @@ impl LauncherApp {
                     self.refresh_selected_install_size(ctx);
                     self.refresh_selected_dlss(ctx);
                 }
-                if result.reveal_hidden_achievement
-                    && self.achievements.reveal_hidden_description_for_selected(
-                        self.games.get(self.page.selected()),
+                if result.reveal_hidden_achievement {
+                    let selected_game = self
+                        .selected_game_index()
+                        .and_then(|index| self.games.get(index));
+                    if self.achievements.reveal_hidden_description_for_selected(
+                        selected_game,
                         self.page.achievement_selected(),
-                    )
-                {
-                    ctx.request_repaint();
+                    ) {
+                        ctx.request_repaint();
+                    }
                 }
                 if refresh_requested {
+                    let selected_game = self
+                        .selected_game_index()
+                        .and_then(|index| self.games.get(index));
                     self.achievements.force_refresh_details_for_selected(
-                        self.games.get(self.page.selected()),
+                        selected_game,
                         &self.steam_paths,
                         self.language,
                         ctx,
@@ -179,6 +187,9 @@ impl LauncherApp {
                     options.detect_xbox_games = !options.detect_xbox_games;
                     self.set_game_scan_options(options, ctx);
                 }
+                if let Some(home_game_limit) = result.select_home_game_limit {
+                    self.set_home_game_limit(home_game_limit, ctx);
+                }
                 if achievement_selection_changed {
                     self.input.pulse_selection_change();
                 }
@@ -187,7 +198,9 @@ impl LauncherApp {
                     self.refresh_selected_playtime(ctx);
                 }
                 if result.launch_selected && self.launch_press_feedback.is_none() {
-                    let selected = self.page.selected();
+                    let Some(selected) = self.selected_game_index() else {
+                        continue;
+                    };
                     if self.selected_launch_pending() {
                         self.set_launch_press_feedback(selected);
                         ctx.request_repaint();
@@ -198,6 +211,32 @@ impl LauncherApp {
                             self.launch_selected(selected, ctx);
                         }
                     }
+                }
+                if result.open_game_menu {
+                    if let Some(game_index) = self.selected_game_index() {
+                        let running = self.running_games.contains_key(&game_index);
+                        let hidden = self.game_hidden_from_home(game_index);
+                        let show_details = self.page.show_game_library_page()
+                            && self.games.get(game_index).is_some_and(|game| {
+                                matches!(game.source, crate::game::GameSource::Steam)
+                            });
+                        self.page
+                            .open_game_menu(game_index, running, hidden, show_details);
+                        ctx.request_repaint();
+                    }
+                }
+                if let Some(game_index) = result.force_close_game_index {
+                    if let Some(state) = self.running_games.get_mut(&game_index) {
+                        if launch::close_running_game(state) {
+                            ctx.request_repaint();
+                        }
+                    }
+                }
+                if let Some(game_index) = result.hide_game_from_home {
+                    self.set_game_home_hidden(game_index, true, ctx);
+                }
+                if let Some(game_index) = result.show_game_on_home {
+                    self.set_game_home_hidden(game_index, false, ctx);
                 }
                 if let Some(kind) = result.launch_external_app {
                     let _ = external_apps::launch(kind, &self.power_menu_external_apps);

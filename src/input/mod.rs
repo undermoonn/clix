@@ -85,6 +85,7 @@ pub enum ControllerAction {
     Launch,
     Refresh,
     Settings,
+    Menu,
     Quit,
 }
 
@@ -97,8 +98,8 @@ enum InputAction {
     Launch,
     Refresh,
     Settings,
+    Menu,
     Quit,
-    ForceClose,
 }
 
 impl InputAction {
@@ -111,10 +112,10 @@ impl InputAction {
         Self::Launch,
         Self::Refresh,
         Self::Settings,
+        Self::Menu,
         Self::Quit,
-        Self::ForceClose,
     ];
-    const POLLABLE_ACTIONS: [Self; 7] = [
+    const POLLABLE_ACTIONS: [Self; 8] = [
         Self::Up,
         Self::Down,
         Self::Left,
@@ -122,8 +123,9 @@ impl InputAction {
         Self::Launch,
         Self::Refresh,
         Self::Settings,
+        Self::Menu,
     ];
-    const POLLABLE_ACTIONS_WITH_QUIT: [Self; 8] = [
+    const POLLABLE_ACTIONS_WITH_QUIT: [Self; 9] = [
         Self::Up,
         Self::Down,
         Self::Left,
@@ -131,6 +133,7 @@ impl InputAction {
         Self::Launch,
         Self::Refresh,
         Self::Settings,
+        Self::Menu,
         Self::Quit,
     ];
 
@@ -151,8 +154,8 @@ impl InputAction {
             "launch" => Some(Self::Launch),
             "refresh" => Some(Self::Refresh),
             "settings" => Some(Self::Settings),
+            "menu" => Some(Self::Menu),
             "quit" => Some(Self::Quit),
-            "force_close" => Some(Self::ForceClose),
             _ => None,
         }
     }
@@ -174,13 +177,13 @@ impl InputAction {
             Self::Launch => Some(ControllerAction::Launch),
             Self::Refresh => Some(ControllerAction::Refresh),
             Self::Settings => Some(ControllerAction::Settings),
+            Self::Menu => Some(ControllerAction::Menu),
             Self::Quit => Some(ControllerAction::Quit),
-            Self::ForceClose => None,
         }
     }
 
     fn repeats(self) -> bool {
-        !matches!(self, Self::Refresh | Self::Settings)
+        !matches!(self, Self::Refresh | Self::Settings | Self::Menu)
     }
 
     fn pollable_actions(include_quit_action: bool) -> &'static [Self] {
@@ -257,12 +260,14 @@ impl InputAggregateState {
         if self.buttons.intersects(Buttons::A) {
             raw_held.insert(InputAction::Launch);
         }
+        if self.buttons.intersects(Buttons::START) {
+            raw_held.insert(InputAction::Menu);
+        }
         if self.buttons.intersects(Buttons::B) {
             raw_held.insert(InputAction::Quit);
         }
         if self.buttons.intersects(Buttons::X) {
             raw_held.insert(InputAction::Refresh);
-            raw_held.insert(InputAction::ForceClose);
         }
         if self.buttons.intersects(Buttons::Y) {
             raw_held.insert(InputAction::Settings);
@@ -284,7 +289,6 @@ pub struct NavState {
 pub struct InputFrame {
     pub actions: Vec<ControllerAction>,
     pub launch_held: bool,
-    pub force_close_held: bool,
     pub has_controller_activity: bool,
     pub prompt_icon_theme: Option<PromptIconTheme>,
 }
@@ -456,7 +460,6 @@ impl InputController {
         InputFrame {
             actions,
             launch_held: raw_held.contains(InputAction::Launch),
-            force_close_held: raw_held.contains(InputAction::ForceClose),
             has_controller_activity,
             prompt_icon_theme,
         }

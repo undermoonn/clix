@@ -6,6 +6,11 @@ use super::text::{
 };
 use super::{design_units, lerp_f32, smoothstep01, viewport_layout_scale};
 
+const HERO_LOGO_MAX_WIDTH: f32 = 620.0;
+const HERO_LOGO_MAX_HEIGHT: f32 = 260.0;
+const HERO_LOGO_MARGIN_X: f32 = 72.0;
+const HERO_LOGO_MARGIN_BOTTOM: f32 = 52.0;
+
 fn draw_top_right_vignette(
     painter: &egui::Painter,
     hero_rect: egui::Rect,
@@ -95,9 +100,14 @@ pub fn draw_background(
             return;
         }
 
-        let draw_size = tex_size;
-        let margin_x = hero_rect.width() * 0.038;
-        let margin_bottom = hero_rect.height() * 0.085;
+        let logo_box_size = egui::vec2(
+            design_units(HERO_LOGO_MAX_WIDTH, layout_scale),
+            design_units(HERO_LOGO_MAX_HEIGHT, layout_scale),
+        );
+        let logo_scale = (logo_box_size.x / tex_size.x).min(logo_box_size.y / tex_size.y);
+        let draw_size = tex_size * logo_scale;
+        let margin_x = design_units(HERO_LOGO_MARGIN_X, layout_scale);
+        let margin_bottom = design_units(HERO_LOGO_MARGIN_BOTTOM, layout_scale);
         let logo_rect = egui::Rect::from_min_size(
             egui::pos2(
                 hero_rect.min.x + margin_x,

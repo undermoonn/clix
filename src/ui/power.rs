@@ -6,7 +6,8 @@ use crate::app::{PowerMenuLayout, PowerMenuOption};
 use crate::i18n::AppLanguage;
 use crate::ui::{
     color_with_scaled_alpha, corner_radius, design_units, layout_main_clock, lerp_f32,
-    main_clock_right_edge, smoothstep01, viewport_layout_scale, HintIcons, PANEL_CORNER_RADIUS,
+    main_clock_right_edge, menu_icon_center_y, smoothstep01, viewport_layout_scale, HintIcons,
+    PANEL_CORNER_RADIUS,
 };
 
 const POWER_MENU_SELECTION_CORNER_RADIUS: f32 = 12.0;
@@ -252,11 +253,9 @@ pub fn draw_power_menu(
             (content_rect.center().x - content_width * 0.5 - centered_content_left_bias)
                 .max(content_rect.min.x)
         };
+        let icon_center_y = menu_icon_center_y(option_rect.center().y, layout_scale);
         let leading_icon_rect = egui::Rect::from_min_size(
-            egui::pos2(
-                content_start_x,
-                option_rect.center().y - leading_icon_size * 0.5,
-            ),
+            egui::pos2(content_start_x, icon_center_y - leading_icon_size * 0.5),
             egui::vec2(leading_icon_size, leading_icon_size),
         );
 

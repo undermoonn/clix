@@ -2,15 +2,10 @@ use std::time::Instant;
 
 use crate::input::FOCUS_COOLDOWN_MS;
 
-pub const HOLD_TO_FORCE_CLOSE_GAME_MS: f32 = 2000.0;
-
 pub struct RuntimeState {
     had_focus: bool,
     focus_cooldown_until: Option<Instant>,
     home_button_was_held: bool,
-    force_close_hold_started_at: Option<Instant>,
-    force_close_hold_progress: f32,
-    force_close_hold_consumed: bool,
     suppress_home_press_until_release: bool,
 }
 
@@ -21,20 +16,12 @@ pub struct FocusUpdate {
     pub did_lose_focus: bool,
 }
 
-pub struct ForceCloseHoldUpdate {
-    pub trigger_force_close: bool,
-    pub should_repaint: bool,
-}
-
 impl RuntimeState {
     pub fn new() -> Self {
         Self {
             had_focus: true,
             focus_cooldown_until: None,
             home_button_was_held: false,
-            force_close_hold_started_at: None,
-            force_close_hold_progress: 0.0,
-            force_close_hold_consumed: false,
             suppress_home_press_until_release: false,
         }
     }
@@ -98,56 +85,8 @@ impl RuntimeState {
         }
     }
 
-    pub fn update_force_close_hold(
-        &mut self,
-        process_input: bool,
-        force_close_available: bool,
-        force_close_held: bool,
-        now: Instant,
-    ) -> ForceCloseHoldUpdate {
-        if process_input && force_close_available && force_close_held {
-            if self.force_close_hold_consumed {
-                self.force_close_hold_progress = 1.0;
-                return ForceCloseHoldUpdate {
-                    trigger_force_close: false,
-                    should_repaint: false,
-                };
-            }
-
-            let started_at = self.force_close_hold_started_at.get_or_insert(now);
-            let held_ms = now.duration_since(*started_at).as_secs_f32() * 1000.0;
-            self.force_close_hold_progress =
-                (held_ms / HOLD_TO_FORCE_CLOSE_GAME_MS).clamp(0.0, 1.0);
-
-            if self.force_close_hold_progress >= 1.0 {
-                self.force_close_hold_consumed = true;
-                ForceCloseHoldUpdate {
-                    trigger_force_close: true,
-                    should_repaint: false,
-                }
-            } else {
-                ForceCloseHoldUpdate {
-                    trigger_force_close: false,
-                    should_repaint: true,
-                }
-            }
-        } else {
-            self.force_close_hold_started_at = None;
-            self.force_close_hold_progress = 0.0;
-            self.force_close_hold_consumed = false;
-            ForceCloseHoldUpdate {
-                trigger_force_close: false,
-                should_repaint: false,
-            }
-        }
-    }
-
     pub fn suppress_home_hold_until_release(&mut self) {
         self.suppress_home_press_until_release = true;
-    }
-
-    pub fn force_close_hold_progress(&self) -> f32 {
-        self.force_close_hold_progress
     }
 }
 

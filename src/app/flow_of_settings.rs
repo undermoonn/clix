@@ -73,6 +73,25 @@ impl LauncherApp {
         ctx.request_repaint();
     }
 
+    pub(super) fn set_home_game_limit(
+        &mut self,
+        home_game_limit: crate::config::HomeGameLimit,
+        ctx: &egui::Context,
+    ) {
+        if self.home_game_limit == home_game_limit {
+            return;
+        }
+
+        self.home_game_limit = home_game_limit;
+        self.page.sync_home_game_limit(home_game_limit);
+        crate::config::store_home_game_limit(home_game_limit);
+        self.page.clamp_home_selection(self.home_items_len());
+        self.refresh_selected_playtime(ctx);
+        self.refresh_selected_install_size(ctx);
+        self.refresh_selected_dlss(ctx);
+        ctx.request_repaint();
+    }
+
     pub(super) fn set_controller_vibration_enabled(&mut self, enabled: bool, ctx: &egui::Context) {
         if self.controller_vibration_enabled == enabled {
             return;
@@ -115,11 +134,8 @@ impl LauncherApp {
     }
 
     fn refresh_game_list(&mut self, ctx: &egui::Context) {
-        let previous_selected = self.page.selected();
-        let selected_key = self
-            .games
-            .get(previous_selected)
-            .map(crate::game::Game::persistent_key);
+        let previous_home_selected = self.page.selected();
+        let selected_key = self.selected_game().map(crate::game::Game::persistent_key);
 
         self.games = crate::game::scan_installed_games(&self.steam_paths, &self.game_scan_options);
         self.running_games.clear();
@@ -128,15 +144,31 @@ impl LauncherApp {
         self.pending_launch_request = None;
         self.pending_promotion = None;
 
-        if let Some(index) = selected_key.as_ref().and_then(|key| {
-            self.games
-                .iter()
-                .position(|game| game.persistent_key() == *key)
-        }) {
-            self.page.relocate_selection(index);
-        } else if !self.games.is_empty() {
-            self.page
-                .relocate_selection(previous_selected.min(self.games.len() - 1));
+        if self.page.show_game_library_page() {
+            if let Some(index) = selected_key.as_ref().and_then(|key| {
+                self.games
+                    .iter()
+                    .position(|game| game.persistent_key() == *key)
+            }) {
+                self.page.relocate_library_selection(index);
+            } else {
+                self.page.clamp_library_selection(self.games.len());
+            }
+        } else {
+            let home_indices = self.home_game_indices();
+            if let Some(home_index) = selected_key.as_ref().and_then(|key| {
+                home_indices.iter().position(|index| {
+                    self.games
+                        .get(*index)
+                        .map(|game| game.persistent_key() == *key)
+                        .unwrap_or(false)
+                })
+            }) {
+                self.page.relocate_selection(home_index);
+            } else {
+                self.page
+                    .relocate_selection(previous_home_selected.min(home_indices.len()));
+            }
         }
 
         self.refresh_selected_playtime(ctx);
