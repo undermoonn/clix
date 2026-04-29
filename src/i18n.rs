@@ -233,6 +233,13 @@ impl AppLanguage {
         }
     }
 
+    pub fn idle_frame_rate_reduction_notice_text(self) -> &'static str {
+        match self {
+            Self::English => "If the app UI flickers, turn this off",
+            Self::SimplifiedChinese => "如果应用界面闪烁，请关闭此选项",
+        }
+    }
+
     pub fn client_games_detection_text(self) -> &'static str {
         match self {
             Self::English => "Game Library Detection",

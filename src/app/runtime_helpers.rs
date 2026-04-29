@@ -3,8 +3,30 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 
 use crate::game::GameSource;
+use crate::launch;
 
 use super::{LauncherApp, CONTROLLER_IDLE_TIMEOUT, PASSIVE_REPAINT_INTERVAL};
+
+fn scheduled_repaint_delay(
+    has_focus: bool,
+    has_input_activity: bool,
+    idle_frame_rate_reduction_enabled: bool,
+    running_game_in_foreground: bool,
+) -> Option<Duration> {
+    if !has_focus && running_game_in_foreground {
+        return Some(PASSIVE_REPAINT_INTERVAL);
+    }
+
+    if has_focus && has_input_activity {
+        return None;
+    }
+
+    if idle_frame_rate_reduction_enabled {
+        Some(PASSIVE_REPAINT_INTERVAL)
+    } else {
+        None
+    }
+}
 
 impl LauncherApp {
     pub(super) fn can_open_achievement_panel_for_selected(&self) -> bool {
@@ -46,21 +68,22 @@ impl LauncherApp {
         has_focus: bool,
         has_input_activity: bool,
     ) {
-        if !has_focus {
-            return;
-        }
+        let running_game_in_foreground = self
+            .running_games
+            .values()
+            .any(launch::running_game_is_foreground);
+        let delay = scheduled_repaint_delay(
+            has_focus,
+            has_input_activity,
+            self.idle_frame_rate_reduction_enabled,
+            running_game_in_foreground,
+        );
 
-        if has_input_activity {
+        if let Some(delay) = delay {
+            ctx.request_repaint_after(delay);
+        } else {
             ctx.request_repaint();
-            return;
         }
-
-        if self.idle_frame_rate_reduction_enabled {
-            ctx.request_repaint_after(PASSIVE_REPAINT_INTERVAL);
-            return;
-        }
-
-        ctx.request_repaint();
     }
 
     pub(super) fn update_cursor_visibility(&mut self, ctx: &egui::Context) {
@@ -109,5 +132,47 @@ impl LauncherApp {
                 ctx.request_repaint_after(HIDE_AFTER - elapsed);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scheduled_repaint_delay;
+    use crate::app::PASSIVE_REPAINT_INTERVAL;
+
+    #[test]
+    fn focused_input_activity_keeps_immediate_repaint() {
+        assert_eq!(scheduled_repaint_delay(true, true, true, false), None);
+        assert_eq!(scheduled_repaint_delay(true, true, false, false), None);
+    }
+
+    #[test]
+    fn focused_idle_repaint_respects_setting() {
+        assert_eq!(
+            scheduled_repaint_delay(true, false, true, false),
+            Some(PASSIVE_REPAINT_INTERVAL)
+        );
+        assert_eq!(scheduled_repaint_delay(true, false, false, false), None);
+    }
+
+    #[test]
+    fn unfocused_repaint_also_respects_setting() {
+        assert_eq!(
+            scheduled_repaint_delay(false, false, true, false),
+            Some(PASSIVE_REPAINT_INTERVAL)
+        );
+        assert_eq!(scheduled_repaint_delay(false, false, false, false), None);
+    }
+
+    #[test]
+    fn unfocused_foreground_game_forces_low_frequency_repaint() {
+        assert_eq!(
+            scheduled_repaint_delay(false, false, false, true),
+            Some(PASSIVE_REPAINT_INTERVAL)
+        );
+        assert_eq!(
+            scheduled_repaint_delay(false, true, false, true),
+            Some(PASSIVE_REPAINT_INTERVAL)
+        );
     }
 }

@@ -154,17 +154,15 @@ pub(super) fn refocus_running_game(state: &RunningGameState) -> bool {
 }
 
 pub(super) fn minimize_running_game(state: &RunningGameState) -> bool {
-    let matched = matched_running_game_pids(state);
-    if matched.is_empty() {
+    let Some(foreground_pid) = foreground_window_pid() else {
         return false;
-    }
+    };
 
-    unsafe {
-        let foreground_hwnd = GetForegroundWindow();
-        if !foreground_hwnd.is_null() {
-            let mut foreground_pid = 0;
-            GetWindowThreadProcessId(foreground_hwnd, &mut foreground_pid);
-            if matched.contains(&(foreground_pid as u32)) {
+    let matched = matched_running_game_pids(state);
+    if matched.contains(&foreground_pid) {
+        unsafe {
+            let foreground_hwnd = GetForegroundWindow();
+            if !foreground_hwnd.is_null() {
                 ShowWindow(foreground_hwnd, SW_MINIMIZE);
                 return true;
             }
@@ -172,6 +170,28 @@ pub(super) fn minimize_running_game(state: &RunningGameState) -> bool {
     }
 
     false
+}
+
+pub(super) fn running_game_is_foreground(state: &RunningGameState) -> bool {
+    let matched = matched_running_game_pids(state);
+    let Some(foreground_pid) = foreground_window_pid() else {
+        return false;
+    };
+
+    matched.contains(&foreground_pid)
+}
+
+fn foreground_window_pid() -> Option<u32> {
+    unsafe {
+        let foreground_hwnd = GetForegroundWindow();
+        if foreground_hwnd.is_null() {
+            return None;
+        }
+
+        let mut foreground_pid = 0;
+        GetWindowThreadProcessId(foreground_hwnd, &mut foreground_pid);
+        (foreground_pid != 0).then_some(foreground_pid)
+    }
 }
 
 fn cached_current_app_window() -> Option<HWND> {

@@ -387,6 +387,8 @@ impl PageState {
     }
 
     pub fn force_select(&mut self, selected: usize) {
+        let keep_settings_page_open = self.show_settings_page;
+
         self.selected = selected;
         self.clear_home_top_button_selection();
         self.home_settings_focus_anim.set_immediate(0.0);
@@ -395,11 +397,13 @@ impl PageState {
         self.select_anim.set_immediate(0.0);
         self.select_anim_target = None;
         self.scroll_offset.set_immediate(selected as f32);
-        self.show_settings_page = false;
-        self.settings_page_anim.set_immediate(0.0);
-        self.settings_select_anim.set_immediate(0.0);
-        self.settings_select_anim_target = None;
-        self.reset_settings_navigation();
+        if !keep_settings_page_open {
+            self.show_settings_page = false;
+            self.settings_page_anim.set_immediate(0.0);
+            self.settings_select_anim.set_immediate(0.0);
+            self.settings_select_anim_target = None;
+            self.reset_settings_navigation();
+        }
         self.show_achievement_panel = false;
         self.achievement_panel_anim.set_immediate(0.0);
         self.reset_achievement_selection();
@@ -1413,6 +1417,25 @@ mod tests {
         assert!(!result.toggle_launch_on_startup);
         assert!(page.home_settings_selected());
         assert!(!page.show_settings_page());
+    }
+
+    #[test]
+    fn force_select_keeps_open_settings_page_visible() {
+        let mut page = PageState::new();
+
+        open_settings_page(&mut page);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+        let expected_section = page.settings_section_index();
+        let expected_item = page.settings_selected_item_index();
+
+        page.force_select(2);
+
+        assert_eq!(page.selected(), 2);
+        assert!(page.show_settings_page());
+        assert!(page.settings_in_submenu());
+        assert_eq!(page.settings_section_index(), expected_section);
+        assert_eq!(page.settings_selected_item_index(), expected_item);
     }
 
     #[test]

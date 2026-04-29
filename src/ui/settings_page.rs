@@ -6,7 +6,9 @@ use crate::i18n::{AppLanguage, AppLanguageSetting};
 use crate::system::display_mode::{DisplayModeSetting, DisplayScaleOptions, ResolutionOptions};
 
 use super::header::{draw_selected_game_text_badge, measure_selected_game_text_badge};
-use super::text::{color_with_scaled_alpha, corner_radius, PANEL_CORNER_RADIUS};
+use super::text::{
+    build_wrapped_galley, color_with_scaled_alpha, corner_radius, PANEL_CORNER_RADIUS,
+};
 use super::{design_units, lerp_f32, smoothstep01, viewport_layout_scale};
 
 struct InlineButtonTitle<'a> {
@@ -700,6 +702,7 @@ fn animate_settings_scroll_offset(
 }
 
 fn draw_settings_list_row(
+    ui: &egui::Ui,
     painter: &egui::Painter,
     rect: egui::Rect,
     leading_icon: Option<&egui::TextureHandle>,
@@ -709,6 +712,7 @@ fn draw_settings_list_row(
     inline_button_title: Option<&InlineButtonTitle<'_>>,
     subtitle: Option<&str>,
     subtitle_color: Option<egui::Color32>,
+    detail_text: Option<&str>,
     trailing: Option<&str>,
     focus_t: f32,
     show_focus_outline: bool,
@@ -766,12 +770,41 @@ fn draw_settings_list_row(
     } else {
         content_rect.min.x
     };
+    let detail_layout = detail_text.map(|detail_text| {
+        let split_x = lerp_f32(text_start_x, content_rect.max.x, 0.68);
+        let split_gap = design_units(24.0, layout_scale);
+        let left_column_rect = egui::Rect::from_min_max(
+            egui::pos2(text_start_x, content_rect.min.y),
+            egui::pos2((split_x - split_gap).max(text_start_x), content_rect.max.y),
+        );
+        let right_column_rect = egui::Rect::from_min_max(
+            egui::pos2(
+                (split_x + split_gap).min(content_rect.max.x),
+                content_rect.min.y,
+            ),
+            content_rect.max,
+        );
+
+        (split_x, left_column_rect, right_column_rect, detail_text)
+    });
     let title_font = egui::FontId::proportional(design_units(26.0, layout_scale));
     let title_color = color_with_scaled_alpha(
         egui::Color32::from_rgba_unmultiplied(242, 245, 248, 255),
         settings_t,
     );
-    let title_galley = painter.layout_no_wrap(title.to_string(), title_font.clone(), title_color);
+    let title_galley = if let Some((_, left_column_rect, _, _)) = &detail_layout {
+        build_wrapped_galley(
+            ui,
+            title.to_string(),
+            title_font.clone(),
+            title_color,
+            left_column_rect
+                .width()
+                .max(design_units(220.0, layout_scale)),
+        )
+    } else {
+        painter.layout_no_wrap(title.to_string(), title_font.clone(), title_color)
+    };
     let inline_prefix_galley = inline_button_title.map(|inline| {
         painter.layout_no_wrap(inline.prefix.to_string(), title_font.clone(), title_color)
     });
@@ -779,15 +812,41 @@ fn draw_settings_list_row(
         painter.layout_no_wrap(inline.suffix.to_string(), title_font.clone(), title_color)
     });
     let subtitle_galley = subtitle.map(|subtitle| {
-        painter.layout_no_wrap(
-            subtitle.to_string(),
-            egui::FontId::proportional(design_units(19.0, layout_scale)),
-            color_with_scaled_alpha(
-                subtitle_color.unwrap_or(egui::Color32::from_rgba_unmultiplied(196, 202, 212, 220)),
-                settings_t,
-            ),
-        )
+        let subtitle_font = egui::FontId::proportional(design_units(19.0, layout_scale));
+        let subtitle_color = color_with_scaled_alpha(
+            subtitle_color.unwrap_or(egui::Color32::from_rgba_unmultiplied(196, 202, 212, 220)),
+            settings_t,
+        );
+        if let Some((_, left_column_rect, _, _)) = &detail_layout {
+            build_wrapped_galley(
+                ui,
+                subtitle.to_string(),
+                subtitle_font,
+                subtitle_color,
+                left_column_rect
+                    .width()
+                    .max(design_units(200.0, layout_scale)),
+            )
+        } else {
+            painter.layout_no_wrap(subtitle.to_string(), subtitle_font, subtitle_color)
+        }
     });
+    let detail_galley = detail_layout
+        .as_ref()
+        .map(|(_, _, right_column_rect, detail_text)| {
+            build_wrapped_galley(
+                ui,
+                (*detail_text).to_string(),
+                egui::FontId::proportional(design_units(18.0, layout_scale)),
+                color_with_scaled_alpha(
+                    egui::Color32::from_rgba_unmultiplied(195, 199, 207, 238),
+                    settings_t,
+                ),
+                right_column_rect
+                    .width()
+                    .max(design_units(140.0, layout_scale)),
+            )
+        });
     let left_inline_icon_size = design_units(30.0, layout_scale);
     let right_inline_icon_size = design_units(36.0, layout_scale);
     let title_height =
@@ -944,6 +1003,31 @@ fn draw_settings_list_row(
             subtitle_galley,
             egui::Color32::WHITE,
         );
+    }
+
+    if let Some((split_x, _, right_column_rect, _)) = detail_layout {
+        painter.line_segment(
+            [
+                egui::pos2(split_x, content_rect.min.y),
+                egui::pos2(split_x, content_rect.max.y),
+            ],
+            egui::Stroke::new(
+                design_units(2.0, layout_scale),
+                color_with_scaled_alpha(
+                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 72),
+                    settings_t,
+                ),
+            ),
+        );
+
+        if let Some(detail_galley) = detail_galley {
+            let detail_y = content_rect.center().y - detail_galley.size().y * 0.5;
+            painter.galley(
+                egui::pos2(right_column_rect.min.x, detail_y),
+                detail_galley,
+                egui::Color32::WHITE,
+            );
+        }
     }
 }
 
@@ -1175,6 +1259,7 @@ pub fn draw_settings_page(
                     use_inline_button_title: bool,
                     subtitle: Option<&str>,
                     subtitle_color: Option<egui::Color32>,
+                    detail_text: Option<&str>,
                     trailing: Option<&str>,
                     show_focus_outline: bool,
                     layer_t: f32| {
@@ -1204,6 +1289,7 @@ pub fn draw_settings_page(
         let row_rect = row_slot_rect.shrink2(egui::vec2(unselected_row_shrink_x, 0.0));
         let focus_t = row_focus_t(row_key);
         draw_settings_list_row(
+            ui,
             &list_painter,
             row_rect,
             leading_icon,
@@ -1213,6 +1299,7 @@ pub fn draw_settings_page(
             inline_button_title.as_ref(),
             subtitle,
             subtitle_color,
+            detail_text,
             trailing,
             focus_t,
             show_focus_outline && focus_t > 0.001,
@@ -1265,6 +1352,7 @@ pub fn draw_settings_page(
             None,
             None,
             None,
+            None,
             true,
             top_layer_t,
         );
@@ -1281,6 +1369,7 @@ pub fn draw_settings_page(
             None,
             language.screen_text(),
             false,
+            None,
             None,
             None,
             None,
@@ -1303,6 +1392,7 @@ pub fn draw_settings_page(
             None,
             None,
             None,
+            None,
             true,
             top_layer_t,
         );
@@ -1319,6 +1409,7 @@ pub fn draw_settings_page(
             None,
             language.close_app_text(),
             false,
+            None,
             None,
             None,
             None,
@@ -1549,6 +1640,7 @@ pub fn draw_settings_page(
                         None
                     },
                     None,
+                    None,
                     true,
                     submenu_layer_t,
                 );
@@ -1576,6 +1668,7 @@ pub fn draw_settings_page(
                     } else {
                         None
                     },
+                    None,
                     None,
                     true,
                     submenu_layer_t,
@@ -1605,6 +1698,7 @@ pub fn draw_settings_page(
                         None
                     },
                     None,
+                    None,
                     true,
                     submenu_layer_t,
                 );
@@ -1628,6 +1722,7 @@ pub fn draw_settings_page(
                     } else {
                         None
                     },
+                    None,
                     None,
                     true,
                     submenu_layer_t,
@@ -1657,6 +1752,7 @@ pub fn draw_settings_page(
                         None
                     },
                     None,
+                    None,
                     true,
                     submenu_layer_t,
                 );
@@ -1684,6 +1780,7 @@ pub fn draw_settings_page(
                     } else {
                         None
                     },
+                    Some(language.idle_frame_rate_reduction_notice_text()),
                     None,
                     true,
                     submenu_layer_t,
@@ -1703,6 +1800,7 @@ pub fn draw_settings_page(
                     language.display_mode_setting_text(),
                     false,
                     Some(selected_display_mode_setting.display_text(language)),
+                    None,
                     None,
                     None,
                     true,
@@ -1728,6 +1826,7 @@ pub fn draw_settings_page(
                     } else {
                         None
                     },
+                    None,
                     None,
                     true,
                     submenu_layer_t,
@@ -1756,6 +1855,7 @@ pub fn draw_settings_page(
                     } else {
                         None
                     },
+                    None,
                     None,
                     true,
                     submenu_layer_t,
@@ -2094,6 +2194,7 @@ pub fn draw_settings_page(
                     None,
                     None,
                     None,
+                    None,
                     true,
                     submenu_layer_t,
                 );
@@ -2110,6 +2211,7 @@ pub fn draw_settings_page(
                     None,
                     language.nvidia_app_text(),
                     false,
+                    None,
                     None,
                     None,
                     None,

@@ -82,3 +82,7 @@ pub(super) fn refocus_running_game(state: &RunningGameState) -> bool {
 pub(super) fn minimize_running_game(state: &RunningGameState) -> bool {
     focus::minimize_running_game(state)
 }
+
+pub(super) fn running_game_is_foreground(state: &RunningGameState) -> bool {
+    focus::running_game_is_foreground(state)
+}

@@ -425,3 +425,16 @@ pub fn minimize_running_game(state: &RunningGameState) -> bool {
         false
     }
 }
+
+pub fn running_game_is_foreground(state: &RunningGameState) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        windows::running_game_is_foreground(state)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = state;
+        false
+    }
+}
