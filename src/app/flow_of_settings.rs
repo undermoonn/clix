@@ -59,6 +59,20 @@ impl LauncherApp {
         self.set_display_mode_setting(self.display_mode_setting.next(), ctx);
     }
 
+    pub(super) fn set_idle_frame_rate_reduction_enabled(
+        &mut self,
+        enabled: bool,
+        ctx: &egui::Context,
+    ) {
+        if self.idle_frame_rate_reduction_enabled == enabled {
+            return;
+        }
+
+        self.idle_frame_rate_reduction_enabled = enabled;
+        crate::config::store_idle_frame_rate_reduction_enabled(enabled);
+        ctx.request_repaint();
+    }
+
     pub(super) fn set_controller_vibration_enabled(&mut self, enabled: bool, ctx: &egui::Context) {
         if self.controller_vibration_enabled == enabled {
             return;

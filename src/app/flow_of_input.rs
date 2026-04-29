@@ -152,6 +152,12 @@ impl LauncherApp {
                 if result.toggle_controller_vibration_feedback {
                     self.set_controller_vibration_enabled(!self.controller_vibration_enabled, ctx);
                 }
+                if result.toggle_idle_frame_rate_reduction {
+                    self.set_idle_frame_rate_reduction_enabled(
+                        !self.idle_frame_rate_reduction_enabled,
+                        ctx,
+                    );
+                }
                 if result.cycle_display_mode_setting {
                     self.cycle_display_mode_setting(ctx);
                 }

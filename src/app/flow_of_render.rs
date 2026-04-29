@@ -137,6 +137,7 @@ impl LauncherApp {
                     self.launch_on_startup_enabled,
                     self.background_home_wake_mode,
                     self.controller_vibration_enabled,
+                    self.idle_frame_rate_reduction_enabled,
                     self.game_scan_options.detect_steam_games,
                     self.game_scan_options.detect_epic_games,
                     self.game_scan_options.detect_xbox_games,

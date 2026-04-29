@@ -226,6 +226,13 @@ impl AppLanguage {
         }
     }
 
+    pub fn idle_frame_rate_reduction_text(self) -> &'static str {
+        match self {
+            Self::English => "Lower Rendering Frame Rate When Idle",
+            Self::SimplifiedChinese => "降低闲置时绘制帧率",
+        }
+    }
+
     pub fn client_games_detection_text(self) -> &'static str {
         match self {
             Self::English => "Game Library Detection",

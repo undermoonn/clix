@@ -82,6 +82,7 @@ pub struct PageActionResult {
     pub toggle_launch_on_startup: bool,
     pub toggle_background_home_wake: bool,
     pub toggle_controller_vibration_feedback: bool,
+    pub toggle_idle_frame_rate_reduction: bool,
     pub toggle_detect_steam_games: bool,
     pub toggle_detect_epic_games: bool,
     pub toggle_detect_xbox_games: bool,
@@ -444,6 +445,7 @@ impl PageState {
             toggle_launch_on_startup: false,
             toggle_background_home_wake: false,
             toggle_controller_vibration_feedback: false,
+            toggle_idle_frame_rate_reduction: false,
             toggle_detect_steam_games: false,
             toggle_detect_epic_games: false,
             toggle_detect_xbox_games: false,
@@ -539,8 +541,9 @@ impl PageState {
                                 2 => result.toggle_detect_xbox_games = true,
                                 3 => result.toggle_background_home_wake = true,
                                 4 => result.toggle_controller_vibration_feedback = true,
-                                5 => result.cycle_display_mode_setting = true,
-                                6 => result.cycle_language_setting = true,
+                                5 => result.toggle_idle_frame_rate_reduction = true,
+                                6 => result.cycle_display_mode_setting = true,
+                                7 => result.cycle_language_setting = true,
                                 _ => result.toggle_launch_on_startup = true,
                             },
                             SettingsSection::Screen => match self.settings_screen_dropdown {
@@ -1006,7 +1009,7 @@ impl PageState {
             SettingsSection::CloseApp => return,
         };
         let max_index = match self.settings_section {
-            SettingsSection::System => 7,
+            SettingsSection::System => 8,
             SettingsSection::Screen => 2,
             SettingsSection::Apps => 1,
             SettingsSection::CloseApp => 0,
@@ -1494,7 +1497,7 @@ mod tests {
     }
 
     #[test]
-    fn launch_on_sixth_system_setting_cycles_display_mode_setting() {
+    fn launch_on_sixth_system_setting_toggles_idle_frame_rate_reduction() {
         let mut page = PageState::new();
 
         open_settings_page(&mut page);
@@ -1509,16 +1512,39 @@ mod tests {
         assert!(!result.toggle_launch_on_startup);
         assert!(!result.toggle_background_home_wake);
         assert!(!result.toggle_controller_vibration_feedback);
+        assert!(result.toggle_idle_frame_rate_reduction);
+        assert!(page.show_settings_page());
+    }
+
+    #[test]
+    fn launch_on_seventh_system_setting_cycles_display_mode_setting() {
+        let mut page = PageState::new();
+
+        open_settings_page(&mut page);
+        let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
+        let result = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+
+        assert!(!result.toggle_launch_on_startup);
+        assert!(!result.toggle_background_home_wake);
+        assert!(!result.toggle_controller_vibration_feedback);
+        assert!(!result.toggle_idle_frame_rate_reduction);
         assert!(result.cycle_display_mode_setting);
         assert!(page.show_settings_page());
     }
 
     #[test]
-    fn launch_on_seventh_system_setting_cycles_language_setting() {
+    fn launch_on_eighth_system_setting_cycles_language_setting() {
         let mut page = PageState::new();
 
         open_settings_page(&mut page);
         let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
@@ -1535,11 +1561,12 @@ mod tests {
     }
 
     #[test]
-    fn launch_on_eighth_system_setting_toggles_launch_on_startup() {
+    fn launch_on_ninth_system_setting_toggles_launch_on_startup() {
         let mut page = PageState::new();
 
         open_settings_page(&mut page);
         let _ = page.handle_action(&ControllerAction::Launch, 3, true, 4);
+        let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);
         let _ = page.handle_action(&ControllerAction::Down, 3, true, 4);

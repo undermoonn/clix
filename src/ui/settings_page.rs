@@ -605,7 +605,7 @@ fn system_settings_row_top(
     row_spacing: f32,
 ) -> f32 {
     let body_top = header_height + header_gap;
-    let row_index = selected_item_index.min(7);
+    let row_index = selected_item_index.min(8);
     if row_index <= 2 {
         body_top + body_top_padding + initial_row_offset_y + row_index as f32 * row_spacing
     } else {
@@ -1085,6 +1085,7 @@ pub fn draw_settings_page(
     launch_on_startup_enabled: bool,
     background_home_wake_mode: BackgroundHomeWakeMode,
     controller_vibration_enabled: bool,
+    idle_frame_rate_reduction_enabled: bool,
     detect_steam_games_enabled: bool,
     detect_epic_games_enabled: bool,
     detect_xbox_games_enabled: bool,
@@ -1391,7 +1392,7 @@ pub fn draw_settings_page(
                     + final_row_offset_y
                     + body_top_padding
                     + body_bottom_padding;
-                let lower_body_height = system_row_spacing * 4.0
+                let lower_body_height = system_row_spacing * 5.0
                     + submenu_row_height
                     + initial_row_offset_y
                     + final_row_offset_y
@@ -1671,6 +1672,34 @@ pub fn draw_settings_page(
                     None,
                     None,
                     None,
+                    language.idle_frame_rate_reduction_text(),
+                    false,
+                    Some(if idle_frame_rate_reduction_enabled {
+                        language.enabled_text()
+                    } else {
+                        language.disabled_text()
+                    }),
+                    if idle_frame_rate_reduction_enabled {
+                        Some(enabled_subtitle_color)
+                    } else {
+                        None
+                    },
+                    None,
+                    true,
+                    submenu_layer_t,
+                );
+
+                draw_row(
+                    lower_list_inner_rect,
+                    Some(scroll_viewport_rect),
+                    lower_rows_origin_y,
+                    system_row_spacing,
+                    submenu_row_height,
+                    3,
+                    16,
+                    None,
+                    None,
+                    None,
                     language.display_mode_setting_text(),
                     false,
                     Some(selected_display_mode_setting.display_text(language)),
@@ -1686,8 +1715,8 @@ pub fn draw_settings_page(
                     lower_rows_origin_y,
                     system_row_spacing,
                     submenu_row_height,
-                    3,
-                    16,
+                    4,
+                    17,
                     None,
                     None,
                     None,
@@ -1710,8 +1739,8 @@ pub fn draw_settings_page(
                     lower_rows_origin_y,
                     system_row_spacing,
                     submenu_row_height,
-                    4,
-                    17,
+                    5,
+                    18,
                     None,
                     None,
                     None,

@@ -86,6 +86,7 @@ pub struct LauncherApp {
     hint_icon_theme: PromptIconTheme,
     language_setting: AppLanguageSetting,
     display_mode_setting: DisplayModeSetting,
+    idle_frame_rate_reduction_enabled: bool,
     game_scan_options: game::GameScanOptions,
     launch_on_startup_enabled: bool,
     background_home_wake_mode: BackgroundHomeWakeMode,
@@ -162,6 +163,8 @@ impl LauncherApp {
         let hint_icon_theme = crate::config::load_hint_icon_theme();
         let language_setting = crate::config::load_app_language_setting();
         let display_mode_setting = crate::config::load_display_mode_setting();
+        let idle_frame_rate_reduction_enabled =
+            crate::config::load_idle_frame_rate_reduction_enabled();
         let controller_vibration_enabled = crate::config::load_controller_vibration_enabled();
         let resolution_options = display_mode::detect_resolution_options();
         let display_scale_options = display_mode::detect_display_scale_options();
@@ -212,6 +215,7 @@ impl LauncherApp {
             hint_icon_theme,
             language_setting,
             display_mode_setting,
+            idle_frame_rate_reduction_enabled,
             game_scan_options,
             launch_on_startup_enabled,
             background_home_wake_mode,

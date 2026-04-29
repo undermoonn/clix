@@ -12,6 +12,7 @@ const DEBUG_SECTION: &str = "debug";
 const HINT_ICON_THEME_KEY: &str = "hint_icon_theme";
 const LANGUAGE_KEY: &str = "language";
 const DISPLAY_MODE_KEY: &str = "display_mode";
+const IDLE_FRAME_RATE_REDUCTION_ENABLED_KEY: &str = "idle_frame_rate_reduction_enabled";
 const BACKGROUND_HOME_WAKE_MODE_KEY: &str = "background_home_wake_enabled";
 const CONTROLLER_VIBRATION_ENABLED_KEY: &str = "controller_vibration_enabled";
 const DETECT_STEAM_GAMES_KEY: &str = "detect_steam_games";
@@ -110,6 +111,7 @@ struct AppConfig {
     hint_icon_theme: PromptIconTheme,
     language: AppLanguageSetting,
     display_mode_setting: DisplayModeSetting,
+    idle_frame_rate_reduction_enabled: bool,
     background_home_wake_mode: BackgroundHomeWakeMode,
     controller_vibration_enabled: bool,
     game_scan_options: GameScanOptions,
@@ -124,6 +126,7 @@ impl Default for AppConfig {
             hint_icon_theme: PromptIconTheme::Xbox,
             language: AppLanguageSetting::Auto,
             display_mode_setting: DisplayModeSetting::Fullscreen,
+            idle_frame_rate_reduction_enabled: true,
             background_home_wake_mode: BackgroundHomeWakeMode::ShortPress,
             controller_vibration_enabled: false,
             game_scan_options: GameScanOptions::default(),
@@ -203,6 +206,9 @@ fn parse_config(contents: &str) -> AppConfig {
             } else if key.eq_ignore_ascii_case(DISPLAY_MODE_KEY) {
                 config.display_mode_setting = DisplayModeSetting::from_config_value(value)
                     .unwrap_or(DisplayModeSetting::Fullscreen);
+            } else if key.eq_ignore_ascii_case(IDLE_FRAME_RATE_REDUCTION_ENABLED_KEY) {
+                config.idle_frame_rate_reduction_enabled =
+                    parse_bool_config_value(value).unwrap_or(true);
             } else if key.eq_ignore_ascii_case(BACKGROUND_HOME_WAKE_MODE_KEY) {
                 config.background_home_wake_mode = BackgroundHomeWakeMode::from_config_value(value);
             } else if key.eq_ignore_ascii_case(CONTROLLER_VIBRATION_ENABLED_KEY) {
@@ -233,7 +239,7 @@ fn parse_config(contents: &str) -> AppConfig {
 
 fn serialize_config(config: AppConfig) -> String {
     format!(
-        "[{}]\n{}={}\n{}={}\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n",
+        "[{}]\n{}={}\n{}={}\n{}={}\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n{}={}\n{}={}\n\n[{}]\n{}={}\n",
         UI_SECTION,
         HINT_ICON_THEME_KEY,
         config.hint_icon_theme.as_config_value(),
@@ -241,6 +247,8 @@ fn serialize_config(config: AppConfig) -> String {
         config.language.as_config_value(),
         DISPLAY_MODE_KEY,
         config.display_mode_setting.as_config_value(),
+        IDLE_FRAME_RATE_REDUCTION_ENABLED_KEY,
+        config.idle_frame_rate_reduction_enabled,
         BACKGROUND_HOME_WAKE_MODE_KEY,
         config.background_home_wake_mode.as_config_value(),
         CONTROLLER_VIBRATION_ENABLED_KEY,
@@ -291,6 +299,10 @@ pub fn load_display_mode_setting() -> DisplayModeSetting {
     load_config().display_mode_setting
 }
 
+pub fn load_idle_frame_rate_reduction_enabled() -> bool {
+    load_config().idle_frame_rate_reduction_enabled
+}
+
 pub fn store_hint_icon_theme(theme: PromptIconTheme) {
     let mut config = load_config();
     config.hint_icon_theme = theme;
@@ -306,6 +318,12 @@ pub fn store_app_language_setting(language: AppLanguageSetting) {
 pub fn store_display_mode_setting(display_mode_setting: DisplayModeSetting) {
     let mut config = load_config();
     config.display_mode_setting = display_mode_setting;
+    store_config(config);
+}
+
+pub fn store_idle_frame_rate_reduction_enabled(enabled: bool) {
+    let mut config = load_config();
+    config.idle_frame_rate_reduction_enabled = enabled;
     store_config(config);
 }
 
@@ -359,6 +377,23 @@ mod tests {
         let contents = serialize_config(config);
 
         assert!(contents.contains("display_mode=windowed"));
+    }
+
+    #[test]
+    fn parse_config_defaults_idle_frame_rate_reduction_to_enabled() {
+        let config = parse_config("[ui]\ndisplay_mode=fullscreen\n");
+
+        assert!(config.idle_frame_rate_reduction_enabled);
+    }
+
+    #[test]
+    fn serialize_config_writes_idle_frame_rate_reduction_setting() {
+        let mut config = AppConfig::default();
+        config.idle_frame_rate_reduction_enabled = false;
+
+        let contents = serialize_config(config);
+
+        assert!(contents.contains("idle_frame_rate_reduction_enabled=false"));
     }
 
     #[test]

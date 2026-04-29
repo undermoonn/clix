@@ -55,7 +55,12 @@ impl LauncherApp {
             return;
         }
 
-        ctx.request_repaint_after(PASSIVE_REPAINT_INTERVAL);
+        if self.idle_frame_rate_reduction_enabled {
+            ctx.request_repaint_after(PASSIVE_REPAINT_INTERVAL);
+            return;
+        }
+
+        ctx.request_repaint();
     }
 
     pub(super) fn update_cursor_visibility(&mut self, ctx: &egui::Context) {
